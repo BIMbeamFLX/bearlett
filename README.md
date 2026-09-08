@@ -259,3 +259,10 @@ and confirm a given version's build artifact.
 ## License
 
 MIT
+
+## Napplet wallet and note designer
+
+This fork adds **LNURLcash Wallet** and **Paper Studio**, two NIP-5D napplets
+with visual bearer notes, encrypted host storage, wallet intents, and a separate
+image-upload designer. See [the napplet guide](docs/NAPPLETS.md) for builds,
+local preview, recovery, and the draft wallet/designer archetype contracts.

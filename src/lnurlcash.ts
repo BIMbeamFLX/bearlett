@@ -1,4 +1,5 @@
 import {bech32} from '@scure/base'
+import {fetchServiceResponse} from './serviceTransport'
 import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
@@ -656,7 +657,10 @@ const lnurlFetch = async (url: string | URL): Promise<any> => {
   try {
     // bounded wait: without a timeout a hung service would freeze whatever
     // flow called this (lookup, refresh, melt) forever
-    res = await fetch(url.toString(), {signal: AbortSignal.timeout(30_000)})
+    res = await fetchServiceResponse(
+      url.toString(),
+      AbortSignal.timeout(30_000)
+    )
   } catch (err) {
     // transport failures are ambiguous for a mutating request (see
     // AmbiguousMintError) - the request may have arrived before the failure
