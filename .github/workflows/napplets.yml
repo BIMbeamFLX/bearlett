@@ -21,7 +21,7 @@ jobs:
       - run: npm run tsc
       - run: npm test
       - run: npm run build:napplet
-      - run: npm run build:designer
+      - run: npm run build:notes
       - run: npx playwright install --with-deps chromium
       - run: npm run test:napplet:browser
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -30,4 +30,4 @@ jobs:
           include-hidden-files: true
           path: |
             dist-napplet/
-            dist-designer/
+            dist-notes/

@@ -16,7 +16,10 @@
     "build:napplet": "vite build --config vite.napplet.config.mts",
     "preview:napplet": "node scripts/napplet-host.mjs",
     "test:napplet:browser": "playwright test --config playwright.napplet.config.ts",
-    "build:designer": "vite build --config vite.napplet.config.mts --mode designer"
+    "build:notes": "vite build --config vite.napplet.config.mts --mode notes",
+    "build:designer": "npm run build:notes",
+    "preview:wallet": "node scripts/napplet-host.mjs --app wallet",
+    "preview:notes": "node scripts/napplet-host.mjs --app notes"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",

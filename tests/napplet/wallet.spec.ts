@@ -1,11 +1,17 @@
 import {test, expect} from '@playwright/test'
+import {artwork} from './artwork'
 
-test('encrypted wallet, explicit receive, banknote artwork and designer intent round-trip', async ({
+test('wallet runs alone: encrypted notes, design import and payments', async ({
   page
 }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto('/')
+  await page.goto('/wallet')
+  await expect(page).toHaveTitle('LNURLcash Wallet · local preview')
+  await expect(page.locator('iframe')).toHaveCount(1)
+  await expect(page.locator('#notes, #wallet-tab, #designer-tab')).toHaveCount(
+    0
+  )
   const wallet = page.frameLocator('#wallet')
   await expect(
     wallet.getByRole('heading', {name: 'A home for your sats.'})
@@ -51,53 +57,20 @@ test('encrypted wallet, explicit receive, banknote artwork and designer intent r
   )
   expect(raw).not.toContain('abababababababab')
   expect(raw).not.toContain('demo.mint.test')
-  await wallet.getByRole('button', {name: 'Design notes'}).click()
-  await wallet.getByRole('button', {name: 'Open Paper Studio'}).click()
-  const designer = page.frameLocator('#designer')
   await expect(
-    designer.getByRole('heading', {name: 'Make something worth holding.'})
-  ).toBeVisible()
-  await designer.getByLabel('Note heading').fill('TWENTY ONE CLUB')
-  await designer.getByRole('button', {name: 'Copper palette'}).click()
-  await designer.getByLabel('Upload artwork').setInputFiles({
-    name: 'portrait.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      await page.evaluate(() => {
-        const canvas = document.createElement('canvas')
-        canvas.width = 320
-        canvas.height = 320
-        const c = canvas.getContext('2d')!
-        c.fillStyle = '#dfbd78'
-        c.fillRect(0, 0, 320, 320)
-        c.fillStyle = '#fbefc2'
-        c.beginPath()
-        c.arc(213, 94, 51, 0, Math.PI * 2)
-        c.fill()
-        c.fillStyle = '#315c42'
-        c.beginPath()
-        c.moveTo(0, 300)
-        c.lineTo(90, 115)
-        c.lineTo(196, 300)
-        c.fill()
-        c.fillStyle = '#224436'
-        c.beginPath()
-        c.moveTo(110, 320)
-        c.lineTo(225, 153)
-        c.lineTo(320, 310)
-        c.fill()
-        return canvas.toDataURL('image/png').split(',')[1]
-      }),
-      'base64'
-    )
-  })
-  await expect(designer.locator('.banknote-art')).toBeVisible()
-  await page.screenshot({
-    path: `test-results/designer-${testInfo.project.name}.png`,
-    fullPage: true
-  })
-  await designer.getByRole('button', {name: 'Use in wallet'}).click()
-  await page.getByRole('button', {name: 'Wallet', exact: true}).click()
+    wallet.getByRole('button', {name: /Open Paper Studio|Design notes/})
+  ).toHaveCount(0)
+  await wallet.getByRole('button', {name: 'Import design'}).click()
+  await wallet.getByLabel('Design JSON', {exact: true}).fill(
+    JSON.stringify({
+      title: 'TWENTY ONE CLUB',
+      subtitle: 'Whoever holds the note holds the sats.',
+      ink: '#743e29',
+      paper: '#f4dfc4',
+      image: await artwork(page)
+    })
+  )
+  await wallet.getByRole('button', {name: 'Apply design'}).click()
   await expect(wallet.locator('.banknote-heading').first()).toHaveText(
     'TWENTY ONE CLUB'
   )
@@ -115,7 +88,7 @@ test('encrypted wallet, explicit receive, banknote artwork and designer intent r
   await expect(
     wallet.getByRole('heading', {name: 'Welcome back.'})
   ).toBeVisible()
-  await page.evaluate(() => (window as any).reloadWallet())
+  await page.evaluate(() => (window as any).reloadNapplet())
   await wallet
     .getByLabel('Wallet password', {exact: true})
     .fill('test wallet password')
@@ -162,7 +135,7 @@ test('encrypted wallet, explicit receive, banknote artwork and designer intent r
   await expect(wallet.getByLabel('Funding invoice', {exact: true})).toHaveValue(
     'lnbc310n1qqqq'
   )
-  await wallet.getByRole('button', {name: 'Notes', exact: true}).click()
+  await wallet.getByRole('button', {name: 'Wallet', exact: true}).click()
   await wallet
     .getByRole('checkbox', {name: 'Select 31 sats pending', exact: true})
     .check()
@@ -178,6 +151,13 @@ test('encrypted wallet, explicit receive, banknote artwork and designer intent r
     wallet.getByLabel('Bearer note for handover', {exact: true})
   ).toHaveValue(/https:\/\/demo\.mint\.test/)
   await expect(wallet.locator('.status.ready')).toHaveCount(0)
+  expect(
+    await page.evaluate(() =>
+      (window as any).hostCalls.some((call: any) =>
+        call.type.startsWith('intent.')
+      )
+    )
+  ).toBe(false)
   expect(errors).toEqual([])
 })
 

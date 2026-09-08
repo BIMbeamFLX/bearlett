@@ -4,9 +4,9 @@ import {nip5aManifest} from '@napplet/vite-plugin'
 import {readFileSync} from 'node:fs'
 
 export default defineConfig(({mode}) => {
-  const designer = mode === 'designer'
+  const designer = mode === 'notes'
   return {
-    mode: designer ? 'designer' : 'napplet',
+    mode: designer ? 'notes' : 'napplet',
     publicDir: false,
     plugins: [
       solid(),
@@ -15,17 +15,15 @@ export default defineConfig(({mode}) => {
         transformIndexHtml: {
           order: 'pre',
           handler: () =>
-            readFileSync('napplet/index.html', 'utf8').replace(
-              'main.tsx',
-              designer ? 'designer.tsx' : 'main.tsx'
+            readFileSync(
+              designer ? 'napplet/notes.html' : 'napplet/index.html',
+              'utf8'
             )
         }
       },
       nip5aManifest({
-        nappletType: designer
-          ? 'lnurlcash-bearer-designer'
-          : 'lnurlcash-wallet',
-        title: designer ? 'Paper Studio — LNURLcash' : 'LNURLcash Wallet',
+        nappletType: designer ? 'lnurlcash-notes' : 'lnurlcash-wallet',
+        title: designer ? 'LNURLcash Notes' : 'LNURLcash Wallet',
         description: designer
           ? 'Design bearer notes with your own images, colors and words.'
           : 'Receive, mint, split, combine and spend LNURLcash notes.',
@@ -40,14 +38,14 @@ export default defineConfig(({mode}) => {
                 convention: 'napplet:bearer-designer/open'
               }
             ]
-          : ['open', 'receive', 'pay'].map(action => ({
+          : ['open', 'receive', 'pay', 'design'].map(action => ({
               slug: 'wallet',
               convention: `napplet:wallet/${action}`
             }))
       })
     ],
     build: {
-      outDir: designer ? 'dist-designer' : 'dist-napplet',
+      outDir: designer ? 'dist-notes' : 'dist-napplet',
       target: 'esnext',
       assetsInlineLimit: 1000000
     }

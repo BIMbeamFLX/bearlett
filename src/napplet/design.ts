@@ -12,9 +12,7 @@ export const DEFAULT_DESIGN: NoteDesign = {
   ink: '#174c3a',
   paper: '#f3ecd3'
 }
-export const DESIGN_TOPIC = 'napplet:wallet/design'
 export const DESIGN_CONVENTION = 'napplet:bearer-designer/open'
-export const DESIGNER_ID = 'lnurlcash-bearer-designer'
 
 /** Accept only bounded text, hex colors and local raster images. */
 export const parseDesign = (value: unknown): NoteDesign => {

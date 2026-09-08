@@ -3,12 +3,12 @@ import {render} from 'solid-js/web'
 import Banknote from './Banknote'
 import {
   DEFAULT_DESIGN,
-  DESIGN_TOPIC,
   DESIGN_CONVENTION,
   parseDesign,
   readArtwork
 } from './design'
 import type {NoteDesign} from './design'
+import {pushNoteDesign} from './note-interface'
 import './style.css'
 import './designer.css'
 
@@ -17,28 +17,23 @@ function Designer() {
   const [amount, setAmount] = createSignal('21')
   const [message, setMessage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
-  const [requestId, setRequestId] = createSignal('')
+  const [incoming, setIncoming] = createSignal<NoteDesign | null>(null)
   const [exported, setExported] = createSignal('')
   let subscription: {close(): void} | undefined
-  let receivedRequest = false
+  let edited = false
   onMount(() => {
     const host = window.napplet
     subscription = host?.inc?.on(DESIGN_CONVENTION, event => {
-      if (event.sender !== 'lnurlcash-wallet') return
       try {
-        const data = event.payload as {requestId?: unknown; design?: unknown}
-        if (
-          !data ||
-          typeof data.requestId !== 'string' ||
-          !/^[a-zA-Z0-9-]{1,80}$/.test(data.requestId)
-        )
+        const data = event.payload as {design?: unknown} | undefined
+        if (data?.design === undefined) return
+        if (incoming() || busy()) {
+          setMessage(
+            'Finish the current request before opening another design.'
+          )
           return
-        receivedRequest = true
-        setDesign(parseDesign(data.design))
-        setRequestId(data.requestId)
-        setMessage(
-          'Connected to your wallet. Choose “Use in wallet” when ready.'
-        )
+        }
+        setIncoming(parseDesign(data.design))
       } catch {
         setMessage('The requested design could not be opened.')
       }
@@ -46,7 +41,7 @@ function Designer() {
     host?.storage
       ?.getItem('bearer-design:v1')
       .then(raw => {
-        if (raw && !receivedRequest) setDesign(parseDesign(JSON.parse(raw)))
+        if (raw && !edited) setDesign(parseDesign(JSON.parse(raw)))
       })
       .catch(() =>
         setMessage('Saved draft unavailable. You can still design and export.')
@@ -54,6 +49,7 @@ function Designer() {
   })
   onCleanup(() => subscription?.close())
   const update = (change: Partial<NoteDesign>): void => {
+    edited = true
     setDesign({...design(), ...change})
     setExported('')
   }
@@ -68,7 +64,7 @@ function Designer() {
       setBusy(false)
     }
   }
-  const save = async (send: boolean): Promise<void> => {
+  const save = async (push = false): Promise<void> => {
     setBusy(true)
     try {
       const clean = parseDesign(design())
@@ -77,16 +73,14 @@ function Designer() {
           'bearer-design:v1',
           JSON.stringify(clean)
         )
-      if (send) {
-        if (!requestId() || !window.napplet?.inc)
-          throw new Error('Open the designer from your wallet first.')
-        window.napplet.inc.emit(DESIGN_TOPIC, {
-          requestId: requestId(),
-          design: clean
-        })
-        setMessage(
-          'Design sent to your wallet. Bearer secrets never enter this designer.'
-        )
+      if (push) {
+        const api = window.napplet?.intent
+        if (!api)
+          throw new Error(
+            'Your shell does not support sending designs. Export the JSON instead.'
+          )
+        await pushNoteDesign(api, clean)
+        setMessage('Design sent for review. Check Wallet to apply it.')
       } else {
         setExported(JSON.stringify(clean, null, 2))
         setMessage('Design ready to save as JSON.')
@@ -103,8 +97,8 @@ function Designer() {
         <div class="wordmark">
           <span class="logo">✳</span>
           <span>
-            Paper<span class="soft">studio</span>
-            <small>LNURLCASH NOTE DESIGNER</small>
+            Notes
+            <small>LNURLCASH · NOTE DESIGNER</small>
           </span>
         </div>
         <span class="studio-label">MAKE YOUR SATS YOURS</span>
@@ -115,6 +109,28 @@ function Designer() {
         <p class="intro">
           Turn an image, a colour and a few words into your own bearer note.
         </p>
+        <Show when={incoming()}>
+          <section
+            class="request"
+            role="dialog"
+            aria-label="Review design request"
+          >
+            <h2>Open a received design?</h2>
+            <p>This replaces the design currently on your canvas.</p>
+            <button
+              class="primary"
+              disabled={busy()}
+              onClick={() => {
+                update(incoming()!)
+                setIncoming(null)
+                setMessage('')
+              }}
+            >
+              Open received design
+            </button>
+            <button onClick={() => setIncoming(null)}>Dismiss</button>
+          </section>
+        </Show>
         <div class="studio-grid">
           <section class="preview-stage">
             <div class="preview-caption">
@@ -131,7 +147,7 @@ function Designer() {
               specimen
             />
             <div class="preview-foot">
-              The wallet supplies the real amount and issuer.
+              A design preview, ready for your own collection.
               <br />
               This design contains no bearer secret or spendable QR.
             </div>
@@ -229,21 +245,15 @@ function Designer() {
             <div class="studio-buttons">
               <button
                 class="primary"
-                disabled={busy() || !requestId()}
+                disabled={busy() || !window.napplet?.intent}
                 onClick={() => void save(true)}
               >
-                Use in wallet ↗
+                Send to Wallet
               </button>
-              <button disabled={busy()} onClick={() => void save(false)}>
+              <button disabled={busy()} onClick={() => void save()}>
                 Export design
               </button>
             </div>
-            <Show when={!requestId()}>
-              <p class="hint">
-                Open Paper Studio from the wallet to apply your design directly,
-                or export it and import the JSON there.
-              </p>
-            </Show>
           </section>
         </div>
         <Show when={message()}>
@@ -263,9 +273,7 @@ function Designer() {
           </label>
         </Show>
       </main>
-      <footer>
-        Paper Studio · A separate LNURLcash napplet · MIT licensed
-      </footer>
+      <footer>Notes · LNURLcash · MIT licensed</footer>
     </div>
   )
 }

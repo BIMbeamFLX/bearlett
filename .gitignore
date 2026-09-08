@@ -12,5 +12,6 @@ __pycache__/
 test-results/
 playwright-report/
 dist-designer/
+dist-notes/
 work/
 outputs/

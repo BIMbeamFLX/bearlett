@@ -9,13 +9,7 @@ import {listenWalletIntents} from './intents'
 import type {WalletRequest} from './intents'
 import {decodeBolt11AmountMsat, serverOf} from '../lnurlcash'
 import Banknote from './Banknote'
-import {
-  DEFAULT_DESIGN,
-  DESIGN_TOPIC,
-  DESIGNER_ID,
-  DESIGN_CONVENTION,
-  parseDesign
-} from './design'
+import {DEFAULT_DESIGN, parseDesign} from './design'
 import type {NoteDesign} from './design'
 import './style.css'
 
@@ -48,10 +42,11 @@ function App() {
   const [designText, setDesignText] = createSignal('')
   const [designOpen, setDesignOpen] = createSignal(false)
   const [showHistory, setShowHistory] = createSignal(false)
-  const [designerAvailable, setDesignerAvailable] = createSignal(false)
-  let designRequest: {id: string; notes: string[]} | null = null
-  let designSub: {close(): void} | undefined
   const [request, setRequest] = createSignal<WalletRequest | null>(null)
+  const receivedDesign = () => {
+    const value = request()
+    return value?.action === 'design' ? value.design : null
+  }
   let vault: Vault
   let wallet: Wallet
   let lastActivity = Date.now()
@@ -76,7 +71,6 @@ function App() {
     setRequest(null)
     setDesigns({})
     setDesignText('')
-    designRequest = null
   }
   const touch = (): void => {
     lastActivity = Date.now()
@@ -114,42 +108,6 @@ function App() {
       if (ids.includes(note.id)) await vault.save({...note, designId: id})
     }
   }
-  const openDesigner = async (): Promise<void> => {
-    const intent = window.napplet?.intent
-    if (!intent)
-      throw new Error(
-        'Your shell has no intent support. Import a design JSON instead.'
-      )
-    const available = await intent.available('bearer-designer')
-    if (
-      !available.candidates.some(
-        c => c.dTag === DESIGNER_ID && c.conventions.includes(DESIGN_CONVENTION)
-      )
-    ) {
-      throw new Error(
-        'Install Paper Studio in your shell, or import its design JSON here.'
-      )
-    }
-    designRequest = {id: crypto.randomUUID(), notes: [...selected()]}
-    const designId =
-      notes().find(n => n.id === selected()[0])?.designId ?? 'default'
-    const result = await intent.open(
-      'bearer-designer',
-      {
-        requestId: designRequest.id,
-        design: designs()[designId] ?? DEFAULT_DESIGN
-      },
-      {
-        handler: DESIGNER_ID,
-        convention: DESIGN_CONVENTION,
-        behavior: {focus: true, reuse: true}
-      }
-    )
-    if (!result.ok || !result.handled) {
-      designRequest = null
-      throw new Error(result.error || 'Designer could not be opened.')
-    }
-  }
   const authenticate = async (): Promise<void> => {
     if (exists()) await vault.unlock(password())
     else {
@@ -166,36 +124,6 @@ function App() {
       const host = getWalletHost()
       vault = new Vault(host.storage)
       wallet = new Wallet(vault)
-      window.napplet?.intent
-        ?.available('bearer-designer')
-        .then(result =>
-          setDesignerAvailable(
-            result.candidates.some(
-              c =>
-                c.dTag === DESIGNER_ID &&
-                c.conventions.includes(DESIGN_CONVENTION)
-            )
-          )
-        )
-        .catch(() => setDesignerAvailable(false))
-      designSub = host.inc?.on(DESIGN_TOPIC, event => {
-        const data = event.payload as {requestId?: string; design?: unknown}
-        if (
-          !unlocked() ||
-          busy() ||
-          event.sender !== DESIGNER_ID ||
-          !designRequest ||
-          data?.requestId !== designRequest.id
-        )
-          return
-        const target = designRequest.notes
-        designRequest = null
-        void run(async () => {
-          await applyDesign(parseDesign(data.design), target)
-          setMessage('Your note design is ready.')
-          setDesignOpen(false)
-        })
-      })
       disconnect = listenWalletIntents(
         host,
         incoming => {
@@ -233,7 +161,6 @@ function App() {
   })
   onCleanup(() => {
     disconnect?.()
-    designSub?.close()
     clearInterval(timer)
     vault?.lock()
     document.removeEventListener('pointerdown', touch)
@@ -256,10 +183,17 @@ function App() {
       setInvoice(value.value)
       setTab('pay')
     }
+    if (value.action === 'design') {
+      const target = [...selected()]
+      void run(async () => {
+        await applyDesign(value.design, target)
+        setRequest(null)
+        setMessage('The received design has been applied.')
+      })
+      return
+    }
     setRequest(null)
-    setDesigns({})
     setDesignText('')
-    designRequest = null
   }
 
   return (
@@ -392,9 +326,7 @@ function App() {
                         setShared('')
                       }}
                     >
-                      {value === 'wallet'
-                        ? 'Notes'
-                        : value[0].toUpperCase() + value.slice(1)}
+                      {value[0].toUpperCase() + value.slice(1)}
                     </button>
                   )}
                 </For>
@@ -407,14 +339,43 @@ function App() {
                 >
                   <p class="eyebrow">REQUEST FROM ANOTHER NAPPLET</p>
                   <h2>
-                    {request()?.action === 'pay'
-                      ? 'Review a payment'
-                      : 'Review an incoming note'}
+                    {request()?.action === 'design'
+                      ? 'A new note design'
+                      : request()?.action === 'pay'
+                        ? 'Review a payment'
+                        : 'Review an incoming note'}
                   </h2>
                   <p>Sender: {request()?.sender}</p>
-                  <p>Review the details, then confirm the action yourself.</p>
+                  <Show
+                    when={receivedDesign()}
+                    fallback={
+                      <p>
+                        Review the details, then confirm the action yourself.
+                      </p>
+                    }
+                  >
+                    {draft => (
+                      <>
+                        <Banknote
+                          amount={21000}
+                          issuer="design.preview"
+                          serial="PREVIEW"
+                          design={draft()}
+                          specimen
+                        />
+                        <p>
+                          {selected().length
+                            ? `Apply to ${selected().length} selected notes.`
+                            : 'Apply as your collection’s default design.'}{' '}
+                          The amount and issuer of your notes stay unchanged.
+                        </p>
+                      </>
+                    )}
+                  </Show>
                   <button class="primary" disabled={busy()} onClick={accept}>
-                    Review details
+                    {request()?.action === 'design'
+                      ? 'Apply received design'
+                      : 'Review details'}
                   </button>
                   <button disabled={busy()} onClick={() => setRequest(null)}>
                     Dismiss
@@ -430,7 +391,7 @@ function App() {
                         disabled={busy()}
                         onClick={() => setDesignOpen(!designOpen())}
                       >
-                        ✳ Design notes
+                        Import design
                       </button>
                       <button
                         disabled={busy()}
@@ -446,22 +407,15 @@ function App() {
                   </div>
                   <Show when={designOpen()}>
                     <div class="design-drawer">
-                      <h3>Make your notes your own.</h3>
+                      <h3>Apply a saved design</h3>
                       <p>
                         {selected().length
-                          ? `Design ${selected().length} selected notes.`
+                          ? `Apply to ${selected().length} selected notes.`
                           : 'Choose a default design for your collection.'}
                       </p>
-                      <button
-                        class="primary"
-                        disabled={busy() || !designerAvailable()}
-                        onClick={() => void run(openDesigner)}
-                      >
-                        Open Paper Studio ↗
-                      </button>
                       <p class="hint">
-                        Install the companion Paper Studio napplet in your
-                        shell. You can also paste an exported design below.
+                        Paste a saved design below. This changes the artwork;
+                        the amount and issuer stay tied to the actual note.
                       </p>
                       <label>
                         Design JSON
@@ -849,7 +803,7 @@ function App() {
                         onFocus={e => e.currentTarget.select()}
                       />
                       <p>
-                        After paying, select the pending note under Notes and
+                        After paying, select the pending note under Wallet and
                         choose “Check selected”. Mint fees may reduce its final
                         value.
                       </p>

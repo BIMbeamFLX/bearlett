@@ -4,17 +4,22 @@ import {
   resolveNoteInput
 } from '../lnurlcash'
 import type {WalletHost} from './host'
+import {NOTE_DESIGN_CONVENTION, parseNoteDesignMessage} from './note-interface'
+import type {NoteDesign} from './design'
 
 export const WALLET_CONVENTIONS = [
   'napplet:wallet/open',
   'napplet:wallet/receive',
-  'napplet:wallet/pay'
+  'napplet:wallet/pay',
+  NOTE_DESIGN_CONVENTION
 ] as const
-export type WalletRequest = {
-  action: 'open' | 'receive' | 'pay'
-  value: string
-  sender: string
-}
+export type WalletRequest =
+  | {
+      action: 'open' | 'receive' | 'pay'
+      value: string
+      sender: string
+    }
+  | {action: 'design'; design: NoteDesign; sender: string}
 
 /** Validate opaque incoming data without fetching, persisting or spending anything. */
 export const parseWalletIntent = (
@@ -38,6 +43,12 @@ export const parseWalletIntent = (
     'napplet:wallet/'.length
   ) as WalletRequest['action']
   if (action === 'open') return {action, value: '', sender}
+  if (action === 'design')
+    return {
+      action,
+      design: parseNoteDesignMessage(payload),
+      sender: sender.slice(0, 200)
+    }
   const value = action === 'receive' ? data.note : data.invoice
   if (typeof value !== 'string' || value.length > 16000)
     throw new Error('Missing or oversized wallet input.')
