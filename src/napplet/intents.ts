@@ -3,6 +3,7 @@ import {
   decodeBolt11AmountMsat,
   resolveNoteInput
 } from '../lnurlcash'
+import {claimLinkToNoteInput, claimParamsFromHref} from '../claimLink'
 import type {WalletHost} from './host'
 import {NOTE_DESIGN_CONVENTION, parseNoteDesignMessage} from './note-interface'
 import type {NoteDesign} from './design'
@@ -54,7 +55,10 @@ export const parseWalletIntent = (
     throw new Error('Missing or oversized wallet input.')
   const normalized = value.trim().replace(/^lightning:/i, '')
   if (action === 'receive') {
-    const url = resolveNoteInput(normalized)
+    const params = claimParamsFromHref(normalized)
+    const url = resolveNoteInput(
+      (params && claimLinkToNoteInput(params)) || normalized
+    )
     if (!url || new URL(url).protocol !== 'https:')
       throw new Error('Expected an HTTPS LNURLcash note.')
   } else if (

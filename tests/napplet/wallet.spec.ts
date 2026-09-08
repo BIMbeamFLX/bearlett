@@ -20,6 +20,7 @@ test('wallet runs alone: encrypted notes, design import and payments', async ({
     .getByLabel('Wallet password', {exact: true})
     .fill('test wallet password')
   await wallet.getByLabel('Repeat password').fill('test wallet password')
+  await wallet.getByLabel('I have saved my recovery phrase').check()
   await wallet.getByRole('button', {name: 'Create wallet'}).click()
   await expect(wallet.getByRole('heading', {name: 'Your notes'})).toBeVisible()
   const frame = page

@@ -1,5 +1,5 @@
 import {bech32} from '@scure/base'
-import {fetchServiceResponse} from './serviceTransport'
+import {fetchServiceResponse, isServiceOffline} from './serviceTransport'
 import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
@@ -643,7 +643,7 @@ export class ServiceError extends Error {
 }
 
 const lnurlFetch = async (url: string | URL): Promise<any> => {
-  if (offlineMode()) {
+  if (offlineMode() || isServiceOffline()) {
     throw new Error(
       'Offline mode is on - turn it off in the nav to reach a service.'
     )

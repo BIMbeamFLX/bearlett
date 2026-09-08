@@ -12,6 +12,17 @@ import Banknote from './Banknote'
 import {DEFAULT_DESIGN, parseDesign} from './design'
 import type {NoteDesign} from './design'
 import './style.css'
+import {generateSeedPhrase} from '../keys'
+import WalletTools from './WalletTools'
+import NoteTools from './NoteTools'
+import {
+  DEFAULT_PREFERENCES,
+  parsePreferences,
+  setNappletOffline
+} from './preferences'
+import type {Preferences} from './preferences'
+import {signedNote} from './mints'
+import type {MintPin} from './mints'
 
 const sats = (msat: number): string =>
   (msat / 1000).toLocaleString('en-US', {maximumFractionDigits: 3})
@@ -27,9 +38,28 @@ function App() {
   const [selected, setSelected] = createSignal<string[]>([])
   const [password, setPassword] = createSignal('')
   const [repeat, setRepeat] = createSignal('')
+  const [seed, setSeed] = createSignal(generateSeedPhrase())
+  const [seedSaved, setSeedSaved] = createSignal(false)
+  const [restoringSeed, setRestoringSeed] = createSignal(false)
+  const [resettingPassword, setResettingPassword] = createSignal(false)
+  const [preferences, setPreferences] = createSignal<Preferences>({
+    ...DEFAULT_PREFERENCES
+  })
+  const [pins, setPins] = createSignal<MintPin[]>([])
+  const [revision, setRevision] = createSignal(0)
+  const [lockWarning, setLockWarning] = createSignal(false)
+  const [handoverFormat, setHandoverFormat] = createSignal<
+    'url' | 'lnurl' | 'lnurlw' | 'claim'
+  >('url')
   const [tab, setTab] = createSignal('wallet')
   const [input, setInput] = createSignal('')
   const [invoice, setInvoice] = createSignal('')
+  const [paymentAddress, setPaymentAddress] = createSignal('')
+  const [paymentAmount, setPaymentAmount] = createSignal('')
+  const [savedMintAddresses, setSavedMintAddresses] = createSignal<string[]>([])
+  const [savedPaymentAddresses, setSavedPaymentAddresses] = createSignal<
+    string[]
+  >([])
   const [fundingInvoice, setFundingInvoice] = createSignal('')
   const [mint, setMint] = createSignal('')
   const [amount, setAmount] = createSignal('')
@@ -52,6 +82,8 @@ function App() {
   let lastActivity = Date.now()
   let disconnect: (() => void) | undefined
   let timer: ReturnType<typeof setInterval>
+  let polling = false
+  let lastPoll = 0
 
   const lock = (): void => {
     if (busy()) return
@@ -62,8 +94,17 @@ function App() {
     setShared('')
     setPassword('')
     setRepeat('')
+    setSeed('')
+    setSeedSaved(false)
+    setResettingPassword(false)
+    setLockWarning(false)
+    setPins([])
     setInput('')
     setInvoice('')
+    setPaymentAddress('')
+    setPaymentAmount('')
+    setSavedMintAddresses([])
+    setSavedPaymentAddresses([])
     setFundingInvoice('')
     setBackupPassword('')
     setRestoreText('')
@@ -74,9 +115,29 @@ function App() {
   }
   const touch = (): void => {
     lastActivity = Date.now()
+    setLockWarning(false)
+  }
+  const loadState = async (): Promise<void> => {
+    setNotes(await vault.notes())
+    setDesigns(await vault.designs())
+    setPins((await vault.meta<MintPin[]>('mints')) ?? [])
+    setSavedMintAddresses((await vault.meta<string[]>('mint-addresses')) ?? [])
+    setSavedPaymentAddresses(
+      (await vault.meta<string[]>('payment-addresses')) ?? []
+    )
+    const prefs = parsePreferences(await vault.meta('preferences'))
+    setPreferences(prefs)
+    setNappletOffline(prefs.offline)
+    setRevision(value => value + 1)
+  }
+  const changePreferences = async (value: Preferences): Promise<void> => {
+    const checked = parsePreferences(value)
+    await vault.setMeta('preferences', checked)
+    setPreferences(checked)
+    setNappletOffline(checked.offline)
   }
   const run = async (action: () => Promise<void>): Promise<void> => {
-    if (busy()) return
+    if (busy() || polling) return
     setBusy(true)
     setMessage('')
     try {
@@ -86,8 +147,7 @@ function App() {
     } finally {
       if (unlocked()) {
         try {
-          setNotes(await vault.notes())
-          setDesigns(await vault.designs())
+          await loadState()
         } catch {
           setMessage(
             'Could not read all notes. Keep your backup and retry when shell storage is available.'
@@ -109,14 +169,24 @@ function App() {
     }
   }
   const authenticate = async (): Promise<void> => {
-    if (exists()) await vault.unlock(password())
+    if (exists() && resettingPassword()) {
+      if (password() !== repeat()) throw new Error('Passwords do not match.')
+      await vault.resetPassword(seed(), password())
+    } else if (exists()) await vault.unlock(password())
     else {
       if (password() !== repeat()) throw new Error('Passwords do not match.')
-      await vault.create(password())
+      if (!seedSaved())
+        throw new Error('Confirm that you saved your seed phrase.')
+      await vault.create(password(), seed(), restoringSeed())
       setExists(true)
     }
     setPassword('')
     setRepeat('')
+    setSeed('')
+    setResettingPassword(false)
+    const prefs = parsePreferences(await vault.meta('preferences'))
+    setPreferences(prefs)
+    setNappletOffline(prefs.offline)
     setUnlocked(true)
   }
   onMount(() => {
@@ -151,8 +221,39 @@ function App() {
           )
         )
       timer = setInterval(() => {
-        if (Date.now() - lastActivity > 300000) lock()
-      }, 10000)
+        if (!unlocked() || busy() || polling) return
+        const timeout = preferences().autoLock * 60000
+        if (timeout && Date.now() - lastActivity >= timeout) {
+          lock()
+          return
+        }
+        setLockWarning(
+          !!timeout && Date.now() - lastActivity >= timeout - 30000
+        )
+        if (preferences().offline || Date.now() - lastPoll < 5000) return
+        lastPoll = Date.now()
+        const pending = notes().filter(
+          note => note.status === 'pending' && note.verifyUrl && !note.proof
+        )
+        if (!pending.length) return
+        polling = true
+        setBusy(true)
+        void (async () => {
+          try {
+            for (const note of pending) {
+              try {
+                await wallet.settlement(note.id)
+              } catch {
+                /* Manual verification displays the detailed error. */
+              }
+            }
+            if (unlocked()) await loadState()
+          } finally {
+            polling = false
+            setBusy(false)
+          }
+        })()
+      }, 1000)
       document.addEventListener('pointerdown', touch)
       document.addEventListener('keydown', touch)
     } catch (error) {
@@ -173,6 +274,23 @@ function App() {
         : [...current, id]
     )
   }
+  const visibleNotes = (): Note[] =>
+    notes()
+      .filter(
+        note =>
+          !note.hidden &&
+          (showHistory() || !['spent', 'shared'].includes(note.status))
+      )
+      .sort((a, b) => {
+        const mintOrder = preferences().groupByMint
+          ? serverOf(a.url).localeCompare(serverOf(b.url))
+          : 0
+        const field = preferences().sort === 'amount' ? 'amount' : 'updatedAt'
+        return (
+          mintOrder ||
+          (a[field] - b[field]) * (preferences().descending ? -1 : 1)
+        )
+      })
   const accept = (): void => {
     const value = request()!
     if (value.action === 'receive') {
@@ -265,6 +383,40 @@ function App() {
                     </label>
                     <Show when={!exists()}>
                       <label>
+                        <input
+                          type="checkbox"
+                          checked={restoringSeed()}
+                          onChange={e => {
+                            setRestoringSeed(e.currentTarget.checked)
+                            setSeed(
+                              e.currentTarget.checked
+                                ? ''
+                                : generateSeedPhrase()
+                            )
+                            setSeedSaved(false)
+                          }}
+                        />{' '}
+                        Restore an existing seed
+                      </label>
+                      <label>
+                        BIP39 recovery phrase
+                        <textarea
+                          readonly={!restoringSeed()}
+                          value={seed()}
+                          autocomplete="off"
+                          spellcheck={false}
+                          onInput={e => setSeed(e.currentTarget.value)}
+                        />
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={seedSaved()}
+                          onChange={e => setSeedSaved(e.currentTarget.checked)}
+                        />
+                        I have saved my recovery phrase
+                      </label>
+                      <label>
                         Repeat password
                         <input
                           type="password"
@@ -277,10 +429,44 @@ function App() {
                       </label>
                       <p class="hint">
                         Use 12 or more characters. Save an encrypted backup
-                        after setup and whenever notes change. This napplet uses
-                        a separate wallet; its recovery requires the backup and
-                        password.
+                        after setup and whenever notes change. The seed uses the
+                        same recovery derivation as the original webwallet. Keep
+                        it private; it is not stored. A restored seed must scan
+                        each mint before creating more notes there.
                       </p>
+                    </Show>
+                    <Show when={exists()}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={resettingPassword()}
+                          onChange={e => {
+                            setResettingPassword(e.currentTarget.checked)
+                            setSeed('')
+                          }}
+                        />{' '}
+                        Reset password with my seed
+                      </label>
+                      <Show when={resettingPassword()}>
+                        <label>
+                          Recovery phrase
+                          <textarea
+                            value={seed()}
+                            autocomplete="off"
+                            spellcheck={false}
+                            onInput={e => setSeed(e.currentTarget.value)}
+                          />
+                        </label>
+                        <label>
+                          Repeat new password
+                          <input
+                            type="password"
+                            autocomplete="new-password"
+                            value={repeat()}
+                            onInput={e => setRepeat(e.currentTarget.value)}
+                          />
+                        </label>
+                      </Show>
                     </Show>
                     <button
                       class="primary"
@@ -290,7 +476,9 @@ function App() {
                       {busy()
                         ? 'Opening…'
                         : exists()
-                          ? 'Unlock wallet'
+                          ? resettingPassword()
+                            ? 'Reset password and unlock'
+                            : 'Unlock wallet'
                           : 'Create wallet'}
                     </button>
                   </div>
@@ -331,6 +519,50 @@ function App() {
                   )}
                 </For>
               </nav>
+              <label class="wallet-more">
+                More wallet tools
+                <select
+                  aria-label="More wallet tools"
+                  value={
+                    [
+                      'recovery',
+                      'transfer',
+                      'mints',
+                      'activity',
+                      'settings',
+                      'device'
+                    ].includes(tab())
+                      ? tab()
+                      : ''
+                  }
+                  disabled={busy()}
+                  onChange={e => {
+                    if (e.currentTarget.value) setTab(e.currentTarget.value)
+                  }}
+                >
+                  <option value="">Choose a tool</option>
+                  <option value="transfer">Transfer between mints</option>
+                  <option value="recovery">Seed recovery</option>
+                  <option value="mints">Mints & signing keys</option>
+                  <option value="activity">Activity</option>
+                  <option value="settings">Settings</option>
+                  <option value="device">
+                    Physical vault (USB / Bluetooth)
+                  </option>
+                </select>
+              </label>
+              <Show when={preferences().offline}>
+                <p class="notice">
+                  Offline mode · stored notes remain available. Enable network
+                  access in Settings to transact.
+                </p>
+              </Show>
+              <Show when={lockWarning()}>
+                <p class="notice" role="status">
+                  Wallet locks in less than 30 seconds.{' '}
+                  <button onClick={touch}>Keep unlocked</button>
+                </p>
+              </Show>
               <Show when={request()}>
                 <section
                   class="request"
@@ -506,7 +738,12 @@ function App() {
                           disabled={busy() || selected().length !== 1}
                           onClick={() =>
                             void run(async () => {
-                              setShared(await wallet.share(selected()[0]))
+                              setShared(
+                                await wallet.share(
+                                  selected()[0],
+                                  handoverFormat()
+                                )
+                              )
                               setSelected([])
                             })
                           }
@@ -514,6 +751,24 @@ function App() {
                           Hand over
                         </button>
                       </div>
+                      <label>
+                        Handover format
+                        <select
+                          value={handoverFormat()}
+                          onChange={e =>
+                            setHandoverFormat(
+                              e.currentTarget.value as ReturnType<
+                                typeof handoverFormat
+                              >
+                            )
+                          }
+                        >
+                          <option value="url">HTTPS note</option>
+                          <option value="lnurl">LNURL</option>
+                          <option value="lnurlw">LNURLw</option>
+                          <option value="claim">Webwallet claim link</option>
+                        </select>
+                      </label>
                       <label class="split">
                         Split amount (sats)
                         <div class="input-action">
@@ -554,13 +809,7 @@ function App() {
                       </button>
                     </div>
                     <div class="note-grid">
-                      <For
-                        each={notes().filter(
-                          note =>
-                            showHistory() ||
-                            !['spent', 'shared'].includes(note.status)
-                        )}
-                      >
+                      <For each={visibleNotes()}>
                         {note => (
                           <article
                             class="note"
@@ -602,7 +851,23 @@ function App() {
                                 </span>
                               </div>
                               <p>{serverOf(note.url)}</p>
+                              <Show when={note.label}>
+                                <p class="note-label">{note.label}</p>
+                              </Show>
+                              <Show when={signedNote(note, pins())}>
+                                <span class="badge">
+                                  ISSUER SIGNATURE VERIFIED
+                                </span>
+                              </Show>
                               <small>{note.reason}</small>
+                              <Show when={selected().includes(note.id)}>
+                                <NoteTools
+                                  note={note}
+                                  wallet={wallet}
+                                  busy={busy()}
+                                  run={run}
+                                />
+                              </Show>
                               <Show
                                 when={
                                   note.invoice && note.invoiceType === 'funding'
@@ -685,6 +950,45 @@ function App() {
               </Show>
               <Show when={tab() === 'pay'}>
                 <section class="panel">
+                  <details>
+                    <summary>Pay a Lightning address</summary>
+                    <label>
+                      Lightning address or LNURL-pay
+                      <input
+                        list="payment-addresses"
+                        value={paymentAddress()}
+                        onInput={e => setPaymentAddress(e.currentTarget.value)}
+                      />
+                    </label>
+                    <datalist id="payment-addresses">
+                      <For each={savedPaymentAddresses()}>
+                        {address => <option value={address} />}
+                      </For>
+                    </datalist>
+                    <label>
+                      Payment amount (sats)
+                      <input
+                        inputmode="decimal"
+                        value={paymentAmount()}
+                        onInput={e => setPaymentAmount(e.currentTarget.value)}
+                      />
+                    </label>
+                    <button
+                      disabled={busy() || !paymentAddress() || !paymentAmount()}
+                      onClick={() =>
+                        void run(async () => {
+                          setInvoice(
+                            await wallet.paymentInvoice(
+                              paymentAddress(),
+                              Number(paymentAmount()) * 1000
+                            )
+                          )
+                        })
+                      }
+                    >
+                      Get invoice for review
+                    </button>
+                  </details>
                   <h2>Pay a Lightning invoice</h2>
                   <label>
                     BOLT11 invoice
@@ -711,7 +1015,7 @@ function App() {
                         )
                       }
                     >
-                      <option value="">Choose an exact-amount note</option>
+                      <option value="">Choose a note</option>
                       <For each={notes().filter(n => n.status === 'ready')}>
                         {note => (
                           <option value={note.id}>
@@ -722,11 +1026,28 @@ function App() {
                     </select>
                   </label>
                   <p class="hint">
-                    The note and invoice amounts must match. Split or combine
-                    notes first. After submission, use “Check selected” to
-                    reconcile the note; confirm payment settlement in the
-                    receiving wallet.
+                    Select several notes in your collection to combine them, or
+                    prepare change from a larger note. Review the final amount
+                    before confirming payment. Settlement is checked
+                    automatically when the mint supplies a verification URL.
                   </p>
+                  <Show when={selected().length && invoice()}>
+                    <button
+                      disabled={busy()}
+                      onClick={() =>
+                        void run(async () => {
+                          setSelected([
+                            await wallet.preparePayment(selected(), invoice())
+                          ])
+                          setMessage(
+                            'Exact payment note prepared. Review and confirm payment.'
+                          )
+                        })
+                      }
+                    >
+                      Prepare exact payment note
+                    </button>
+                  </Show>
                   <button
                     class="primary"
                     disabled={
@@ -759,10 +1080,16 @@ function App() {
                     Mint URL or Lightning address
                     <input
                       placeholder="you@mint.example"
+                      list="mint-addresses"
                       value={mint()}
                       onInput={e => setMint(e.currentTarget.value)}
                     />
                   </label>
+                  <datalist id="mint-addresses">
+                    <For each={savedMintAddresses()}>
+                      {address => <option value={address} />}
+                    </For>
+                  </datalist>
                   <label>
                     Amount (sats)
                     <input
@@ -879,13 +1206,24 @@ function App() {
                   </button>
                 </section>
               </Show>
+              <WalletTools
+                tab={tab()}
+                vault={vault}
+                wallet={wallet}
+                notes={notes()}
+                busy={busy()}
+                revision={revision()}
+                preferences={preferences()}
+                onPreferences={changePreferences}
+                run={run}
+              />
             </Show>
             <Show when={busy()}>
               <p class="notice" role="status">
                 Working… keep the wallet open.
               </p>
             </Show>
-            <Show when={message()}>
+            <Show when={message() && !busy()}>
               <p class="notice" role="status">
                 {message()}
               </p>

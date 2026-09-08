@@ -1,9 +1,15 @@
+import {nappletIsOffline} from './napplet/preferences'
+/** Let protocol callers distinguish a local offline choice from ambiguous network failure. */
+export const isServiceOffline = (): boolean =>
+  import.meta.env.MODE === 'napplet' && nappletIsOffline()
 /** Fetch protocol responses through the host when running as a napplet. */
 export const fetchServiceResponse = async (
   url: string,
   signal: AbortSignal
 ): Promise<Response> => {
   if (import.meta.env.MODE !== 'napplet') return fetch(url, {signal})
+  if (nappletIsOffline())
+    throw new Error('Offline mode is on. No request was sent.')
   const resource = window.napplet?.resource
   if (!resource) throw new Error('The shell must provide NAP-RESOURCE.')
   const fresh = new URL(url)

@@ -57,29 +57,77 @@ switcher or app selection by URL hash. `build:designer` remains a build alias.
 
 ## Wallet use
 
-1. Create a wallet with a password of at least 12 characters. Make an encrypted
-   backup, then update that backup when notes change.
+1. Save the generated BIP39 recovery phrase and create a wallet with a password
+   of at least 12 characters. A restored seed uses the original webwallet's
+   storage-root and LUD-25 cash derivation. Scan each previously used mint in
+   **More wallet tools → Seed recovery** before generating fresh notes there.
+   Keep encrypted backups as well: the seed does not recreate artwork or labels.
 2. Receive an LNURLcash URL or bech32 LNURL. Confirmation first persists the note,
    then rotates its secret. A ready note has been checked with its mint.
 3. Select notes to check, rotate, split or combine. Combining requires the same
    mint endpoint. Split and merge values are rechecked because mint fees can
    change the actual output amount.
-4. To pay, enter a fixed-amount BOLT11 invoice and choose a confirmed note with
-   exactly that value; split/combine beforehand if necessary. An accepted melt
-   stays **pending**. Check the note later; absence from the mint is not payment
-   settlement proof. Confirm settlement with the receiving wallet.
+4. Paste a fixed-amount BOLT11 invoice, or request one from a Lightning address.
+   Select notes and use **Prepare exact payment note** to split off change or
+   combine notes from one mint. Review the result and confirm payment. Accepted
+   melts remain **pending** until their exact invoice and payment preimage verify.
+   Verification polls every five seconds while unlocked and online when the mint
+   provides a verify URL. Without one, confirm the outcome in the receiving
+   wallet. A missing note alone never proves settlement.
 5. To mint, enter an HTTPS mint URL or Lightning address and an amount. Pay the
    generated invoice externally, then check the reserved note. This uses the
    current LUD-25 hash commitment through the mandatory LUD-12 comment.
 6. Hand over a note to reveal its bearer URL and QR. It is marked shared before
    revealing the secret and excluded from the available balance.
 
-The napplet has its own password-encrypted wallet. It does not read the
-standalone wallet's browser storage or Nostr identity keys. It uses random
-bearer secrets and **backup + password** recovery; it does not implement the
-standalone application's mnemonic recovery, hardware-vault transports, NFC,
-camera scanning, original backup format, or automatic payment settlement proofs.
-Move existing notes using explicit bearer handover from the original wallet.
+The napplet has its own password-encrypted wallet and does not read browser
+storage or Nostr identity keys. It imports and exports the original
+`lnurlwallet-backup` format, including old linking-key backups. Imported notes
+need a live check; device mirrors are reported separately and require the device.
+Importing a foreign seed preserves its cash root as an additional recovery key.
+Counters for the same seed only advance. **Reset password with my seed** proves
+the phrase against authenticated encrypted metadata before changing the password.
+Wallets created by the earlier random-key napplet still need their backup password.
+
+The original-format export covers bearer records and cash recovery keys; use the
+full napplet backup for artwork, pending invoices, preferences and history. Full
+imports retain payment quarantine and merge history. Existing preferences and
+issuer pins take precedence. Imported issuer keys require matching live evidence;
+changed live keys remain staged until explicitly reviewed. Imported device state
+is retained as encrypted import metadata, never automatically replayed against
+hardware; reconnect the original device and reconcile its inventory.
+
+### Function coverage against the original webwallet
+
+| Function                                                        | Napplet implementation                                                                                                                                           |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Receive, claim links, rotate, split, combine, handover          | Supported; HTTPS, LNURL, LNURLw and webwallet claim-link handover                                                                                                |
+| BOLT11 and Lightning-address payments                           | Supported with exact-value preparation and retained change                                                                                                       |
+| Mint and transfer between mints                                 | Supported; source and destination remain stored during uncertain outcomes                                                                                        |
+| Seed and legacy preimage recovery                               | Per-mint scan with 20 unused indices; interruptions stop the scan without declaring gaps                                                                         |
+| Backups and password recovery                                   | Original and napplet formats; seed-authenticated password reset for seed-created wallets                                                                         |
+| Signing keys and offline badges                                 | Live pin confirmation, explicit rekey review, cryptographic note signature checks                                                                                |
+| Labels, activity and inactive notes                             | Encrypted local labels/history; archive retains the recovery record instead of deleting it                                                                       |
+| Preferences                                                     | Offline transport enforcement; 0/1/5/15/30-minute lock; sort/group; optional EUR/GBP/USD estimate                                                                |
+| USB / Bluetooth physical vault                                  | Optional NAP-SERIAL / NAP-BLE adapters reuse the original device command protocol                                                                                |
+| Device custody                                                  | Identity review; scoped encrypted commit queue; inventory, rotate/split/combine, bound mint receipts, payments, transfer, custody migration, handover and rename |
+| Camera and NFC                                                  | Use the normal webwallet, as agreed; a future scanner can stage `napplet:wallet/receive`                                                                         |
+| Device firmware tools, OTA, raw console, destructive wipe/prune | Keep in the webwallet/device tooling; not exposed by this wallet UI                                                                                              |
+
+Optional `fs`, `serial` and `ble` surfaces must be injected and authorized by the
+host. They are not hard manifest requirements: a wallet remains useful without
+files or physical hardware. NAP-FS saves/opens explicitly chosen JSON files;
+otherwise the wallet offers text export and a local file picker. The reference
+preview intentionally exposes no hardware. USB/BLE tests use simulated sessions;
+**real device, live mint and deployed-shell verification remain required before
+calling this a production-ready hardware wallet**. Hardware requires firmware
+that proves an identity; a changed identity needs explicit holder review before
+its own pending queue can drain. Never approve a device you did not intend to use.
+
+A separate scanner napplet would need its shell to grant camera/NFC or accept
+input from the normal web page. Another iframe alone does not add those rights.
+The receive intent provides the integration point without changing either
+Wallet's or Notes' single purpose.
 
 Every source and preallocated replacement remains encrypted in storage.
 New output secrets are acknowledged by shell storage **before** a mutation

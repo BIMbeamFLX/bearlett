@@ -63,6 +63,7 @@ beforeEach(async () => {
     mintPubkey: '02' + 'aa'.repeat(32)
   })
   vi.mocked(rotateNoteWithHash).mockResolvedValue({signature: 'ab'.repeat(65)})
+  vi.mocked(meltNote).mockResolvedValue({})
 })
 
 describe('encrypted shell vault', () => {

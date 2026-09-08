@@ -15,6 +15,7 @@ test('pushes a design to a locked wallet without switching apps or importing sil
     .getByLabel('Wallet password', {exact: true})
     .fill('test wallet password')
   await wallet.getByLabel('Repeat password').fill('test wallet password')
+  await wallet.getByLabel('I have saved my recovery phrase').check()
   await wallet.getByRole('button', {name: 'Create wallet'}).click()
   await expect(
     wallet.getByRole('button', {name: 'Receive', exact: true})
