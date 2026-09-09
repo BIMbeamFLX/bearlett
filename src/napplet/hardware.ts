@@ -32,7 +32,8 @@ import {
   verifyMeltPreimage,
   meltNote,
   decodeBolt11AmountMsat,
-  hashK1
+  hashK1,
+  fromLud17
 } from '../lnurlcash'
 import type {InvoiceResult} from '../lnurlcash'
 import type {Vault} from './vault'
@@ -287,10 +288,7 @@ export class HardwareWallet {
       amount > info.maxSendable
     )
       throw new Error('This mint cannot fund that device note.')
-    const endpoint = requireIssuerUrl(
-      info.withdrawLink.replace(/^lnurlw:/i, 'https:'),
-      url
-    )
+    const endpoint = requireIssuerUrl(fromLud17(info.withdrawLink), url)
     const callback = requireIssuerUrl(info.callback, url)
     const staged = await stageDeviceBoundMint(this.requireClient())
     const candidates =

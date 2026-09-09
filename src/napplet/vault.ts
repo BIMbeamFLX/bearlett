@@ -23,7 +23,7 @@ import {parsePreferences} from './preferences'
 import {validatePins, importPins} from './mints'
 import type {MintPin} from './mints'
 import type {HistoryEntry} from './wallet'
-import {verifyMeltPreimage} from '../lnurlcash'
+import {isAllowedServiceUrl, verifyMeltPreimage} from '../lnurlcash'
 import {validateCashuState} from './cashu/state'
 import type {CashuState} from './cashu/state'
 import type {Transfer} from './transfers'
@@ -759,7 +759,7 @@ export const validNote = (value: Note): boolean => {
   try {
     const url = new URL(value.url)
     return (
-      url.protocol === 'https:' &&
+      isAllowedServiceUrl(value.url) &&
       !url.username &&
       !url.password &&
       !!url.searchParams.get('k1')

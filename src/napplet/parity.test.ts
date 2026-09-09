@@ -392,7 +392,7 @@ describe('payment evidence and issuer trust', () => {
     await wrong.vault.save(note())
     await expect(
       wrong.wallet.pay((await wrong.vault.notes())[0].id, invoice())
-    ).rejects.toThrow('outside its HTTPS origin')
+    ).rejects.toThrow('outside its origin')
   })
 
   it('requests an address invoice without spending and rejects a changed amount', async () => {

@@ -7,15 +7,19 @@ import {DEFAULT_DESIGN, parseDesign} from './design'
 import {fetchServiceResponse} from '../serviceTransport'
 import {
   fetchNoteInfo,
+  fetchPayRequest,
   rotateNoteWithHash,
   splitNoteWithHash,
-  meltNote
+  meltNote,
+  requestInvoice
 } from '../lnurlcash'
 import type {Note} from './vault'
 
 vi.mock('../lnurlcash', async original => ({
   ...(await original<typeof import('../lnurlcash')>()),
   fetchNoteInfo: vi.fn(),
+  fetchPayRequest: vi.fn(),
+  requestInvoice: vi.fn(),
   rotateNoteWithHash: vi.fn(),
   splitNoteWithHash: vi.fn(),
   meltNote: vi.fn()
@@ -128,7 +132,7 @@ describe('durable bearer operations', () => {
     )
     expect((await vault.notes()).every(n => n.status === 'pending')).toBe(true)
   })
-  it.each(['pay', 'transform', 'share'] as const)(
+  it.each(['pay', 'transform', 'share', 'mint'] as const)(
     'serializes LNURLcash %s against the Cashu writer',
     async operation => {
       const note = held()
@@ -152,10 +156,17 @@ describe('durable bearer operations', () => {
             ? () => wallet.pay(note.id, 'lnbc210n1qqqq')
             : operation === 'transform'
               ? () => wallet.transform([note.id], 'rotate')
-              : () => wallet.share(note.id)
+              : operation === 'share'
+                ? () => wallet.share(note.id)
+                : () =>
+                    wallet.mint(
+                      'https://mint.example/.well-known/lnurlp/mint',
+                      21000
+                    )
         await expect(action()).rejects.toThrow(/running/i)
         expect(meltNote).not.toHaveBeenCalled()
         expect(rotateNoteWithHash).not.toHaveBeenCalled()
+        expect(fetchPayRequest).not.toHaveBeenCalled()
       } finally {
         release()
         await pending
@@ -266,6 +277,46 @@ describe('durable bearer operations', () => {
     )
     expect(rotateNoteWithHash).not.toHaveBeenCalled()
     expect(() => requireIssuerUrl('http://mint.example/cb', noteUrl)).toThrow()
+    expect(
+      requireIssuerUrl(
+        'http://localhost:8000/cb',
+        'http://localhost:8000/withdraw'
+      )
+    ).toBe('http://localhost:8000/cb')
+    expect(
+      requireIssuerUrl('http://abc.onion/cb', 'lnurlw://abc.onion/withdraw')
+    ).toBe('http://abc.onion/cb')
+  })
+
+  it('mints from a LUD-17 localhost withdrawLink without rewriting it to https', async () => {
+    vi.mocked(fetchPayRequest).mockResolvedValue({
+      tag: 'payRequest',
+      callback: 'http://localhost:8000/pay/cb',
+      minSendable: 1000,
+      maxSendable: 21000,
+      commentAllowed: 64,
+      withdrawLink: 'lnurlw://localhost:8000/w',
+      metadata: '[]'
+    })
+    vi.mocked(requestInvoice).mockResolvedValue({
+      pr: 'lnbc210n1qqqq',
+      verify: 'http://localhost:8000/verify/x',
+      disposable: true,
+      mintToHash: false
+    })
+    const pr = await wallet.mint(
+      'http://localhost:8000/.well-known/lnurlp/mint',
+      21000
+    )
+    expect(pr).toBe('lnbc210n1qqqq')
+    const [note] = await vault.notes()
+    expect(note.url).toMatch(/^http:\/\/localhost:8000\/w\?/)
+    expect(note.url).not.toContain('https://localhost')
+    expect(requestInvoice).toHaveBeenCalledWith(
+      'http://localhost:8000/pay/cb',
+      21000,
+      expect.any(String)
+    )
   })
 
   it('rejects duplicate selections and invalid split amounts', async () => {
@@ -297,6 +348,15 @@ describe('untrusted intents and designs', () => {
     expect(
       parseWalletIntent('napplet:wallet/receive', {note: noteUrl}, 'sender')
         .action
+    ).toBe('receive')
+    expect(
+      parseWalletIntent(
+        'napplet:wallet/receive',
+        {
+          note: `lnurlw://localhost:8000/w?k1=${'ab'.repeat(32)}&amount=21000`
+        },
+        'sender'
+      ).action
     ).toBe('receive')
     for (const payload of [
       null,
@@ -362,6 +422,12 @@ describe('shell network boundary', () => {
     expect(direct).not.toHaveBeenCalled()
     await expect(
       fetchServiceResponse('http://mint.example', AbortSignal.timeout(1000))
-    ).rejects.toThrow('HTTPS')
+    ).rejects.toThrow()
+    await fetchServiceResponse(
+      'http://localhost:8000/w',
+      AbortSignal.timeout(1000)
+    )
+    expect(bytes.mock.calls.at(-1)?.[0]).toContain('http://localhost:8000/w')
+    expect(direct).not.toHaveBeenCalled()
   })
 })

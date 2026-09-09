@@ -1,7 +1,8 @@
 import {
   isBolt11Invoice,
   decodeBolt11AmountMsat,
-  resolveNoteInput
+  resolveNoteInput,
+  isAllowedServiceUrl
 } from '../lnurlcash'
 import {claimLinkToNoteInput, claimParamsFromHref} from '../claimLink'
 import type {WalletHost} from './host'
@@ -67,8 +68,8 @@ export const parseWalletIntent = (
     const url = resolveNoteInput(
       (params && claimLinkToNoteInput(params)) || normalized
     )
-    if (!url || new URL(url).protocol !== 'https:')
-      throw new Error('Expected an HTTPS LNURLcash note.')
+    if (!url || !isAllowedServiceUrl(url))
+      throw new Error('Expected an LNURLcash note.')
   } else if (
     !isBolt11Invoice(normalized) ||
     !decodeBolt11AmountMsat(normalized)

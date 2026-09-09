@@ -1,4 +1,10 @@
 import {nappletIsOffline} from './napplet/preferences'
+/** Same admission rule as lnurlcash isAllowedServiceUrl; kept local to avoid a cycle. */
+const isPermittedMint = (url: URL): boolean =>
+  url.protocol === 'https:' ||
+  (url.protocol === 'http:' &&
+    (['127.0.0.1', '0.0.0.0', 'localhost'].includes(url.hostname) ||
+      url.hostname.endsWith('.onion')))
 /** Let protocol callers distinguish a local offline choice from ambiguous network failure. */
 export const isServiceOffline = (): boolean =>
   import.meta.env.MODE === 'napplet' && nappletIsOffline()
@@ -13,7 +19,7 @@ export const fetchServiceResponse = async (
   const resource = window.napplet?.resource
   if (!resource) throw new Error('The shell must provide NAP-RESOURCE.')
   const fresh = new URL(url)
-  if (fresh.protocol !== 'https:') {
+  if (!isPermittedMint(fresh)) {
     throw new Error('The napplet requires an HTTPS mint.')
   }
   // RESOURCE implementations may cache by URL. LNURL GETs include mutations:

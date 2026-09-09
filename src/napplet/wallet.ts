@@ -26,6 +26,8 @@ import {
   verifyMeltPreimage,
   toBech32Lnurl,
   toLud17w,
+  fromLud17,
+  isAllowedServiceUrl,
   isPreimage
 } from '../lnurlcash'
 import {Vault} from './vault'
@@ -42,16 +44,17 @@ export type HistoryEntry = {
   message: string
 }
 
-/** Restrict bearer disclosure to the HTTPS issuer selected by the user. */
+/** Restrict bearer disclosure to the issuer origin; HTTP only for localhost and onion. */
 export const requireIssuerUrl = (url: string, issuer: string): string => {
-  const target = new URL(url)
+  const target = new URL(fromLud17(url))
+  const origin = new URL(fromLud17(issuer))
   if (
-    target.protocol !== 'https:' ||
+    !isAllowedServiceUrl(target.toString()) ||
     target.username ||
     target.password ||
-    target.origin !== new URL(issuer).origin
+    target.origin !== origin.origin
   ) {
-    throw new Error('The mint returned an address outside its HTTPS origin.')
+    throw new Error('The mint returned an address outside its origin.')
   }
   return target.toString()
 }
@@ -416,6 +419,10 @@ export class Wallet {
 
   /** Reserve the mint output before asking for its funding invoice. */
   async mint(input: string, amount: number): Promise<string> {
+    return this.vault.exclusive(() => this.mintNote(input, amount))
+  }
+
+  private async mintNote(input: string, amount: number): Promise<string> {
     const url = resolveMintInput(input) ?? resolveLnurlInput(input)
     if (!url) throw new Error('Enter a mint URL or Lightning address.')
     requireIssuerUrl(url, url)
@@ -432,10 +439,7 @@ export class Wallet {
         `Mint amount must be between ${info.minSendable / 1000} and ${info.maxSendable / 1000} sats.`
       )
     }
-    const endpoint = requireIssuerUrl(
-      info.withdrawLink.replace(/^lnurlw:/i, 'https:'),
-      url
-    )
+    const endpoint = requireIssuerUrl(fromLud17(info.withdrawLink), url)
     const callback = requireIssuerUrl(info.callback, url)
     if (info.mintPubkey) await observeMint(this.vault, url, info.mintPubkey)
     const k1 = await this.vault.nextSecret(serverOf(url))
@@ -539,10 +543,7 @@ export class Wallet {
     const info = await fetchPayRequest(payUrl)
     if (!info.withdrawLink)
       throw new Error('This mint has no withdraw endpoint.')
-    const endpoint = requireIssuerUrl(
-      info.withdrawLink.replace(/^lnurlw:/i, 'https:'),
-      payUrl
-    )
+    const endpoint = requireIssuerUrl(fromLud17(info.withdrawLink), payUrl)
     const domain = serverOf(payUrl),
       root = cashRootFromHex(cash.root)
     const known = new Set(

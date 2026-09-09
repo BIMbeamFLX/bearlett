@@ -105,7 +105,7 @@ export class CashuEngine {
     private offline: () => boolean = () => false
   ) {}
 
-  /** Serialize all mutations in this wallet instance; the shell enforces a single writer. */
+  /** Serialize mutations on this engine; Vault.exclusive is the local writer lock. */
   async exclusive<T>(action: () => Promise<T>): Promise<T> {
     if (this.running) throw new Error('Another Cashu operation is running.')
     this.running = true
