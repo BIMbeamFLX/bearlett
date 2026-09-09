@@ -188,24 +188,26 @@ docs/                architecture, audits, protocol notes, design brief, screens
 
 ### Documentation
 
-| Document                                                                               | Content                                                                     |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [docs/BEARLETT.md](docs/BEARLETT.md)                                                   | Implementation and recovery details, read before touching funds             |
-| [docs/NAPPLETS.md](docs/NAPPLETS.md)                                                   | Build, preview, contracts, verification of both napplets                    |
-| [docs/KEHTO.md](docs/KEHTO.md)                                                         | Kehto shell integration and the `cashu` capability                          |
-| [docs/VALIDATION.md](docs/VALIDATION.md)                                               | Validation record                                                           |
-| [docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md](docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md)       | Wallet-side ownership proofs for LNURLcash                                  |
-| [docs/SECURITY-FIXES-2026-09-09.md](docs/SECURITY-FIXES-2026-09-09.md)                 | Security fixes and audit handover (German)                                  |
-| [docs/ARCHITECTURE-2026-09-09.md](docs/ARCHITECTURE-2026-09-09.md)                     | Architecture decision after the spec check (German)                         |
-| [docs/FEASIBILITY-2026-09-09.md](docs/FEASIBILITY-2026-09-09.md)                       | Feasibility report (German)                                                 |
-| [docs/INFRASTRUCTURE-2026-09-09.md](docs/INFRASTRUCTURE-2026-09-09.md)                 | Test infrastructure (German)                                                |
-| [docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md](docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md) | Encrypted bearer storage on Blossom (German)                                |
-| [docs/NAPPELIN-INTEGRATION-2026-09-09.md](docs/NAPPELIN-INTEGRATION-2026-09-09.md)     | Shared identity and backup path with Nappelin (German)                      |
-| [docs/TCG-WALLET-2026-09-09.md](docs/TCG-WALLET-2026-09-09.md)                         | Existing trading-card wallet inventory (German)                             |
-| [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md)                           | UI design brief: composable napplets, assets, pay, animation stack (German) |
-| [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources (German)                        |
-| [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                          |
-| [tests/integration/README.md](tests/integration/README.md)                             | Regtest environment with LNURLmint, Nutshell and two LND nodes              |
+| Document                                                                               | Content                                                                        |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [docs/BEARLETT.md](docs/BEARLETT.md)                                                   | Implementation and recovery details, read before touching funds                |
+| [docs/NAPPLETS.md](docs/NAPPLETS.md)                                                   | Build, preview, contracts, verification of both napplets                       |
+| [docs/KEHTO.md](docs/KEHTO.md)                                                         | Kehto shell integration and the `cashu` capability                             |
+| [docs/VALIDATION.md](docs/VALIDATION.md)                                               | Validation record                                                              |
+| [docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md](docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md)       | Wallet-side ownership proofs for LNURLcash                                     |
+| [docs/SECURITY-FIXES-2026-09-09.md](docs/SECURITY-FIXES-2026-09-09.md)                 | Security fixes and audit handover (German)                                     |
+| [docs/ARCHITECTURE-2026-09-09.md](docs/ARCHITECTURE-2026-09-09.md)                     | Architecture decision after the spec check (German)                            |
+| [docs/FEASIBILITY-2026-09-09.md](docs/FEASIBILITY-2026-09-09.md)                       | Feasibility report (German)                                                    |
+| [docs/INFRASTRUCTURE-2026-09-09.md](docs/INFRASTRUCTURE-2026-09-09.md)                 | Test infrastructure (German)                                                   |
+| [docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md](docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md) | Encrypted bearer storage on Blossom (German)                                   |
+| [docs/NAPPELIN-INTEGRATION-2026-09-09.md](docs/NAPPELIN-INTEGRATION-2026-09-09.md)     | Shared identity and backup path with Nappelin (German)                         |
+| [docs/TCG-WALLET-2026-09-09.md](docs/TCG-WALLET-2026-09-09.md)                         | Existing trading-card wallet inventory (German)                                |
+| [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md)                           | UI design brief: composable napplets, assets, pay, animation stack (German)    |
+| [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources (German)                           |
+| [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                             |
+| [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, using existing mints (German)    |
+| [docs/HOW-TO-MINT-ASSETS.md](docs/HOW-TO-MINT-ASSETS.md)                               | What it takes to mint your own bearer game assets with the NutFT mint (German) |
+| [tests/integration/README.md](tests/integration/README.md)                             | Regtest environment with LNURLmint, Nutshell and two LND nodes                 |
 
 ### Contributing
 
