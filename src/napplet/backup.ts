@@ -127,6 +127,7 @@ export const importWebBackup = async (
       url: bearer.url,
       amount: bearer.amount,
       status: bearer.spent ? 'shared' : 'unverified',
+      needsRotation: true,
       label: bearer.label,
       createdAt: bearer.createdAt,
       updatedAt: Date.now(),

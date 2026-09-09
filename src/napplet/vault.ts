@@ -1,5 +1,6 @@
 import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
 import {sha256} from '@noble/hashes/sha2.js'
+import {HDKey} from '@scure/bip32'
 import {
   encryptSecretParts,
   decryptSecretParts,
@@ -43,11 +44,16 @@ export type Note = {
   verifyUrl?: string
   proof?: string
   hidden?: boolean
+  needsRotation?: boolean
 }
 const KEY = 'lnurlcash-napplet:key:v1'
 const PREFIX = 'lnurlcash-napplet:note:'
 const DESIGN_PREFIX = 'lnurlcash-napplet:design:'
 const META_PREFIX = 'lnurlcash-napplet:meta:'
+const writers = new WeakMap<
+  WalletHost['storage'],
+  {active: boolean; revision: number}
+>()
 export type CashState = {
   root: string
   indices: Record<string, number>
@@ -56,17 +62,66 @@ export type CashState = {
 }
 type Backup = {
   type: 'lnurlcash-napplet-backup'
-  version: 1
+  version: 1 | 2
   key: StoredSecret
   notes: Record<string, EncryptedRecordParts>
   designs?: Record<string, EncryptedRecordParts>
   metadata?: Record<string, EncryptedRecordParts>
+  seal?: EncryptedRecordParts
+}
+
+/** Canonicalize the complete encrypted inventory, including record names and the wrapped key. */
+const inventoryHash = (backup: Omit<Backup, 'seal'>): string => {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === 'object'
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([key, item]) => [key, canonical(item)])
+          )
+        : value
+  return bytesToHex(
+    sha256(new TextEncoder().encode(JSON.stringify(canonical(backup))))
+  )
 }
 
 /** Encrypt each note independently; acknowledge durable writes before proceeding. */
 export class Vault {
   private aes: CryptoKey | null = null
-  constructor(private storage: WalletHost['storage']) {}
+  private generation = 0
+  private writer: {active: boolean; revision: number}
+  constructor(private storage: WalletHost['storage']) {
+    this.writer = writers.get(storage) ?? {active: false, revision: 0}
+    writers.set(storage, this.writer)
+  }
+
+  /** Serialize protocol mutations and full snapshots for this local storage adapter. */
+  async exclusive<T>(action: () => Promise<T>, restoring = false): Promise<T> {
+    const check = this.sessionGuard()
+    if (this.writer.active)
+      throw new Error('Another wallet operation is running.')
+    this.writer.active = true
+    try {
+      if (!restoring) await this.assertReady()
+      check()
+      const result = await action()
+      check()
+      return result
+    } finally {
+      this.writer.active = false
+    }
+  }
+
+  private async persist(name: string, value: string): Promise<void> {
+    this.writer.revision++
+    try {
+      await this.storage.setItem(name, value)
+    } finally {
+      this.writer.revision++
+    }
+  }
 
   /** Prevent spending a partially restored snapshot; retry the same authenticated backup first. */
   async assertReady(): Promise<void> {
@@ -87,6 +142,11 @@ export class Vault {
     phrase?: string,
     restored = false
   ): Promise<void> {
+    const generation = this.generation
+    const check = () => {
+      if (generation !== this.generation)
+        throw new Error('Wallet session was locked.')
+    }
     if (password.length < 12) throw new Error('Use at least 12 characters.')
     if (await this.exists())
       throw new Error('A wallet already exists. Unlock it instead.')
@@ -100,7 +160,9 @@ export class Vault {
         enc: true,
         ...(await encryptSecretParts(bytesToHex(root), password))
       }
-      this.aes = await deriveBearerAesKey(root)
+      const candidate = await deriveBearerAesKey(root)
+      check()
+      this.aes = candidate
       if (phrase)
         await this.setMeta<CashState>('cash', {
           root: cashRootToHex(deriveLud25CashRootNode(phrase)),
@@ -108,9 +170,11 @@ export class Vault {
           restored,
           scanned: []
         })
-      await this.storage.setItem(KEY, JSON.stringify(encrypted))
+      check()
+      await this.persist(KEY, JSON.stringify(encrypted))
+      check()
     } catch (error) {
-      this.aes = null
+      if (generation === this.generation) this.aes = null
       throw error
     } finally {
       root.fill(0)
@@ -119,12 +183,17 @@ export class Vault {
 
   /** Unlock only with the user's password; host identity is never a wallet key. */
   async unlock(password: string): Promise<void> {
+    this.lock()
+    const generation = this.generation
     const stored = JSON.parse((await this.storage.getItem(KEY)) ?? 'null')
     if (!isValidStoredSecret(stored) || !stored.enc)
       throw new Error('Invalid wallet key record.')
     const root = hexToBytes(await decryptSecretParts(stored, password))
     try {
-      this.aes = await deriveBearerAesKey(root)
+      const candidate = await deriveBearerAesKey(root)
+      if (generation !== this.generation)
+        throw new Error('Wallet session was locked.')
+      this.aes = candidate
     } finally {
       root.fill(0)
     }
@@ -132,6 +201,8 @@ export class Vault {
 
   /** Prove the seed against authenticated cash metadata before resetting its password. */
   async resetPassword(phrase: string, password: string): Promise<void> {
+    this.lock()
+    const generation = this.generation
     if (!isValidSeedPhrase(phrase))
       throw new Error('Invalid BIP39 seed phrase.')
     if (password.length < 12) throw new Error('Use at least 12 characters.')
@@ -145,13 +216,15 @@ export class Vault {
       validateCashState(cash)
       if (cash.root !== cashRootToHex(deriveLud25CashRootNode(phrase)))
         throw new Error('The seed does not match this wallet.')
-      await this.storage.setItem(
-        KEY,
-        JSON.stringify({
-          enc: true,
-          ...(await encryptSecretParts(bytesToHex(root), password))
-        })
-      )
+      const encrypted = JSON.stringify({
+        enc: true,
+        ...(await encryptSecretParts(bytesToHex(root), password))
+      })
+      if (generation !== this.generation)
+        throw new Error('Wallet session was locked.')
+      await this.persist(KEY, encrypted)
+      if (generation !== this.generation)
+        throw new Error('Wallet session was locked.')
       this.aes = candidate
     } finally {
       root.fill(0)
@@ -161,32 +234,38 @@ export class Vault {
   /** Drop the in-memory encryption key. */
   lock(): void {
     this.aes = null
+    this.generation++
   }
 
   /** Read encrypted settings, history or recovery state through shell storage. */
   async meta<T>(name: string): Promise<T | null> {
+    const check = this.sessionGuard()
     const key = this.requireKey()
     const raw = await this.storage.getItem(META_PREFIX + name)
-    return raw === null ? null : decryptRecord<T>(key, JSON.parse(raw))
+    const value =
+      raw === null ? null : await decryptRecord<T>(key, JSON.parse(raw))
+    check()
+    return value
   }
 
   /** Persist metadata before allowing its associated action to proceed. */
   async setMeta<T extends object>(name: string, value: T): Promise<void> {
+    const check = this.sessionGuard()
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(name))
       throw new Error('Invalid metadata key.')
-    await this.storage.setItem(
-      META_PREFIX + name,
-      JSON.stringify(await encryptRecord(this.requireKey(), value))
-    )
+    const record = JSON.stringify(await encryptRecord(this.requireKey(), value))
+    check()
+    await this.persist(META_PREFIX + name, record)
+    check()
   }
 
   /** Reserve a seed-derived index durably before revealing an output commitment. */
   async nextSecret(domain: string): Promise<string> {
     const cash = await this.meta<CashState>('cash')
     if (!cash) return bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
-    if (cash.restored && !cash.scanned.includes(domain))
+    if (cash.restored)
       throw new Error(
-        'Scan this mint from Recovery before creating new notes with the restored seed.'
+        'Move recovered notes to a fresh wallet before creating new outputs. A seed scan cannot prove an unused counter range.'
       )
     const index = Object.hasOwn(cash.indices, domain) ? cash.indices[domain] : 0
     const secret = cashSecretFromRoot(cashRootFromHex(cash.root), domain, index)
@@ -199,6 +278,7 @@ export class Vault {
 
   /** Read every encrypted note, failing visibly on corrupt or foreign records. */
   async notes(): Promise<Note[]> {
+    const check = this.sessionGuard()
     const aes = this.requireKey()
     const result: Note[] = []
     for (const key of (await this.storage.keys()).filter(k =>
@@ -212,25 +292,33 @@ export class Vault {
         throw new Error('Invalid encrypted note.')
       result.push(note)
     }
+    check()
     return result.sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   /** Persist ciphertext before returning; source notes remain as history. */
   async save(note: Note): Promise<void> {
+    const check = this.sessionGuard()
     if (!validNote(note)) throw new Error('Invalid note.')
     const record = await encryptRecord(this.requireKey(), note)
-    await this.storage.setItem(PREFIX + note.id, JSON.stringify(record))
+    check()
+    await this.persist(PREFIX + note.id, JSON.stringify(record))
+    check()
   }
 
   /** Keep shared artwork once, encrypted alongside the bearer records. */
   async saveDesign(id: string, design: NoteDesign): Promise<void> {
+    const check = this.sessionGuard()
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(id)) throw new Error('Invalid design ID.')
     const record = await encryptRecord(this.requireKey(), parseDesign(design))
-    await this.storage.setItem(DESIGN_PREFIX + id, JSON.stringify(record))
+    check()
+    await this.persist(DESIGN_PREFIX + id, JSON.stringify(record))
+    check()
   }
 
   /** Read the user's saved note designs. */
   async designs(): Promise<Record<string, NoteDesign>> {
+    const check = this.sessionGuard()
     const result: Record<string, NoteDesign> = Object.create(null)
     for (const key of (await this.storage.keys()).filter(k =>
       k.startsWith(DESIGN_PREFIX)
@@ -240,11 +328,18 @@ export class Vault {
         await decryptRecord(this.requireKey(), JSON.parse(raw!))
       )
     }
+    check()
     return result
   }
 
   /** Export ciphertext and the password-wrapped key, including pending outputs. */
   async backup(): Promise<string> {
+    return this.exclusive(() => this.backupSnapshot())
+  }
+
+  private async backupSnapshot(): Promise<string> {
+    const revision = this.writer.revision
+    const check = this.sessionGuard()
     await this.assertReady()
     const key = JSON.parse((await this.storage.getItem(KEY)) ?? 'null')
     if (!isValidStoredSecret(key) || !key.enc)
@@ -273,27 +368,49 @@ export class Vault {
         (await this.storage.getItem(name))!
       )
     }
-    return JSON.stringify(
-      {
-        type: 'lnurlcash-napplet-backup',
-        version: 1,
-        key,
-        notes,
-        designs,
-        metadata
-      },
-      null,
-      2
-    )
+    const backup: Backup = {
+      type: 'lnurlcash-napplet-backup',
+      version: 2,
+      key,
+      notes,
+      designs,
+      metadata
+    }
+    backup.seal = await encryptRecord(this.requireKey(), {
+      type: 'bearlett-backup-inventory',
+      hash: inventoryHash(backup)
+    })
+    check()
+    if (revision !== this.writer.revision)
+      throw new Error(
+        'Wallet changed while creating a backup. Retry after the running operation.'
+      )
+    return JSON.stringify(backup, null, 2)
   }
 
   /** Import into an unlocked wallet, re-encrypting and deduplicating bearer secrets. */
-  async restore(text: string, password: string): Promise<number> {
+  async restore(
+    text: string,
+    password: string,
+    options: {allowLegacy?: boolean} = {}
+  ): Promise<number> {
+    return this.exclusive(
+      () => this.restoreSnapshot(text, password, options),
+      true
+    )
+  }
+
+  private async restoreSnapshot(
+    text: string,
+    password: string,
+    options: {allowLegacy?: boolean}
+  ): Promise<number> {
+    const check = this.sessionGuard()
     if (text.length > 10 * 1024 * 1024) throw new Error('Backup exceeds 10 MB.')
     const backup = JSON.parse(text) as Backup
     if (
       backup.type !== 'lnurlcash-napplet-backup' ||
-      backup.version !== 1 ||
+      ![1, 2].includes(backup.version) ||
       !isValidStoredSecret(backup.key) ||
       !backup.key.enc ||
       !backup.notes ||
@@ -302,6 +419,10 @@ export class Vault {
       Object.keys(backup.notes).length > 1000
     )
       throw new Error('Invalid napplet backup.')
+    if (backup.version === 1 && !options.allowLegacy)
+      throw new Error(
+        'Legacy backup has no authenticated inventory. Explicit legacy import is required.'
+      )
     const root = hexToBytes(await decryptSecretParts(backup.key, password))
     let aes: CryptoKey
     try {
@@ -309,6 +430,20 @@ export class Vault {
     } finally {
       root.fill(0)
     }
+    if (backup.version === 2) {
+      if (!backup.seal) throw new Error('Missing backup inventory seal.')
+      const {seal, ...inventory} = backup
+      const authenticated = await decryptRecord<{type: string; hash: string}>(
+        aes,
+        seal
+      )
+      if (
+        authenticated.type !== 'bearlett-backup-inventory' ||
+        authenticated.hash !== inventoryHash(inventory)
+      )
+        throw new Error('Backup inventory is incomplete or has been changed.')
+    }
+    check()
     // Authenticate and validate the whole file before the first write.
     const incoming = await Promise.all(
       Object.values(backup.notes).map(parts => decryptRecord<Note>(aes, parts))
@@ -392,6 +527,24 @@ export class Vault {
       ([name]) => name === 'cashu-v1'
     )?.[1] as CashuState | undefined
     const currentCashu = await this.meta<CashuState>('cashu-v1')
+    if (importedCashu) {
+      const seed = hexToBytes(importedCashu.seed)
+      try {
+        const expected = cashRootToHex(
+          HDKey.fromMasterSeed(seed).derive("m/139'")
+        )
+        const currentCash = await this.meta<CashState>('cash')
+        const incomingCash = recoveredMeta.find(
+          ([name]) => name === 'cash'
+        )?.[1] as CashState | undefined
+        if (currentCash?.root !== expected || incomingCash?.root !== expected)
+          throw new Error(
+            'Set up the empty wallet using this backup’s recovery phrase first. Its Cashu seed must match the wallet.'
+          )
+      } finally {
+        seed.fill(0)
+      }
+    }
     const fingerprint = bytesToHex(sha256(new TextEncoder().encode(text)))
     const restore = await this.meta<{hash: string; phase: string}>('restore-v1')
     const retry = restore?.phase === 'active' && restore.hash === fingerprint
@@ -443,6 +596,7 @@ export class Vault {
       await this.save({
         ...note,
         id: importedId,
+        needsRotation: true,
         designId: designIds.get(note.designId ?? 'default'),
         status: ['spent', 'shared', 'pending'].includes(note.status)
           ? note.status
@@ -537,12 +691,29 @@ export class Vault {
         next
       )
     }
-    await this.setMeta('cash', {...current, indices})
+    await this.setMeta('cash', {
+      ...current,
+      indices,
+      restored: true,
+      scanned: []
+    })
   }
 
   private requireKey(): CryptoKey {
     if (!this.aes) throw new Error('Unlock the wallet first.')
     return this.aes
+  }
+
+  /** Bind an asynchronous operation to this unlock session. */
+  sessionGuard(): () => void {
+    this.requireKey()
+    const generation = this.generation
+    return () => {
+      if (generation !== this.generation || !this.aes)
+        throw new Error(
+          'Wallet session was locked. Unlock and reconcile the pending operation.'
+        )
+    }
   }
 }
 
@@ -563,6 +734,8 @@ export const validNote = (value: Note): boolean => {
     !Number.isSafeInteger(value.updatedAt) ||
     typeof value.reason !== 'string' ||
     (value.hidden !== undefined && typeof value.hidden !== 'boolean') ||
+    (value.needsRotation !== undefined &&
+      typeof value.needsRotation !== 'boolean') ||
     (value.invoiceType !== undefined &&
       !['funding', 'payment'].includes(value.invoiceType)) ||
     (value.proof !== undefined &&

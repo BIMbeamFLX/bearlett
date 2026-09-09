@@ -136,14 +136,18 @@ describe('webwallet-compatible seed and backups', () => {
     expect([...records.values()].join('')).not.toContain(expected)
   })
 
-  it('requires scanning restored seeds and aborts gaps on network uncertainty', async () => {
+  it('quarantines recovered seeds and aborts gaps on network uncertainty', async () => {
     const {vault, wallet} = await create(phrase, true)
-    await expect(vault.nextSecret('mint.example')).rejects.toThrow('Scan')
+    await expect(vault.nextSecret('mint.example')).rejects.toThrow(
+      'fresh wallet'
+    )
     vi.mocked(fetchNoteInfo).mockRejectedValueOnce(new Error('network failure'))
     await expect(
       wallet.recover(origin + '/pay', () => {}, new AbortController().signal)
     ).rejects.toThrow('network')
-    await expect(vault.nextSecret('mint.example')).rejects.toThrow('Scan')
+    await expect(vault.nextSecret('mint.example')).rejects.toThrow(
+      'fresh wallet'
+    )
     vi.mocked(fetchNoteInfo).mockRejectedValue(new NoteUnknownError('unknown'))
     vi.mocked(fetchNoteInfo).mockResolvedValueOnce({
       tag: 'withdrawRequest',
@@ -160,13 +164,19 @@ describe('webwallet-compatible seed and backups', () => {
         new AbortController().signal
       )
     ).toBe(1)
+    expect((await vault.notes())[0]).toMatchObject({
+      status: 'unverified',
+      needsRotation: true
+    })
     expect(noteK1((await vault.notes())[0].url)).toBe(
       cashSecretFromRoot(deriveLud25CashRootNode(phrase), 'mint.example', 0)
     )
     expect((await vault.meta<CashState>('cash'))?.indices['mint.example']).toBe(
       21
     )
-    await expect(vault.nextSecret('mint.example')).resolves.toHaveLength(64)
+    await expect(vault.nextSecret('mint.example')).rejects.toThrow(
+      'fresh wallet'
+    )
   })
 
   it('resets a forgotten password only after authenticating the correct seed', async () => {

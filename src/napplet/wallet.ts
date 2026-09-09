@@ -101,7 +101,8 @@ export class Wallet {
         noteDeclaredAmount(url) ?? 0,
         'Received; not yet rotated.'
       ),
-      status: 'unverified' as const
+      status: 'unverified' as const,
+      needsRotation: true
     }
     await this.vault.save(note)
     await this.transform([note.id], 'rotate')
@@ -116,13 +117,22 @@ export class Wallet {
         'Verify this payment first. If it failed, explicitly mark the note unspent before checking it.'
       )
     try {
+      if (note.status === 'unverified') {
+        await this.transform([id], 'rotate')
+        return
+      }
       const info = await fetchNoteInfo(note.url)
       requireIssuerUrl(info.callback, note.url)
       await observeMint(this.vault, note.url, info.mintPubkey)
       await this.vault.save({
         ...note,
         amount: info.maxWithdrawable,
-        status: note.status === 'shared' ? 'shared' : 'ready',
+        status:
+          note.status === 'shared'
+            ? 'shared'
+            : note.needsRotation
+              ? 'unverified'
+              : 'ready',
         reason:
           'Confirmed outstanding by issuer. Rotate if another holder has a copy.',
         updatedAt: Date.now()
@@ -151,6 +161,15 @@ export class Wallet {
     action: 'rotate' | 'split' | 'combine',
     amount?: number
   ): Promise<string[]> {
+    return this.vault.exclusive(() => this.transformNotes(ids, action, amount))
+  }
+
+  private async transformNotes(
+    ids: string[],
+    action: 'rotate' | 'split' | 'combine',
+    amount?: number
+  ): Promise<string[]> {
+    const check = this.vault.sessionGuard()
     if (
       !ids.length ||
       new Set(ids).size !== ids.length ||
@@ -167,6 +186,7 @@ export class Wallet {
       )
     }
     const infos = await Promise.all(notes.map(n => fetchNoteInfo(n.url)))
+    check()
     const callback = requireIssuerUrl(infos[0].callback, notes[0].url)
     await observeMint(this.vault, notes[0].url, infos[0].mintPubkey)
     if (
@@ -216,6 +236,7 @@ export class Wallet {
       })
     const k1s = notes.map(n => noteK1(n.url)!)
     const hashes = outputs.map(n => hashK1(noteK1(n.url)!))
+    check()
     let signatures: string[]
     if (action === 'split') {
       const result = await splitNoteWithHash(
@@ -233,6 +254,7 @@ export class Wallet {
           : await mergeNotesWithHash(callback, k1s, hashes[0])
       signatures = [result.signature]
     }
+    check()
     // Keep every source even after confirmation. A failure at any write can be
     // reconciled by hash lookup; no output secret depends on a success response.
     for (const note of notes)
@@ -324,8 +346,36 @@ export class Wallet {
     return exact.id
   }
 
+  /** Reserve a recovered bearer for migration; the receiving wallet must rotate it. */
+  async exportRecovery(id: string): Promise<string> {
+    const check = this.vault.sessionGuard()
+    const note = await this.find(id)
+    if (!note.needsRotation || !['unverified', 'shared'].includes(note.status))
+      throw new Error('Select a recovered note without a pending payment.')
+    const info = await fetchNoteInfo(note.url)
+    check()
+    requireIssuerUrl(info.callback, note.url)
+    await observeMint(this.vault, note.url, info.mintPubkey)
+    check()
+    await this.vault.save({
+      ...note,
+      amount: info.maxWithdrawable,
+      status: 'shared',
+      reason:
+        'Recovery handover: import and rotate in a fresh wallet. Old copies remain valid until claimed.',
+      updatedAt: Date.now()
+    })
+    check()
+    return note.url
+  }
+
   /** Submit a fixed-amount invoice; an accepted request is not settlement proof. */
   async pay(id: string, input: string): Promise<void> {
+    return this.vault.exclusive(() => this.payNote(id, input))
+  }
+
+  private async payNote(id: string, input: string): Promise<void> {
+    const check = this.vault.sessionGuard()
     const invoice = input.trim().replace(/^lightning:/i, '')
     const amount = decodeBolt11AmountMsat(invoice)
     if (!isBolt11Invoice(invoice) || !amount)
@@ -334,6 +384,7 @@ export class Wallet {
     if (note.status !== 'ready')
       throw new Error('Select a confirmed, unshared note.')
     const info = await fetchNoteInfo(note.url)
+    check()
     const callback = requireIssuerUrl(info.callback, note.url)
     if (info.maxWithdrawable !== amount)
       throw new Error(
@@ -348,7 +399,9 @@ export class Wallet {
         'Payment requested. Check status; never infer settlement from dispatch.',
       updatedAt: Date.now()
     })
+    check()
     const result = await meltNote(callback, noteK1(note.url)!, invoice)
+    check()
     if (result.verify) {
       if (!result.pr || !sameInvoice(result.pr, invoice))
         throw new Error('The payment proof refers to a different invoice.')
@@ -518,7 +571,8 @@ export class Wallet {
               found.maxWithdrawable,
               `Recovered cash index ${index}; rotate before handover.`
             ),
-            status: 'ready'
+            status: 'unverified',
+            needsRotation: true
           })
           known.add(identity)
           added++
@@ -589,6 +643,13 @@ export class Wallet {
   async share(
     id: string,
     format: 'url' | 'lnurl' | 'lnurlw' | 'claim' = 'url'
+  ): Promise<string> {
+    return this.vault.exclusive(() => this.shareNote(id, format))
+  }
+
+  private async shareNote(
+    id: string,
+    format: 'url' | 'lnurl' | 'lnurlw' | 'claim'
   ): Promise<string> {
     const note = await this.find(id)
     if (note.status !== 'ready')

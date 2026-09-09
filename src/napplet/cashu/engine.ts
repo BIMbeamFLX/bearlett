@@ -110,7 +110,7 @@ export class CashuEngine {
     if (this.running) throw new Error('Another Cashu operation is running.')
     this.running = true
     try {
-      return await action()
+      return await this.vault.exclusive(action)
     } finally {
       this.running = false
     }
@@ -159,6 +159,7 @@ export class CashuEngine {
   }
   /** Obtain a protocol wallet with durable, monotonic counters and a mediated transport. */
   private async client(mint: string, payment = false): Promise<CashuWallet> {
+    const check = this.vault.sessionGuard()
     await this.vault.assertReady()
     if (!this.host)
       throw new Error('This shell does not provide the Cashu capability.')
@@ -168,8 +169,10 @@ export class CashuEngine {
       reserve: async (id, n) => {
         const s = await this.state(),
           start = s.counters[id] ?? 0
-        if (n && s.restored && !s.scanned.includes(base))
-          throw new Error('Recover this Cashu mint before creating new proofs.')
+        if (n && s.restored)
+          throw new Error(
+            'Migrate recovered proofs into a fresh wallet. A seed scan cannot prove exclusive ownership.'
+          )
         if (
           !Number.isSafeInteger(n) ||
           n < 0 ||
@@ -195,7 +198,19 @@ export class CashuEngine {
     )
     const wallet = new CashuWallet(
       new Mint(base, {
-        customRequest: cashuRequest(this.host, base, this.offline, quotes)
+        customRequest: cashuRequest(
+          {
+            request: async request => {
+              check()
+              const response = await this.host!.request(request)
+              check()
+              return response
+            }
+          },
+          base,
+          this.offline,
+          quotes
+        )
       }),
       {
         unit: 'sat',
@@ -278,6 +293,12 @@ export class CashuEngine {
     for (const id of op.inputs)
       s.assets.find(a => a.note.id === id)!.note.status = 'spent'
     const received = groups.filter(g => g.length).map(g => asset(op.mint, g))
+    if (s.restored)
+      for (const a of received) {
+        a.note.status = 'unverified'
+        a.note.reason =
+          'Recovered output: migrate to a fresh wallet before spending.'
+      }
     const appearance = s.assets.find(a => a.note.id === op.inputs[0])?.note
     if (appearance)
       for (const a of received) {
@@ -337,6 +358,41 @@ export class CashuEngine {
       a.note.reason = 'Handed over; excluded from available balance.'
       await this.save(s)
       return token
+    })
+  }
+  /** Reserve recovered bearer proofs for explicit migration into a fresh wallet. */
+  async exportRecovery(id: string): Promise<string> {
+    return this.exclusive(async () => {
+      const state = await this.state()
+      const note = state.assets.find(a => a.note.id === id)
+      if (
+        !state.restored ||
+        !note ||
+        !['unverified', 'shared'].includes(note.note.status) ||
+        state.operations.some(
+          op =>
+            op.phase !== 'complete' &&
+            (op.inputs.includes(id) || op.receivedIds.includes(id))
+        )
+      )
+        throw new Error(
+          'Reconcile pending operations before moving recovered proofs.'
+        )
+      const wallet = await this.client(note.note.url)
+      const proofs = deserializeProofs(note.proofs)
+      const states = await wallet.checkProofsStates(proofs)
+      if (
+        states.length !== proofs.length ||
+        states.some(p => p.state !== 'UNSPENT')
+      )
+        throw new Error(
+          'Recovered proofs are spent or pending; keep their recovery record.'
+        )
+      note.note.status = 'shared'
+      note.note.reason =
+        'Recovery handover: import and rotate in a fresh wallet. Old copies remain valid until claimed.'
+      await this.save(state)
+      return getEncodedToken({mint: note.note.url, unit: 'sat', proofs})
     })
   }
   /** Prepare a funding quote while retaining its private redemption key. */
@@ -463,7 +519,7 @@ export class CashuEngine {
           !verifyMeltPreimage(op.invoice!, result.quote.payment_preimage ?? '')
         )
           throw new Error('Payment preimage does not match the invoice.')
-        await this.finish(op, [result.change])
+        await this.finish(op, [await this.meltChange(wallet, op, result.quote)])
       }
     })
   }
@@ -480,6 +536,73 @@ export class CashuEngine {
       await this.save(s)
     })
   }
+  private async meltChange(
+    wallet: CashuWallet,
+    op: CashuJournal,
+    quote: MeltQuoteBolt11Response
+  ): Promise<Proof[]> {
+    if (
+      String(quote.quote) !== String(op.quote!.quote) ||
+      (quote.request && !sameInvoice(quote.request, op.invoice!)) ||
+      !Amount.from(quote.amount).equals(
+        Amount.from(op.quote!.amount as number)
+      ) ||
+      !Amount.from(quote.fee_reserve).equals(
+        Amount.from(op.quote!.fee_reserve as number)
+      )
+    )
+      throw new Error('Payment quote changed; keep its journal pending.')
+    const outputs = op.outputs!.map(OutputData.deserialize)
+    const minimum = op.reservedAmount! - op.maximumDebit!
+    const maximum =
+      op.reservedAmount! -
+      Amount.from(op.quote!.amount as number).toNumber() -
+      op.inputFee!
+    if (
+      !Number.isSafeInteger(minimum) ||
+      !Number.isSafeInteger(maximum) ||
+      minimum < 0 ||
+      maximum < minimum
+    )
+      throw new Error('Missing payment change accounting; keep its journal.')
+    let change = quote.change
+      ? wallet.createMeltChangeProofs(outputs, quote.change)
+      : []
+    if (!quote.change || sumProofs(change).toNumber() < minimum) {
+      const restored = await wallet.mint.restore({
+        outputs: outputs.map(o => o.blindedMessage)
+      })
+      if (
+        restored.outputs.length !== restored.signatures.length ||
+        new Set(restored.outputs.map(output => output.B_)).size !==
+          restored.outputs.length
+      )
+        throw new Error('Invalid or duplicate restored change outputs.')
+      change = restored.outputs.flatMap((output, index) => {
+        const original = outputs.find(o => o.blindedMessage.B_ === output.B_)
+        if (!original)
+          throw new Error('Mint returned an unknown change output.')
+        return wallet.createMeltChangeProofs(
+          [original],
+          [restored.signatures[index]]
+        )
+      })
+    }
+    const total = sumProofs(change).toNumber()
+    if (total < minimum || total > maximum)
+      throw new Error(
+        'Payment change is incomplete or exceeds its agreed bounds.'
+      )
+    const states = await wallet.checkProofsStates(change)
+    if (
+      states.length !== change.length ||
+      states.some(state => state.state !== 'UNSPENT')
+    )
+      throw new Error(
+        'Payment change is spent or pending; keep the journal for reconciliation.'
+      )
+    return change
+  }
   /** Reconcile an operation without regenerating outputs or replaying a payment. */
   async resume(id: string): Promise<void> {
     await this.exclusive(async () => {
@@ -493,10 +616,7 @@ export class CashuEngine {
           throw new Error('Payment is not settled. Its inputs remain reserved.')
         if (!verifyMeltPreimage(op.invoice!, quote.payment_preimage ?? ''))
           throw new Error('Invalid payment preimage.')
-        const change = wallet.createMeltChangeProofs(
-          op.outputs!.map(OutputData.deserialize),
-          quote.change ?? []
-        )
+        const change = await this.meltChange(wallet, op, quote)
         await this.finish(op, [change])
         return
       }
@@ -683,16 +803,41 @@ export class CashuEngine {
       await this.save(s)
     })
   }
-  /** Restore each keyset using NUT-13; failed reads never count as empty counter ranges. */
-  async recover(mint: string): Promise<number> {
+  /** Scan a bounded NUT-13 range; results never authorize another writer for the old seed. */
+  async recover(
+    mint: string,
+    options: {start?: number; gapLimit?: number; limit?: number} = {}
+  ): Promise<number> {
     return this.exclusive(async () => {
+      const first = options.start ?? 0,
+        gapLimit = options.gapLimit ?? 300,
+        limit = options.limit ?? 10000,
+        end = first + limit
+      if (
+        !Number.isSafeInteger(first) ||
+        first < 0 ||
+        !Number.isSafeInteger(gapLimit) ||
+        gapLimit < 100 ||
+        gapLimit > 10000 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 100 ||
+        limit > 1000000 ||
+        end > 1000000
+      )
+        throw new Error('Invalid recovery scan range.')
       const wallet = await this.client(mint),
         base = mintUrl(mint)
+      const snapshot = await this.state()
+      snapshot.restored = true
+      snapshot.scanned = snapshot.scanned.filter(url => url !== base)
+      await this.save(snapshot)
       let added = 0
       for (const keyset of wallet.keyChain.getKeysets()) {
         if (keyset.unit !== 'sat') continue
-        for (let start = 0; start < 1000000; start += 100) {
-          const recovered = await wallet.restore(start, 100, {
+        let empty = 0
+        for (let start = first; start < end; start += 100) {
+          const count = Math.min(100, end - start)
+          const recovered = await wallet.restore(start, count, {
             keysetId: keyset.id
           })
           const states = await wallet.checkProofsStates(recovered.proofs)
@@ -715,16 +860,18 @@ export class CashuEngine {
               recovered.lastCounterWithSignature + 1
             )
           await this.save(s)
-          if (!recovered.proofs.length) break
-          if (start === 999900)
+          empty = recovered.proofs.length ? 0 : empty + count
+          if (
+            empty >= gapLimit &&
+            start + count >= (snapshot.counters[keyset.id] ?? 0)
+          )
+            break
+          if (start + count === end)
             throw new Error(
-              'Recovery scan limit reached; mint remains blocked for new outputs.'
+              `Recovery scan limit reached. Continue from counter ${end}; recovered proofs remain blocked for new outputs.`
             )
         }
       }
-      const s = await this.state()
-      s.scanned = [...new Set([...s.scanned, base])]
-      await this.save(s)
       return added
     })
   }

@@ -60,6 +60,12 @@ export class Bearlett extends Wallet {
       ? this.cashu.share(id)
       : super.share(id, format)
   }
+  /** Move quarantined recovery assets to a fresh wallet without reusing its old seed. */
+  async exportRecovery(id: string): Promise<string> {
+    return (await this.protocol(id)) === 'cashu'
+      ? this.cashu.exportRecovery(id)
+      : super.exportRecovery(id)
+  }
   async preparePayment(ids: string[], invoice: string): Promise<string> {
     if ((await this.selectedProtocol(ids)) !== 'cashu')
       return super.preparePayment(ids, invoice)

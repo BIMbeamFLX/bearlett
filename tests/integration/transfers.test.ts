@@ -7,6 +7,7 @@ import type {CashuHost} from '../../src/napplet/cashu/transport'
 import {lightning} from '../../scripts/regtest.mjs'
 import {generateMnemonic} from '@scure/bip39'
 import {wordlist} from '@scure/bip39/wordlists/english.js'
+import {fetchNoteInfo} from '../../src/lnurlcash'
 
 const phrase = generateMnemonic(wordlist)
 const password = 'regtest wallet password'
@@ -24,7 +25,7 @@ async function until(check: () => Promise<boolean>) {
   }
   throw error ?? new Error('Regtest did not settle within 30 seconds.')
 }
-const makeVault = async () => {
+const makeVault = async (seed = phrase) => {
   const data = new Map<string, string>()
   const vault = new Vault({
     getItem: async k => data.get(k) ?? null,
@@ -33,10 +34,10 @@ const makeVault = async () => {
     },
     keys: async () => [...data.keys()]
   })
-  await vault.create(password, phrase)
+  await vault.create(password, seed)
   return vault
 }
-it('settles both protocols through real LND and restores a transfer after losing its melt response', async () => {
+it('settles both protocols, recovers a lost melt response and migrates quarantined bearer assets to a fresh seed', async () => {
   vi.stubEnv('MODE', 'napplet')
   vi.stubGlobal('window', {
     napplet: {
@@ -150,12 +151,30 @@ it('settles both protocols through real LND and restores a transfer after losing
     await vault.restore(backup, password)
     transfers = new Transfers(vault, wallet.cashu)
     await until(async () => {
-      await transfers.resume(toLnurl.id)
+      try {
+        await transfers.resume(toLnurl.id)
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !/Destination note is not yet available|fresh wallet/.test(
+            error.message
+          )
+        )
+          throw error
+      }
       return (
-        (await transfers.list()).find(t => t.id === toLnurl.id)?.phase ===
-        'complete'
+        (await wallet.cashu.state()).operations.find(o => o.id === payment.id)
+          ?.phase === 'complete' &&
+        (await vault.notes()).find(n => n.id === toLnurl.targetId)?.status ===
+          'unverified'
       )
     })
+    // A restored writer is quarantined. Do not turn an old seed into a new writer
+    // just to close the transfer UI journal: migrate its actual value instead.
+    await expect(transfers.resume(toLnurl.id)).rejects.toThrow('fresh wallet')
+    expect((await transfers.list()).find(t => t.id === toLnurl.id)?.phase).toBe(
+      'claiming'
+    )
     expect(
       (await vault.notes()).find(n => n.id === toLnurl.targetId)?.amount
     ).toBe(199000)
@@ -163,11 +182,50 @@ it('settles both protocols through real LND and restores a transfer after losing
       (await wallet.cashu.state()).operations.find(o => o.id === payment.id)
         ?.phase
     ).toBe('complete')
+    const completed = (await wallet.cashu.state()).operations.find(
+      o => o.id === payment.id
+    )!
+    const change = (await wallet.cashu.notes()).filter(n =>
+      completed.receivedIds.includes(n.id)
+    )
+    expect(change.length).toBeGreaterThan(0)
+    expect(change.every(n => n.status === 'unverified')).toBe(true)
+    const changeMsat = change.reduce((sum, n) => sum + n.amount, 0)
+    expect(changeMsat).toBeGreaterThanOrEqual(
+      (payment.reservedAmount! - payment.maximumDebit!) * 1000
+    )
+    expect(changeMsat).toBeLessThanOrEqual(
+      (payment.reservedAmount! - 200 - payment.inputFee!) * 1000
+    )
+    const freshPhrase = generateMnemonic(wordlist)
+    const freshVault = await makeVault(freshPhrase)
+    const recipient = new Bearlett(freshVault, host)
+    await recipient.cashu.enable(freshPhrase, false)
+    const oldLnurl = await wallet.exportRecovery(toLnurl.targetId!)
+    await recipient.receive(oldLnurl)
     expect(
-      (await wallet.cashu.notes()).some(
-        n => n.status === 'ready' && n.amount > 0 && n.amount < 512000
-      )
-    ).toBe(true)
+      (await freshVault.notes())
+        .filter(n => n.status === 'ready')
+        .reduce((sum, n) => sum + n.amount, 0)
+    ).toBe(199000)
+    await expect(fetchNoteInfo(oldLnurl)).rejects.toThrow()
+    let migrationFeeMsat = 0
+    for (const note of change) {
+      // This isolated Nutshell stack configures MINT_INPUT_FEE_PPK=100.
+      const proofs = (await wallet.cashu.state()).assets.find(
+        a => a.note.id === note.id
+      )!.proofs
+      migrationFeeMsat += Math.ceil((proofs.length * 100) / 1000) * 1000
+      await recipient.receive(await wallet.cashu.exportRecovery(note.id))
+      await wallet.cashu.refresh(note.id)
+      expect(
+        (await wallet.cashu.notes()).find(n => n.id === note.id)?.status
+      ).toBe('spent')
+    }
+    const newCashuMsat = (await recipient.cashu.notes())
+      .filter(n => n.status === 'ready')
+      .reduce((sum, n) => sum + n.amount, 0)
+    expect(newCashuMsat).toBe(changeMsat - migrationFeeMsat)
     expect(melts).toBe(1)
   } finally {
     vi.unstubAllGlobals()

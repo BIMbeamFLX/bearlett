@@ -111,9 +111,9 @@ addEventListener('message',async event=>{
  window.hostCalls.push({type:msg.type,topic:msg.topic,url:msg.url,...(msg.type==='intent.invoke'?{request:msg.request}:{})});
  const result={type:msg.type+'.result',id:msg.id};
  try{
-  if(msg.type==='storage.get')result.value=stores[key].get(msg.key)??null;
-  else if(msg.type==='storage.set')stores[key].set(msg.key,msg.value);
-  else if(msg.type==='storage.keys')result.keys=[...stores[key].keys()];
+  if(msg.type==='storage.get'){result.value=stores[key].get(msg.key)??null;result.ok=true;}
+  else if(msg.type==='storage.set'){stores[key].set(msg.key,msg.value);result.ok=true;}
+  else if(msg.type==='storage.keys'){result.keys=[...stores[key].keys()];result.ok=true;}
   else if(msg.type==='inc.subscribe'){topics[key].add(msg.topic);setTimeout(()=>{for(const value of pending[key].filter(v=>v.topic===msg.topic))send(key,value);pending[key]=pending[key].filter(v=>v.topic!==msg.topic)},10);}
   else if(msg.type==='inc.unsubscribe'){topics[key].delete(msg.topic);return;}
   else if(msg.type==='inc.emit')return;

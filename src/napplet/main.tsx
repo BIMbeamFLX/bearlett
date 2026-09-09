@@ -74,6 +74,7 @@ function App() {
   const [backup, setBackup] = createSignal('')
   const [restoreText, setRestoreText] = createSignal('')
   const [backupPassword, setBackupPassword] = createSignal('')
+  const [allowLegacyBackup, setAllowLegacyBackup] = createSignal(false)
   const [designs, setDesigns] = createSignal<Record<string, NoteDesign>>({})
   const [designText, setDesignText] = createSignal('')
   const [designOpen, setDesignOpen] = createSignal(false)
@@ -90,9 +91,10 @@ function App() {
   let timer: ReturnType<typeof setInterval>
   let polling = false
   let lastPoll = 0
+  let sessionGeneration = 0
 
   const lock = (): void => {
-    if (busy()) return
+    sessionGeneration++
     vault?.lock()
     setUnlocked(false)
     setNotes([])
@@ -113,25 +115,45 @@ function App() {
     setSavedPaymentAddresses([])
     setFundingInvoice('')
     setBackupPassword('')
+    setAllowLegacyBackup(false)
     setRestoreText('')
     setBackup('')
     setRequest(null)
     setDesigns({})
     setDesignText('')
   }
-  const touch = (): void => {
+  const hide = (): void => {
+    if (document.visibilityState === 'hidden') lock()
+  }
+  const touch = (event?: Event): void => {
+    if (event && !event.isTrusted) return
     lastActivity = Date.now()
     setLockWarning(false)
   }
   const loadState = async (): Promise<void> => {
-    setNotes(await wallet.notes())
-    setDesigns(await vault.designs())
-    setPins((await vault.meta<MintPin[]>('mints')) ?? [])
-    setSavedMintAddresses((await vault.meta<string[]>('mint-addresses')) ?? [])
-    setSavedPaymentAddresses(
-      (await vault.meta<string[]>('payment-addresses')) ?? []
-    )
-    const prefs = parsePreferences(await vault.meta('preferences'))
+    const current = vault.sessionGuard()
+    const [
+      savedNotes,
+      savedDesigns,
+      savedPins,
+      mintAddresses,
+      paymentAddresses,
+      storedPreferences
+    ] = await Promise.all([
+      wallet.notes(),
+      vault.designs(),
+      vault.meta<MintPin[]>('mints'),
+      vault.meta<string[]>('mint-addresses'),
+      vault.meta<string[]>('payment-addresses'),
+      vault.meta('preferences')
+    ])
+    current()
+    setNotes(savedNotes)
+    setDesigns(savedDesigns)
+    setPins(savedPins ?? [])
+    setSavedMintAddresses(mintAddresses ?? [])
+    setSavedPaymentAddresses(paymentAddresses ?? [])
+    const prefs = parsePreferences(storedPreferences)
     setPreferences(prefs)
     setNappletOffline(prefs.offline)
     setRevision(value => value + 1)
@@ -150,8 +172,11 @@ function App() {
     setBusy(true)
     setMessage('')
     try {
+      const current = unlocked() ? vault.sessionGuard() : () => {}
       if (!importing && unlocked()) await vault.assertReady()
+      current()
       await action()
+      current()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Operation failed.')
     } finally {
@@ -179,6 +204,11 @@ function App() {
     }
   }
   const authenticate = async (): Promise<void> => {
+    const generation = sessionGeneration
+    const current = (): void => {
+      if (generation !== sessionGeneration)
+        throw new Error('The wallet was locked while opening. Unlock it again.')
+    }
     if (exists() && resettingPassword()) {
       if (password() !== repeat()) throw new Error('Passwords do not match.')
       await vault.resetPassword(seed(), password())
@@ -188,6 +218,7 @@ function App() {
       if (!seedSaved())
         throw new Error('Confirm that you saved your seed phrase.')
       await vault.create(password(), seed(), restoringSeed())
+      current()
       await wallet.cashu.enable(seed(), restoringSeed())
       setExists(true)
     }
@@ -196,6 +227,7 @@ function App() {
     setSeed('')
     setResettingPassword(false)
     const prefs = parsePreferences(await vault.meta('preferences'))
+    current()
     setPreferences(prefs)
     setNappletOffline(prefs.offline)
     setUnlocked(true)
@@ -233,12 +265,13 @@ function App() {
           )
         )
       timer = setInterval(() => {
-        if (!unlocked() || busy() || polling) return
+        if (!unlocked()) return
         const timeout = preferences().autoLock * 60000
         if (timeout && Date.now() - lastActivity >= timeout) {
           lock()
           return
         }
+        if (busy() || polling) return
         setLockWarning(
           !!timeout && Date.now() - lastActivity >= timeout - 30000
         )
@@ -271,6 +304,8 @@ function App() {
       }, 1000)
       document.addEventListener('pointerdown', touch)
       document.addEventListener('keydown', touch)
+      document.addEventListener('visibilitychange', hide)
+      window.addEventListener('pagehide', lock)
     } catch (error) {
       setFailure((error as Error).message)
     }
@@ -281,6 +316,8 @@ function App() {
     vault?.lock()
     document.removeEventListener('pointerdown', touch)
     document.removeEventListener('keydown', touch)
+    document.removeEventListener('visibilitychange', hide)
+    window.removeEventListener('pagehide', lock)
   })
   const toggle = (id: string): void => {
     setSelected(current =>
@@ -347,7 +384,7 @@ function App() {
           </span>
         </a>
         <Show when={unlocked()}>
-          <button class="quiet" disabled={busy()} onClick={lock}>
+          <button class="quiet" onClick={lock}>
             Lock wallet
           </button>
         </Show>
@@ -1102,9 +1139,11 @@ function App() {
                     disabled={
                       busy() || selected().length !== 1 || !invoice().trim()
                     }
-                    onClick={() =>
+                    onClick={() => {
+                      const confirmedId = selected()[0]
+                      const confirmedInvoice = invoice()
                       void run(async () => {
-                        await wallet.pay(selected()[0], invoice())
+                        await wallet.pay(confirmedId, confirmedInvoice)
                         setInvoice('')
                         setSelected([])
                         setTab('wallet')
@@ -1112,7 +1151,7 @@ function App() {
                           'Payment submitted. Settlement is not yet confirmed.'
                         )
                       })
-                    }
+                    }}
                   >
                     Confirm payment
                   </button>
@@ -1264,10 +1303,12 @@ function App() {
                       void run(async () => {
                         const added = await vault.restore(
                           restoreText(),
-                          backupPassword()
+                          backupPassword(),
+                          {allowLegacy: allowLegacyBackup()}
                         )
                         setRestoreText('')
                         setBackupPassword('')
+                        setAllowLegacyBackup(false)
                         setMessage(
                           `Imported ${added} notes. Check them online before using.`
                         )
@@ -1276,6 +1317,18 @@ function App() {
                   >
                     Import encrypted notes
                   </button>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowLegacyBackup()}
+                      onChange={e =>
+                        setAllowLegacyBackup(e.currentTarget.checked)
+                      }
+                    />{' '}
+                    Import an old v1 backup whose completeness cannot be
+                    verified. Keep the original file and reconcile all mints
+                    after importing.
+                  </label>
                 </section>
               </Show>
               <BearlettTools

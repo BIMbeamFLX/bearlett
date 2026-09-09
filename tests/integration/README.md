@@ -22,8 +22,12 @@ and reconnect Lightning peers.
 The helper mines blocks and opens a funded Alice/Bob channel. The test funds
 LNURLcash from Bob, transfers LNURLcash→Cashu, funds Cashu from Alice and transfers
 Cashu→LNURLcash. LNURLmint charges a flat sat; Nutshell charges input fees. The
-second transfer deliberately loses its melt response, restores a backup into a
-new wallet, and must finish with destination value and change without another melt.
+second transfer deliberately loses its melt response and restores its backup.
+The source payment and change are reconciled without another melt. Recovered
+assets stay quarantined; the test moves the destination LNURLcash note and Cashu
+change into a wallet with a fresh seed, verifies the exact value after migration
+fees, and checks that the old copies are spent. The old transfer journal remains
+`claiming`: automatic completion after migration is still an open UI/workflow item.
 Protocol operations and crypto use the actual implementations. The test host maps
 only two fixed HTTPS identities to these local services.
 

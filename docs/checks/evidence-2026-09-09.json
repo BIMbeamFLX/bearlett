@@ -1,0 +1,284 @@
+{
+  "date": "2026-09-09",
+  "baseCommit": "87fd4f0",
+  "branch": "feature/bearlett",
+  "note": "Raw artifacts are local ignored outputs; hashes document provenance, not independent attestation. Decisions were recorded in SQLite before this export.",
+  "decisions": [
+    {
+      "id": 1,
+      "updated_at": "2026-09-09T18:55:08.899Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Read-only feasibility audit on feature/bearlett; preserve existing changes; isolated regtest only; no implementation, publication or source checkout modifications."
+    },
+    {
+      "id": 2,
+      "updated_at": "2026-09-09T19:04:03.319Z",
+      "updated_by": "user:felix",
+      "status": "REVIEW",
+      "reason": "V1: exactly one active writing device with explicit handover; concurrent multi-device spending is out of V1 scope."
+    },
+    {
+      "id": 3,
+      "updated_at": "2026-09-09T19:04:03.350Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Four isolated reproductions confirm omitted melt change completion, unauthenticated backup item omission, foreign-seed import before Cashu enable, and 100-counter recovery gap. Document before implementation; keep current wallet source unchanged."
+    },
+    {
+      "id": 4,
+      "updated_at": "2026-09-09T19:07:10.914Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "F00 reproduced: installed official shim resolves storage result ok:false; Kehto persistence catches failures and returns false. Prioritize durable host storage boundary before new platforms. Regtest passes after fresh block; recommend shared TypeScript core, native adapters, independent wallet Nostr key, NIP78 encrypted full journal backup and explicit single-writer handover."
+    },
+    {
+      "id": 5,
+      "updated_at": "2026-09-09T19:14:14.233Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User requests Monero and USDT swaps as side question. Granola testnet Cashu sat/usd is not native XMR/USDT and dni wallet has no integration. Record future extension, keep current verification scope; requested pairs and USDT network pending clarification."
+    },
+    {
+      "id": 6,
+      "updated_at": "2026-09-09T19:16:30.961Z",
+      "updated_by": "user:felix",
+      "status": "REVIEW",
+      "reason": "Preferred future XMR/USDT swaps always through mints using Breno Granola. Architecture: LNURLcash to Cashu sats via Lightning; Cashu HTLC swap to asset-backed ecash; separate mint redemption. No verified XMR/USDT mint or redemption backend yet; keep as gated extension after V1 safety work, no implementation authorized in this check."
+    },
+    {
+      "id": 7,
+      "updated_at": "2026-09-09T19:17:30.674Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Completed four German feasibility/architecture/sources/infrastructure reports and five isolated bug reproductions. Original wallet code and user edits preserved. Reproductions and typecheck rerun successfully; regtest stack stopped with volumes retained. No full implementation, public deployment or commit."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "outputs/feasibility-2026-09-09/LUD-25.md",
+      "bytes": 25559,
+      "sha256": "77dbf91e967c7c137425c097ced67cfd7c240aca149184ac116f49dc32f25dc3"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/browser.log",
+      "bytes": 3616,
+      "sha256": "7d5b0cf329aa720f3c3adbbb710d313af9d8b2c6365d8111c49ba1b6ba9b630d"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/build-notes.log",
+      "bytes": 559,
+      "sha256": "70cdff0166738e71f24b59349f3dd8b3f4f356f1bf0b587fb6ecd26c0f48d8c2"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/build-wallet.log",
+      "bytes": 565,
+      "sha256": "06f13029a1adbbaeb00c193b1c35b158c9ac507858825e1dc64afb68cca4a13f"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/build-web.log",
+      "bytes": 3870,
+      "sha256": "dc76abb724eb08e2a536a28515733de9272c18da8ad3138a5d3aa5ea51b89c48"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/cashu-cors.json",
+      "bytes": 456,
+      "sha256": "6cabdb579a12c4951f388f4743a8425d7e149d781ae29cd9a0ff70c0edf8ab96"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/cashu-sync-install.log",
+      "bytes": 359,
+      "sha256": "e4dfb39688eb5012a3a3b648941334cde4920d5bbd75e185a1e9a8c1c442f45a"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/cashu-sync-relay-tests.log",
+      "bytes": 3214,
+      "sha256": "a8f2338707045eafb883dbd921cc245e6128da5b726d994e44199d516b57e02e"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/cashu-sync-tests.log",
+      "bytes": 43765,
+      "sha256": "a459d61e1a42d72d772f81a12d3051bafd9424e78469c69efcac4aa1026a5cb1"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/envelope-install.log",
+      "bytes": 27,
+      "sha256": "3eedf766afaffd5694a6789062e75aece353334b2dc9c794db5db146056b0753"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/envelope-tests.log",
+      "bytes": 3123,
+      "sha256": "00a53c6caf71017a3c30032b12dff6514473a5219a1fd10383a1c7e5234e28e5"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/format-auto-eol.log",
+      "bytes": 132,
+      "sha256": "5edd8c1df8ce709a83d9ae6e3c4864dc73936ca9a30dfe28c2417cab0f5c0e83"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/format.log",
+      "bytes": 4537,
+      "sha256": "a909bb213e07407505548ea2bc44fe04b0703fe090c68dcddfad8eb33220bb74"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/granola-install.log",
+      "bytes": 28,
+      "sha256": "519d137b3bdcc6301ddab16f20a881e55eb9318381e20473d63242a05b852426"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/granola-tests.log",
+      "bytes": 311,
+      "sha256": "9d1d3e6b1b2f5085b164f327fdb49595cbb864ef2ef6d77fe8bcac87c7bdfb30"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/kehto-full-tests.log",
+      "bytes": 69852,
+      "sha256": "4e8a44533035eeaece465d75beaf63c016cb1a490e1f6ef791cadb083bbb5677"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/kehto-tests.log",
+      "bytes": 308,
+      "sha256": "13059d676c1a336720ccb2aa8c12ea970773f6bbf554cce468e45afdfe1b6e9b"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/lnurl-cors.json",
+      "bytes": 239,
+      "sha256": "cbc621cdb2e9e5f7883591f53b4a275860b91ab24b7263cffcfc5763d6a0e03e"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-13.diff",
+      "bytes": 9867,
+      "sha256": "a604dad8ec878ee303e1d2fadba715a91b0ac0df1ec348cf2da9f8651f0b9fa8"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-13.json",
+      "bytes": 230,
+      "sha256": "9798c396cc473649ee9a41c5be49bed99e69756c9fa3e6496eec02efe733dd4c"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-2.diff",
+      "bytes": 19314,
+      "sha256": "3fda55a41a41dcc64cd9eff548062c6a90d09da7278ce7d7c11932c198e47394"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-2.json",
+      "bytes": 228,
+      "sha256": "a6ba91646bb097cc0afa6ebe943af1fb50d5561ece1a63b9884a09299d27f464"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-3.diff",
+      "bytes": 7965,
+      "sha256": "f4c0e248999065140b1d70e49532c531c23cddfc6d3db4716cfa3123df41ac6d"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-3.json",
+      "bytes": 228,
+      "sha256": "964a63e3777f415ed18a9023ec431808a2120accc4058bf3db0b34afc99dee50"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-32.diff",
+      "bytes": 19746,
+      "sha256": "8ee561780822f9dc25684f058263d14abdc785e138a82c651e2fa5a8abcba661"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/napplet--naps-pr-32.json",
+      "bytes": 229,
+      "sha256": "cc2b800d6c458c49f63b29ca567d1e0babf435c5bf81bfc2bd082cfe37672658"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/nostr-protocol--nips-pr-2303.diff",
+      "bytes": 12043,
+      "sha256": "54647c3f453e4473a40d8dfc394fc952c556274502216e31cebe964e0ff01e7f"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/nostr-protocol--nips-pr-2303.json",
+      "bytes": 236,
+      "sha256": "57b39fb735e98c0cb2f404473a26ca120caee7ab62b7a9d6ee87d46f0d0edbb1"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/npm-audit.json",
+      "bytes": 386,
+      "sha256": "8f5d487489f8b623ea5cb37da1aaf0c7cfe5c59b5957071a7e1a225e517f2d49"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/regtest-images.txt",
+      "bytes": 403,
+      "sha256": "8ec54d893dd1237cd73fa63c0127d67848b4f12789fa94ee65b19f7bdbe4eae6"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/regtest-resources.txt",
+      "bytes": 255,
+      "sha256": "5d5af899f1a6555563ef0791d3350940b560c9d3eb3501569aa7bbe84685f8e6"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/regtest-start-repaired.log",
+      "bytes": 139,
+      "sha256": "5dc7e5a9a244ae44529d8a19d27f3f2897934aacd9277809c7d65c492c764855"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/regtest-start.log",
+      "bytes": 494,
+      "sha256": "d2ee1c6bd8bb5fa1067558fc3fdf4c8a23e37131267efdec04b99ce5b0dba0b7"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/regtest.log",
+      "bytes": 644,
+      "sha256": "c56f8485ea3064e9ec7111b3693cb4ab8988adb8d53daa70887edfbdbc5dfbc6"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/reproductions.log",
+      "bytes": 572,
+      "sha256": "187751e7a1aaf8519c9ea26b881f1d023db0ed4cfa4236a5d73528935f726884"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/strfry-Dockerfile",
+      "bytes": 1139,
+      "sha256": "07f8929d08185366b32f9918f9bf6b932f348b7cd21f1416c1751940dd8e0f4e"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/strfry-README.md",
+      "bytes": 21183,
+      "sha256": "c8055c2c4931d3f9800a825ee011dc8e146aca75afba9afbb89fc92654e06b6b"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/strfry-sha.txt",
+      "bytes": 42,
+      "sha256": "de761d8daf8eafab4606681f63fef88ca52774be8e770a2d2ff192e17de6a6e0"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/strfry.conf",
+      "bytes": 6957,
+      "sha256": "634c67c229239d7e301c7027099c7fd679c5008d857f7bb03493fc5fe09f34b7"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/tsc.log",
+      "bytes": 33,
+      "sha256": "956e6c07a0dfd51b8b2d81a9a2baf09beec9d37d471aca73b922d0e1d6aad3c2"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/unit.log",
+      "bytes": 897,
+      "sha256": "c2cb6055530853463372016e551ed8e94d4ac565fac1fc67b8544595f9570304"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/upstream-versions.txt",
+      "bytes": 1019,
+      "sha256": "e7c8f99fc46c23debdae6a8cea9e16e5219ff0f0ece56fbcad5d263a41c4ae22"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/workshop-conformance.log",
+      "bytes": 1137,
+      "sha256": "2fa4f72ef81fec3bbb929a2b0e7feae175b1e560fab316ab3795a12e2c91026f"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/workshop-install.log",
+      "bytes": 1039,
+      "sha256": "9409dfa13246435c1c20e2b6d004ee0d744776847147100d7460d059624c8a35"
+    },
+    {
+      "path": "outputs/feasibility-2026-09-09/workshop-verify.log",
+      "bytes": 398,
+      "sha256": "2447a1c95047deb7af1d949da451c96ad063223ea305faa64548d890717b8a8c"
+    }
+  ]
+}

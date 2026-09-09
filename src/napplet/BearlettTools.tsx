@@ -22,6 +22,14 @@ export default function BearlettTools(props: {
   const [enabled, setEnabled] = createSignal(false),
     [operations, setOperations] = createSignal<CashuJournal[]>([])
   const [transfers, setTransfers] = createSignal<Transfer[]>([])
+  const [recovered, setRecovered] = createSignal(false)
+  const [scanStart, setScanStart] = createSignal('0')
+  const [scanLimit, setScanLimit] = createSignal('10000')
+  const [recoveryToken, setRecoveryToken] = createSignal('')
+  createEffect(() => {
+    props.tab
+    setRecoveryToken('')
+  })
   const coordinator = new Transfers(props.wallet.vault, props.wallet.cashu)
   createEffect(() => {
     props.revision
@@ -31,6 +39,7 @@ export default function BearlettTools(props: {
           'cashu-v1'
         )
       setEnabled(!!state)
+      setRecovered(!!state?.restored)
       setOperations(state?.operations ?? [])
       setTransfers(await coordinator.list())
     })().catch(() => {
@@ -90,8 +99,9 @@ export default function BearlettTools(props: {
         <section class="panel">
           <h2>Recover Cashu from your seed</h2>
           <p>
-            Scan each mint you used before creating new proofs with a restored
-            seed. Keep full backups for unpaid invoices and open transfers.
+            Find old proofs, then move them to a wallet with a new recovery
+            phrase. An empty scan does not prove that all proofs were found.
+            Keep full backups for unpaid invoices and open transfers.
           </p>
           <label>
             Cashu mint URL
@@ -101,16 +111,86 @@ export default function BearlettTools(props: {
               onInput={e => setMint(e.currentTarget.value)}
             />
           </label>
+          <label>
+            Start counter
+            <input
+              type="number"
+              min="0"
+              max="999900"
+              step="100"
+              value={scanStart()}
+              onInput={e => setScanStart(e.currentTarget.value)}
+            />
+          </label>
+          <label>
+            Maximum counters to scan
+            <input
+              type="number"
+              min="100"
+              max="1000000"
+              step="100"
+              value={scanLimit()}
+              onInput={e => setScanLimit(e.currentTarget.value)}
+            />
+          </label>
+          <p>
+            Stops after 300 unused counters beyond the known reservations.
+            Continue at a later counter if needed.
+          </p>
           <button
             disabled={props.busy || !mint()}
             onClick={() =>
               run(async () => {
-                await props.wallet.cashu.recover(mint())
+                await props.wallet.cashu.recover(mint(), {
+                  start: Number(scanStart()),
+                  limit: Number(scanLimit())
+                })
               })
             }
           >
             Scan Cashu mint
           </button>
+        </section>
+      </Show>
+      <Show when={props.tab === 'recovery'}>
+        <section class="panel">
+          <h2>Move recovered notes to a fresh wallet</h2>
+          <p>
+            Only share these tokens with your new wallet. It must receive and
+            rotate them online. Until then, old copies can still be redeemed.
+            Pending payments must be reconciled first.
+          </p>
+          <For
+            each={props.notes.filter(
+              note =>
+                ['unverified', 'shared'].includes(note.status) &&
+                (note.protocol === 'cashu' ? recovered() : note.needsRotation)
+            )}
+          >
+            {note => (
+              <button
+                disabled={props.busy}
+                onClick={() =>
+                  run(async () => {
+                    setRecoveryToken(await props.wallet.exportRecovery(note.id))
+                  })
+                }
+              >
+                Prepare recovery handover · {note.amount / 1000} sats ·{' '}
+                {new URL(note.url).host}
+              </button>
+            )}
+          </For>
+          <Show when={recoveryToken()}>
+            <label>
+              Recovered token for your new wallet
+              <textarea
+                readonly
+                value={recoveryToken()}
+                onFocus={e => e.currentTarget.select()}
+              />
+            </label>
+          </Show>
         </section>
       </Show>
       <Show when={props.tab === 'transfer'}>

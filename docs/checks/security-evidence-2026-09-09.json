@@ -1,0 +1,212 @@
+{
+  "date": "2026-09-09T20:13:31.100Z",
+  "baseCommit": "87fd4f01156a2c3f701eb473386cca727257d0c2",
+  "branch": "fix/bearlett-security-boundaries",
+  "note": "Local test evidence, not independent attestation. Hashes identify the tested working files. Logs and SQLite remain ignored. Historical red runs are retained as such.",
+  "results": {
+    "unit": {
+      "passed": 389,
+      "failed": 0,
+      "skipped": 1
+    },
+    "browser": {
+      "startTime": "2026-09-09T20:11:21.905Z",
+      "duration": 8697.197999999999,
+      "expected": 18,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "regtest": {
+      "passed": 1,
+      "failed": 0
+    },
+    "nappelin": {
+      "passed": 31,
+      "failed": 0,
+      "head": "1b2f2c8ca84e779aa51c31ce2d274341aca50c68",
+      "workingCopy": true
+    },
+    "tcgMockSync": {
+      "passed": 6,
+      "failed": 0,
+      "head": "d7535057480d3a16fcb6878eba78d70c66951fc5",
+      "workingCopy": true
+    },
+    "typecheck": "pass",
+    "builds": ["web: pass", "wallet: pass", "notes: pass"],
+    "changedSourceFormatting": "pass",
+    "fullRepositoryFormatting": "fail; pre-existing formatting/line-ending baseline",
+    "historicalNegativeTests": "F01-F04 fail because their old bug assertions no longer hold; direct upstream SDK F00 still reproduces"
+  },
+  "decisions": [
+    {
+      "id": 1,
+      "updated_at": "2026-09-09T18:55:08.899Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Read-only feasibility audit on feature/bearlett; preserve existing changes; isolated regtest only; no implementation, publication or source checkout modifications."
+    },
+    {
+      "id": 2,
+      "updated_at": "2026-09-09T19:04:03.319Z",
+      "updated_by": "user:felix",
+      "status": "REVIEW",
+      "reason": "V1: exactly one active writing device with explicit handover; concurrent multi-device spending is out of V1 scope."
+    },
+    {
+      "id": 3,
+      "updated_at": "2026-09-09T19:04:03.350Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Four isolated reproductions confirm omitted melt change completion, unauthenticated backup item omission, foreign-seed import before Cashu enable, and 100-counter recovery gap. Document before implementation; keep current wallet source unchanged."
+    },
+    {
+      "id": 4,
+      "updated_at": "2026-09-09T19:07:10.914Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "F00 reproduced: installed official shim resolves storage result ok:false; Kehto persistence catches failures and returns false. Prioritize durable host storage boundary before new platforms. Regtest passes after fresh block; recommend shared TypeScript core, native adapters, independent wallet Nostr key, NIP78 encrypted full journal backup and explicit single-writer handover."
+    },
+    {
+      "id": 5,
+      "updated_at": "2026-09-09T19:14:14.233Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User requests Monero and USDT swaps as side question. Granola testnet Cashu sat/usd is not native XMR/USDT and dni wallet has no integration. Record future extension, keep current verification scope; requested pairs and USDT network pending clarification."
+    },
+    {
+      "id": 6,
+      "updated_at": "2026-09-09T19:16:30.961Z",
+      "updated_by": "user:felix",
+      "status": "REVIEW",
+      "reason": "Preferred future XMR/USDT swaps always through mints using Breno Granola. Architecture: LNURLcash to Cashu sats via Lightning; Cashu HTLC swap to asset-backed ecash; separate mint redemption. No verified XMR/USDT mint or redemption backend yet; keep as gated extension after V1 safety work, no implementation authorized in this check."
+    },
+    {
+      "id": 7,
+      "updated_at": "2026-09-09T19:17:30.674Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Completed four German feasibility/architecture/sources/infrastructure reports and five isolated bug reproductions. Original wallet code and user edits preserved. Reproductions and typecheck rerun successfully; regtest stack stopped with volumes retained. No full implementation, public deployment or commit."
+    },
+    {
+      "id": 8,
+      "updated_at": "2026-09-09T19:28:17.274Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User proposes storing bearer tokens with Envelope and Blossom Hashtree. Read linked README/encryption/references at displayed commit ad5c1af0dd84749c97a6dd95332527dc586806bc via browser; confirmed experimental, default plaintext, optional chk-v1/rnd-v1 and owner-private NIP44/link-private roots. Recommend encrypted blob storage candidate, owner-private backups, isolated per-transfer capabilities, Envelope only launcher; local journal and mint rotation still required. Envelope remote HEAD remains 7d7ff1cf509f39ffe159c1cee7c93ba8ba042fd5. No upload or implementation."
+    },
+    {
+      "id": 9,
+      "updated_at": "2026-09-09T19:30:02.142Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Critical concept evaluation: encrypted Blossom is plausible as replication/transfer, not authoritative spend ledger; Envelope optional launcher expands trusted execution surface; Hashtree complexity must be justified by measured data needs. Granola XMR/USDT feasibility depends first on redeemable capable mints and liquidity. Recommend narrow receive/rotate/backup/restore proof after F00-F04, pin trusted wallet/host code, private backup keys separate from per-note sharing, explicit one-writer handover. No implementation or deployment."
+    },
+    {
+      "id": 10,
+      "updated_at": "2026-09-09T19:34:24.512Z",
+      "updated_by": "user:felix",
+      "status": "REVIEW",
+      "reason": "Granola explicitly excluded from V1 and assigned to V2; XMR/USDT via Granola also V2. Existing wallet identified at G:/Github/TCG600nap."
+    },
+    {
+      "id": 11,
+      "updated_at": "2026-09-09T19:34:24.558Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Read TCG600nap at d7535057480d3a16fcb6878eba78d70c66951fc5, branch feature/g-mint-live. Existing NutFT wallet includes NIP44 snapshot sync, large encrypted Blossom blobs with readback/hash validation, signed prev chain and fork rejection, local expected-state replacement guarded by Web Locks. Six wallet-sync tests reproduced, mocks for signer/relay/Blossom. Correct prior overall inventory; reuse adapter candidate, no new storage from scratch. NutFT unit 600B-E1/G distinct from unbound sats/LNURLcash; localStorage plaintext and no cross-device writer fencing established. Target repo unchanged."
+    },
+    {
+      "id": 12,
+      "updated_at": "2026-09-09T19:35:55.634Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User requests infographic of Napplet wallet. Generate concept illustration: Bearlett LNURLcash/Cashu notes, separate Notes designer, mint verification, encrypted Blossom backup with Nostr pointer, one active device and planned Web/Android. Existing TCG wallet acknowledged; Granola only V2. Built-in image generator; prompt saved in docs, no product implementation."
+    },
+    {
+      "id": 13,
+      "updated_at": "2026-09-09T19:39:25.962Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Nappelin identity inspection: 27 tests passed. Shared durable login requires NIP-44 host integration, persistent backup transport and explicit writer handover. Keep wallet spending keys separate; guest is not recoverable. Produce integration note and branded V1 infographic; Granola remains V2. No wallet implementation."
+    },
+    {
+      "id": 14,
+      "updated_at": "2026-09-09T19:44:26.707Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User clarified product roles: Nappelin is the platform; Bearlett is the wallet. Evaluation keeps one shared Bearlett core across hosts, durable Nappelin login with separately held wallet secrets and explicitly approved spending. V1 single cooperative writer, encrypted snapshots on Blossom, no Granola. Existing storage/recovery defects and full integration remain release blockers; no implementation authorized here."
+    },
+    {
+      "id": 15,
+      "updated_at": "2026-09-09T19:47:00.732Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "User authorizes solving four wallet security findings. Implement bounded fixes with red/green regression tests on separate fix branch; preserve prior uncommitted files. Prioritize F00-F04, immutable payment approval, independent wallet unlock and rotated receive. No deployment or real funds."
+    },
+    {
+      "id": 16,
+      "updated_at": "2026-09-09T19:47:44.796Z",
+      "updated_by": "auto:codex:cashu-recovery",
+      "status": "REVIEW",
+      "reason": "Fix Cashu F01 and F04 with failing safety tests first; bind paid melt to persisted quote and restore exact blank outputs; retain blocked deterministic writes after uncertain seed recovery. No live mint calls."
+    },
+    {
+      "id": 17,
+      "updated_at": "2026-09-09T19:47:50.508Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Investigate and fix Bearlett authorization UI lifecycle using red browser tests: synthetic activity must not extend unlock; wallet payment review must remain bound to selected invoice; Nappelin identity never substitutes for wallet password."
+    },
+    {
+      "id": 18,
+      "updated_at": "2026-09-09T20:09:02.800Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Final regtest exposed intended recovered-seed quarantine versus old transfer completion assertion. Validate migration into fresh wallet without relaxing quarantine; retain claiming journal as documented UX limitation. Test resumed Cashu change quarantine and stale LNURL rotation response before final commit."
+    },
+    {
+      "id": 19,
+      "updated_at": "2026-09-09T20:13:28.340Z",
+      "updated_by": "auto:codex",
+      "status": "REVIEW",
+      "reason": "Final acceptance: 389 unit passed, 1 legacy live-mint test skipped; 18 Chromium browser cases; one real bidirectional regtest including lost melt response and fresh-seed migration, exact change accounting and invalidated old bearer copies; 31 Nappelin and 6 mock TCG sync tests. TypeScript and three builds pass. Changed-file formatting passes; repository-wide formatting remains failing. Historical negative assertions F01-F04 now fail as intended; upstream shim F00 still reproduced but wrapper rejects it. No production release; host durable storage, full migration journal completion, Blossom/Nostr and Android remain explicit external-audit items."
+    }
+  ],
+  "sha256": {
+    "docs/SECURITY-FIXES-2026-09-09.md": "813c2f29400387fa8bfc1b9e19f0349785f4824f989bd4f3487abf5f6e52c0f6",
+    "outputs/security-browser-output.txt": "cc9c37fc118339c7b36d4f59035c34c0c18a751253240a205c0f7537472f0f95",
+    "outputs/security-browser-results.json": "08de64257559f3655138788aec184b7696883eb9273d5a5717e8e5810222c96a",
+    "outputs/security-build-notes.txt": "d8715ab69dfe722d74da6d29f6d343ec12f50b16b2ac6a24309d59bb32ca6c47",
+    "outputs/security-build-wallet.txt": "ab0be327d65c445a55941461d16a08c7d3e2b6d3806413ce2baddd9c67f16340",
+    "outputs/security-build-web.txt": "a8a7b63041d4f29a4cab4b5eda9f4d934a89040fe72a639008fe0d7f2f14138b",
+    "outputs/security-final-red.txt": "a7949ae023d6475acbfec4dd4c52b23d453cb7a9236c97a5b6c45134154ff05c",
+    "outputs/security-format-all.txt": "ad59a4b51b3fb198189dc8ebd9e319685ddc12278e8dd9f4d0efe4b0fda6667a",
+    "outputs/security-historical-reproductions.txt": "06e10743655171cee69cca791fd288703a38fa70dfa1018b922d3a12fcda7658",
+    "outputs/security-nappelin-tests.txt": "efd9a177a7aa578cfd03162fdb9fbd34bad64a8229709881390512309bc919ad",
+    "outputs/security-regtest-results.json": "d811f8ba1a1381c26a501a7293243185b35d85120493ab816cd7b19803568033",
+    "outputs/security-tcg-tests.txt": "b1e1f8908a572966414d4410bb6a0147bc5e2f5380e01dcdefb6aa4f34d09efe",
+    "outputs/security-unit-output.txt": "158972982f7c1ad88564a132f99efccf6a1842d781c20b67d7f42fc472da346c",
+    "outputs/security-unit-results.json": "8b59d879c69b731b546ff9f7b6d08f519217a3785666e6a3dad79c23ef86b66c",
+    "playwright.napplet.config.ts": "63f6e014655f847088452282fb2447c9b4a0de834312f924b055cc797e180736",
+    "scripts/napplet-host.mjs": "dc4cdd42240541b5ba83c5d6d2eb93bf71ff5d16a22405391a4dddc7ac28568d",
+    "src/host/storage-shim.ts": "eadbb97a622aa66a71d5f9dfbcfa1b5541c470bde931cf023e6aec1ee9c46efc",
+    "src/napplet/BearlettTools.tsx": "88fa23ac2371e7121869acf4b028e28f1bf90ede0fc202ce59b0d3c2f696ca32",
+    "src/napplet/backup.ts": "9528b97defe873628a14c22a7187f0a2b0c3435bacc14de7226b2a715aa33b25",
+    "src/napplet/bearlett.ts": "6478dc15aa7f7679f1dfceeac7a53c2a974fe657602f1fc9dd470b08bc6ff714",
+    "src/napplet/cashu/engine.test.ts": "4b95c2e47344f7a55af30babcce73509358a5a164983380672de3002f9241437",
+    "src/napplet/cashu/engine.ts": "aaaf163adef2d6503602701672cacd04a21ce7a62351b79cfbedd8c549917a2b",
+    "src/napplet/host-storage.test.ts": "dd6623ae531c2427843dc1bcdd433b6ce353b04022b5ad60cc42e1f4031c2dc5",
+    "src/napplet/host.ts": "0035cda6194b81b9b0f0e2a80406eb7ba8098c8403a0c1ed2c118271da7b4875",
+    "src/napplet/main.tsx": "10de7ef4521c89bd5b7fd13edcbc7598eb262bd3539b035ce7960b6473ecbcfc",
+    "src/napplet/parity.test.ts": "e0e935a8840bad780da021140823727945818204b1b87246a2f6d630c58be6c5",
+    "src/napplet/vault-security.test.ts": "3a6f57b5a36f22b77a38830b1884cb6eeb21afa51e0dde6df3c8f4e61bddcc88",
+    "src/napplet/vault.ts": "236d292a0d6e89394489d4cc4e60356674e3610e9042400278add47c5e40617b",
+    "src/napplet/wallet.test.ts": "e0fa4836d5ea6847d06e83a7b6e9bd35bb19eb63ca9a894869afaeaf85a6db6d",
+    "src/napplet/wallet.ts": "f58b4e0bb736865b63bdc43fc07a0a538926a0f98149d1ea57c49eafe0050da0",
+    "tests/integration/README.md": "4aa8820fd120c1d93574181fa3a322217509b9427187e6edd7e6920c134a3d9e",
+    "tests/integration/transfers.test.ts": "a6baa5e36371820eef6956bbf245a63a7f8dc58d514fe205c122ca0d9d0d45de",
+    "tests/napplet/security.spec.ts": "460948a6ccc83ba026ff6e9f0d8d1541a3dec01fc0fa9baa000aede083cf448f"
+  }
+}

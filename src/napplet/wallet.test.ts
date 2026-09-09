@@ -1,5 +1,6 @@
 import {beforeEach, describe, expect, it, vi, type Mock} from 'vitest'
 import {Vault} from './vault'
+import {CashuEngine} from './cashu/engine'
 import {Wallet, requireIssuerUrl} from './wallet'
 import {parseWalletIntent, listenWalletIntents} from './intents'
 import {DEFAULT_DESIGN, parseDesign} from './design'
@@ -107,13 +108,116 @@ describe('encrypted shell vault', () => {
   })
 
   it('refuses to replace an existing wallet key', async () => {
-    const before = await vault.backup()
+    const before = new Map(data)
     await expect(vault.create(password)).rejects.toThrow('already exists')
-    expect(await vault.backup()).toBe(before)
+    expect(data).toEqual(before)
   })
 })
 
 describe('durable bearer operations', () => {
+  it('does not apply a stale rotation response after lock and unlock', async () => {
+    const note = held()
+    await vault.save(note)
+    vi.mocked(rotateNoteWithHash).mockImplementationOnce(async () => {
+      vault.lock()
+      await vault.unlock(password)
+      return {signature: 'ab'.repeat(65)}
+    })
+    await expect(wallet.transform([note.id], 'rotate')).rejects.toThrow(
+      /session|lock/i
+    )
+    expect((await vault.notes()).every(n => n.status === 'pending')).toBe(true)
+  })
+  it.each(['pay', 'transform', 'share'] as const)(
+    'serializes LNURLcash %s against the Cashu writer',
+    async operation => {
+      const note = held()
+      await vault.save(note)
+      let started!: () => void
+      let release!: () => void
+      const entering = new Promise<void>(resolve => {
+        started = resolve
+      })
+      const heldOperation = new Promise<void>(resolve => {
+        release = resolve
+      })
+      const pending = new CashuEngine(vault).exclusive(async () => {
+        started()
+        await heldOperation
+      })
+      await entering
+      try {
+        const action =
+          operation === 'pay'
+            ? () => wallet.pay(note.id, 'lnbc210n1qqqq')
+            : operation === 'transform'
+              ? () => wallet.transform([note.id], 'rotate')
+              : () => wallet.share(note.id)
+        await expect(action()).rejects.toThrow(/running/i)
+        expect(meltNote).not.toHaveBeenCalled()
+        expect(rotateNoteWithHash).not.toHaveBeenCalled()
+      } finally {
+        release()
+        await pending
+      }
+    }
+  )
+  it('reserves recovered LNURLcash for migration and the receiver rotates it', async () => {
+    const incoming = {
+      ...held(),
+      status: 'unverified' as const,
+      needsRotation: true
+    }
+    await vault.save(incoming)
+    const exported = await wallet.exportRecovery(incoming.id)
+    expect((await vault.notes())[0].status).toBe('shared')
+    const records = new Map<string, string>()
+    const target = new Vault({
+      getItem: async k => records.get(k) ?? null,
+      setItem: async (k, v) => {
+        records.set(k, v)
+      },
+      keys: async () => [...records.keys()]
+    })
+    await target.create('a different independent password')
+    await new Wallet(target).receive(exported)
+    expect(rotateNoteWithHash).toHaveBeenCalledTimes(1)
+    expect(
+      (await target.notes()).find(note => note.status === 'ready')!.url
+    ).not.toBe(exported)
+  })
+  it('does not submit an old-session payment after lock and unlock during a mint read', async () => {
+    const note = held()
+    await vault.save(note)
+    const info = await fetchNoteInfo(note.url)
+    vi.mocked(fetchNoteInfo).mockImplementationOnce(async () => {
+      vault.lock()
+      await vault.unlock(password)
+      return info
+    })
+    await expect(wallet.pay(note.id, 'lnbc210n1qqqq')).rejects.toThrow(
+      /session|lock/i
+    )
+    expect(meltNote).not.toHaveBeenCalled()
+  })
+  it('rotates an unverified imported note instead of promoting the copied secret to ready', async () => {
+    const imported = {...held(), status: 'unverified' as const}
+    await vault.save(imported)
+    await wallet.refresh(imported.id)
+    expect(rotateNoteWithHash).toHaveBeenCalledTimes(1)
+    const ready = (await vault.notes()).filter(note => note.status === 'ready')
+    expect(ready).toHaveLength(1)
+    expect(ready[0].url).not.toBe(imported.url)
+  })
+  it('keeps an incoming source unverified when its interrupted rotation did not consume it', async () => {
+    vi.mocked(rotateNoteWithHash).mockRejectedValueOnce(new Error('timeout'))
+    await expect(wallet.receive(noteUrl)).rejects.toThrow('timeout')
+    const source = (await vault.notes()).find(note => note.url === noteUrl)!
+    await wallet.refresh(source.id)
+    expect(
+      (await vault.notes()).find(note => note.id === source.id)?.status
+    ).toBe('unverified')
+  })
   it('persists the replacement before rotation and keeps both candidates after timeout', async () => {
     const note = held()
     await vault.save(note)

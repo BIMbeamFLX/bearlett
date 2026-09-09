@@ -1,5 +1,6 @@
 import type {storage, resource, inc} from '@napplet/sdk'
 import type {CashuHost} from './cashu/transport'
+import {walletStorage} from '../host/storage-shim'
 
 export type WalletHost = {
   cashu?: CashuHost
@@ -17,7 +18,7 @@ export const getWalletHost = (): WalletHost => {
     )
   }
   return {
-    storage: host.storage,
+    storage: walletStorage(window.parent),
     resource: host.resource,
     inc: host.inc,
     cashu: typeof host.cashu?.acquire === 'function' ? host.cashu : undefined
