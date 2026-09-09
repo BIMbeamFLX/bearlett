@@ -2,11 +2,12 @@ import {defineConfig} from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/napplet',
-  use: {baseURL: 'http://127.0.0.1:4186', headless: true},
+  use: {baseURL: 'http://127.0.0.1:4190', headless: true},
   webServer: {
     command: 'node scripts/napplet-host.mjs',
-    url: 'http://127.0.0.1:4186',
-    reuseExistingServer: true
+    env: {PORT: '4190'},
+    url: 'http://127.0.0.1:4190',
+    reuseExistingServer: false
   },
   projects: [
     {name: 'desktop', use: {viewport: {width: 1440, height: 1000}}},

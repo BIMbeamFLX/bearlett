@@ -4,7 +4,10 @@ import {QRCodeSVG, ErrorCorrectionLevel} from 'solid-qr-code'
 import {getWalletHost} from './host'
 import {Vault} from './vault'
 import type {Note} from './vault'
-import {Wallet} from './wallet'
+import {Bearlett as Wallet} from './bearlett'
+import BearlettTools from './BearlettTools'
+import {decodeCashu} from './cashu/engine'
+import {sumProofs} from '@cashu/cashu-ts'
 import {listenWalletIntents} from './intents'
 import type {WalletRequest} from './intents'
 import {decodeBolt11AmountMsat, serverOf} from '../lnurlcash'
@@ -62,6 +65,9 @@ function App() {
   >([])
   const [fundingInvoice, setFundingInvoice] = createSignal('')
   const [mint, setMint] = createSignal('')
+  const [mintProtocol, setMintProtocol] = createSignal<'lnurlcash' | 'cashu'>(
+    'lnurlcash'
+  )
   const [amount, setAmount] = createSignal('')
   const [split, setSplit] = createSignal('')
   const [shared, setShared] = createSignal('')
@@ -118,7 +124,7 @@ function App() {
     setLockWarning(false)
   }
   const loadState = async (): Promise<void> => {
-    setNotes(await vault.notes())
+    setNotes(await wallet.notes())
     setDesigns(await vault.designs())
     setPins((await vault.meta<MintPin[]>('mints')) ?? [])
     setSavedMintAddresses((await vault.meta<string[]>('mint-addresses')) ?? [])
@@ -136,11 +142,15 @@ function App() {
     setPreferences(checked)
     setNappletOffline(checked.offline)
   }
-  const run = async (action: () => Promise<void>): Promise<void> => {
+  const run = async (
+    action: () => Promise<void>,
+    importing = false
+  ): Promise<void> => {
     if (busy() || polling) return
     setBusy(true)
     setMessage('')
     try {
+      if (!importing && unlocked()) await vault.assertReady()
       await action()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Operation failed.')
@@ -164,8 +174,8 @@ function App() {
   ): Promise<void> => {
     const id = ids.length ? crypto.randomUUID() : 'default'
     await vault.saveDesign(id, design)
-    for (const note of await vault.notes()) {
-      if (ids.includes(note.id)) await vault.save({...note, designId: id})
+    for (const note of await wallet.notes()) {
+      if (ids.includes(note.id)) await wallet.design(note.id, id)
     }
   }
   const authenticate = async (): Promise<void> => {
@@ -178,6 +188,7 @@ function App() {
       if (!seedSaved())
         throw new Error('Confirm that you saved your seed phrase.')
       await vault.create(password(), seed(), restoringSeed())
+      await wallet.cashu.enable(seed(), restoringSeed())
       setExists(true)
     }
     setPassword('')
@@ -189,11 +200,12 @@ function App() {
     setNappletOffline(prefs.offline)
     setUnlocked(true)
   }
-  onMount(() => {
+  onMount(async () => {
     try {
+      await window.napplet?.shell?.ready()
       const host = getWalletHost()
       vault = new Vault(host.storage)
-      wallet = new Wallet(vault)
+      wallet = new Wallet(vault, host.cashu, () => preferences().offline)
       disconnect = listenWalletIntents(
         host,
         incoming => {
@@ -211,8 +223,8 @@ function App() {
         },
         setMessage
       )
-      vault
-        .exists()
+      Promise.resolve(host.cashu?.acquire?.())
+        .then(() => vault.exists())
         .then(setExists)
         .then(() => setInitialized(true))
         .catch(() =>
@@ -240,6 +252,7 @@ function App() {
         setBusy(true)
         void (async () => {
           try {
+            await vault.assertReady()
             for (const note of pending) {
               try {
                 await wallet.settlement(note.id)
@@ -248,6 +261,8 @@ function App() {
               }
             }
             if (unlocked()) await loadState()
+          } catch {
+            // A partial backup import suspends background reconciliation.
           } finally {
             polling = false
             setBusy(false)
@@ -327,7 +342,7 @@ function App() {
         >
           <span class="logo">₿</span>
           <span>
-            LNURL<span class="soft">cash</span>
+            Bear<span class="soft">lett</span>
             <small>WALLET NAPPLET</small>
           </span>
         </a>
@@ -364,8 +379,8 @@ function App() {
                     {exists() ? 'Welcome back.' : 'A home for your sats.'}
                   </h1>
                   <p>
-                    Receive, hold and spend LNURLcash notes across independent
-                    mints.
+                    Receive, hold and spend LNURLcash and Cashu notes across
+                    independent mints.
                   </p>
                   <div>
                     <label>
@@ -629,7 +644,7 @@ function App() {
                         disabled={busy()}
                         onClick={() =>
                           void run(async () => {
-                            setNotes(await vault.notes())
+                            setNotes(await wallet.notes())
                           })
                         }
                       >
@@ -831,6 +846,7 @@ function App() {
                               >
                                 <Banknote
                                   amount={note.amount}
+                                  protocol={note.protocol}
                                   issuer={serverOf(note.url)}
                                   serial={note.id}
                                   design={
@@ -850,7 +866,14 @@ function App() {
                                     : note.status}
                                 </span>
                               </div>
-                              <p>{serverOf(note.url)}</p>
+                              <p>
+                                <span class="badge">
+                                  {note.protocol === 'cashu'
+                                    ? 'CASHU'
+                                    : 'LNURLCASH'}
+                                </span>{' '}
+                                {serverOf(note.url)}
+                              </p>
                               <Show when={note.label}>
                                 <p class="note-label">{note.label}</p>
                               </Show>
@@ -925,13 +948,39 @@ function App() {
                     issuing mint.
                   </p>
                   <label>
-                    LNURLcash note
+                    LNURLcash or Cashu note
                     <textarea
-                      placeholder="lnurlw://… or LNURL1…"
+                      placeholder="lnurlw://… · LNURL1… · cashuA… · cashuB…"
                       value={input()}
                       onInput={e => setInput(e.currentTarget.value)}
                     />
                   </label>
+                  <Show when={/^(cashu:)?cashu[AB]/i.test(input().trim())}>
+                    <div class="transfer-record">
+                      <p>
+                        Cashu notes are received separately for each mint.
+                        Review all issuers before continuing.
+                      </p>
+                      <For
+                        each={(() => {
+                          try {
+                            return decodeCashu(input())
+                          } catch {
+                            return []
+                          }
+                        })()}
+                      >
+                        {token => (
+                          <p>
+                            <strong>
+                              {sumProofs(token.proofs).toNumber()} sats
+                            </strong>{' '}
+                            · {token.mint}
+                          </p>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                   <button
                     class="primary"
                     disabled={busy() || !input().trim()}
@@ -1040,12 +1089,12 @@ function App() {
                             await wallet.preparePayment(selected(), invoice())
                           ])
                           setMessage(
-                            'Exact payment note prepared. Review and confirm payment.'
+                            'Payment prepared. Review its amount and fees before confirming.'
                           )
                         })
                       }
                     >
-                      Prepare exact payment note
+                      Prepare payment & fees
                     </button>
                   </Show>
                   <button
@@ -1072,6 +1121,22 @@ function App() {
               <Show when={tab() === 'mint'}>
                 <section class="panel">
                   <h2>Mint a new note</h2>
+                  <label>
+                    Mint protocol
+                    <select
+                      value={mintProtocol()}
+                      onChange={e =>
+                        setMintProtocol(
+                          e.currentTarget.value as 'cashu' | 'lnurlcash'
+                        )
+                      }
+                    >
+                      <option value="lnurlcash">LNURLcash</option>
+                      <option value="cashu" disabled={!wallet.cashu.host}>
+                        Cashu
+                      </option>
+                    </select>
+                  </label>
                   <p>
                     Choose a mint, then pay its invoice with your Lightning
                     wallet.
@@ -1104,7 +1169,14 @@ function App() {
                     onClick={() =>
                       void run(async () => {
                         setFundingInvoice(
-                          await wallet.mint(mint(), Number(amount()) * 1000)
+                          mintProtocol() === 'cashu'
+                            ? (
+                                await wallet.cashu.mint(
+                                  mint(),
+                                  Number(amount())
+                                )
+                              ).invoice!
+                            : await wallet.mint(mint(), Number(amount()) * 1000)
                         )
                       })
                     }
@@ -1199,18 +1271,27 @@ function App() {
                         setMessage(
                           `Imported ${added} notes. Check them online before using.`
                         )
-                      })
+                      }, true)
                     }
                   >
                     Import encrypted notes
                   </button>
                 </section>
               </Show>
-              <WalletTools
+              <BearlettTools
                 tab={tab()}
-                vault={vault}
                 wallet={wallet}
                 notes={notes()}
+                selected={selected()}
+                revision={revision()}
+                busy={busy()}
+                run={run}
+              />
+              <WalletTools
+                tab={tab() === 'transfer' ? '' : tab()}
+                vault={vault}
+                wallet={wallet}
+                notes={notes().filter(n => n.protocol !== 'cashu')}
                 busy={busy()}
                 revision={revision()}
                 preferences={preferences()}
@@ -1232,7 +1313,7 @@ function App() {
         </Show>
       </main>
       <footer>
-        LNURLcash · MIT licensed · Host-mediated storage & network
+        Bearlett · LNURLcash & Cashu · MIT licensed
         <br />A balance is a claim on its issuing mint. Back up after every
         change.
       </footer>

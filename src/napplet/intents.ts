@@ -7,6 +7,7 @@ import {claimLinkToNoteInput, claimParamsFromHref} from '../claimLink'
 import type {WalletHost} from './host'
 import {NOTE_DESIGN_CONVENTION, parseNoteDesignMessage} from './note-interface'
 import type {NoteDesign} from './design'
+import {decodeCashu} from './cashu/engine'
 
 export const WALLET_CONVENTIONS = [
   'napplet:wallet/open',
@@ -51,10 +52,17 @@ export const parseWalletIntent = (
       sender: sender.slice(0, 200)
     }
   const value = action === 'receive' ? data.note : data.invoice
-  if (typeof value !== 'string' || value.length > 16000)
+  if (
+    typeof value !== 'string' ||
+    value.length > (action === 'receive' ? 256000 : 16000)
+  )
     throw new Error('Missing or oversized wallet input.')
   const normalized = value.trim().replace(/^lightning:/i, '')
   if (action === 'receive') {
+    if (/^(cashu:)?cashu[AB]/i.test(normalized)) {
+      decodeCashu(normalized)
+      return {action, value: normalized, sender: sender.slice(0, 200)}
+    }
     const params = claimParamsFromHref(normalized)
     const url = resolveNoteInput(
       (params && claimLinkToNoteInput(params)) || normalized

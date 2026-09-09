@@ -1,6 +1,15 @@
 import {createServer} from 'node:http'
 import {readFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
+import {build} from 'rolldown'
+
+const bundled = await build({
+  input: 'scripts/cashu-preview.ts',
+  platform: 'browser',
+  write: false,
+  output: {format: 'iife', name: 'BearlettPreview'}
+})
+const cashuBundle = bundled.output.find(item => item.type === 'chunk').code
 
 // Local preview/test shell only. It never reaches a live mint or Nostr relay.
 const prelude = readFileSync(
@@ -12,7 +21,7 @@ const onlyApp = appFlag < 0 ? undefined : process.argv[appFlag + 1]
 if (appFlag >= 0 && !['wallet', 'notes'].includes(onlyApp)) {
   throw new Error('Use --app wallet or --app notes.')
 }
-const port = onlyApp === 'notes' ? 4187 : 4186
+const port = Number(process.env.PORT ?? (onlyApp === 'notes' ? 4187 : 4186))
 const appSource = app =>
   readFileSync(
     app === 'wallet' ? 'dist-napplet/index.html' : 'dist-notes/index.html',
@@ -20,23 +29,37 @@ const appSource = app =>
   )
 const scriptValue = value => JSON.stringify(value).replaceAll('<', '\\u003c')
 const preview =
-  app => String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LNURLcash ${app === 'notes' ? 'Notes' : 'Wallet'} · local preview</title><style>
+  app => String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Bearlett ${app === 'notes' ? 'Notes' : 'Wallet'} · local preview</title><style>
 body{margin:0;background:#f5f4ed;font-family:system-ui;color:#285440} .shell{display:flex;gap:12px;padding:8px 20px;background:#e5eadb;align-items:center;font-size:12px}button{padding:7px 15px;border:1px solid #c6d0bd;background:#f8faf2;color:#285440;border-radius:6px;cursor:pointer}iframe{display:block;width:100%;height:calc(100vh - 52px);border:0}.hint{margin-left:auto;font-size:10px}
 @media(max-width:650px){.shell{gap:6px;padding:6px 8px}.shell strong{font-size:8px}.shell button{font-size:10px;padding:6px 9px}.hint{display:none}iframe{height:calc(100vh - 44px)}}
 </style></head><body><div class="shell"><strong>${app === 'notes' ? 'NOTES' : 'WALLET'} PREVIEW</strong>${app === 'wallet' ? '<button id="sample">Receive demo note</button>' : ''}<span class="hint">${app === 'wallet' ? 'Test mint only · no real sats · ' : ''}Data stays in this preview session</span></div><div id="frames"></div><script>
 const prelude=${scriptValue(prelude)};
+const cashuBundle=${scriptValue(cashuBundle)};
+${cashuBundle.replaceAll('</script', '<\\/script')}
 const app=${scriptValue(app)};const source=${scriptValue(appSource(app))};
 const frames={}; const stores={[app]:new Map()};
 const topics={[app]:new Set()};const pending={[app]:[]};
 window.hostCalls=[];window.hostStores=stores;window.hostFrames=frames;window.demoBalance=21000;
 const mintNotes=new Map();
+const cashuMint = new BearlettPreview.TestMint();
+const cashuService = BearlettPreview.createCashuService({scope: key => key === 'wallet' ? 'preview-wallet' : undefined,
+ allowed: (key,mint) => key === 'wallet' && mint === cashuMint.url,
+ fetch: async (url, options) => {
+  const path = url.slice(cashuMint.url.length);
+  const found = Object.entries(BearlettPreview.CASHU_OPERATIONS).find(([name,[method,route]]) => method === options.method && (path === route || (['keys','mintQuoteState','meltQuoteState'].includes(name) && path.startsWith(route+'/'))));
+  if(!found)throw new Error('Unknown test endpoint');
+  const [operation,[,route]]=found;
+  const response=await cashuMint.request({mint:cashuMint.url,operation,body:options.body,parameter:path===route?undefined:decodeURIComponent(path.slice(route.length+1))});
+  return new Response(response.body,{status:response.status});
+ }});
+window.cashuMint=cashuMint;
 const demoSecret='ab'.repeat(32);
 const hash=async text=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(text.match(/../g),v=>parseInt(v,16))))).map(v=>v.toString(16).padStart(2,'0')).join('');
 const send=(key,msg)=>frames[key]?.contentWindow.postMessage(msg,'*');
 function open(){const key=app;
  if(!frames[key]){const frame=document.createElement('iframe');frame.id=key;frame.title=key+' napplet';frame.sandbox='allow-scripts';
  const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; connect-src \'none\'; font-src \'none\'">';
- const injected='<script>'+prelude+'\n;NappletShimPrelude.install({domains:'+JSON.stringify(key==='wallet'?['storage','resource','inc']:['storage','inc','intent'])+'});</'+'script>';
+ const injected='<script>'+prelude+'\n;NappletShimPrelude.install({domains:'+JSON.stringify(key==='wallet'?['storage','resource','inc']:['storage','inc','intent'])+'});'+(key==='wallet'?cashuBundle+'\nwindow.napplet.cashu=BearlettPreview.installCashuShim();':'')+'</'+'script>';
  frame.srcdoc=source.replace('<head>','<head>'+policy+injected);frames[key]=frame;document.getElementById('frames').append(frame);}
 }
 function deliver(key,topic,payload,sender='preview-sender'){
@@ -59,7 +82,7 @@ channel.onmessage=event=>{
  if(app!=='wallet')return;
  if(msg.type==='find-wallet')channel.postMessage({id:msg.id,replyTo:msg.source,wallet:hostId});
  if(msg.type==='send-design'&&msg.target===hostId&&msg.convention==='napplet:wallet/design'){
-  deliver(app,msg.convention,msg.payload,'lnurlcash-notes');
+  deliver(app,msg.convention,msg.payload,'bearlett-notes');
   channel.postMessage({id:msg.id,replyTo:msg.source,handled:true});
  }
 };
@@ -84,6 +107,7 @@ async function mockMint(url){
 addEventListener('message',async event=>{
  const key=Object.keys(frames).find(key=>frames[key].contentWindow===event.source);if(!key)return;
  const msg=event.data;if(!msg||typeof msg.type!=='string')return;
+ if(msg.type.startsWith('cashu.')){cashuService.handleMessage(key,msg,reply=>send(key,reply));return;}
  window.hostCalls.push({type:msg.type,topic:msg.topic,url:msg.url,...(msg.type==='intent.invoke'?{request:msg.request}:{})});
  const result={type:msg.type+'.result',id:msg.id};
  try{
@@ -97,13 +121,13 @@ addEventListener('message',async event=>{
   else if(msg.type==='resource.cancel')return;
   else if(msg.type==='intent.available'&&app==='notes'){
    const peer=msg.archetype==='wallet'?await walletMessage({type:'find-wallet'}):null;
-   result.availability={archetype:msg.archetype,available:!!peer,hasDefault:!!peer,candidates:peer?[{dTag:'lnurlcash-wallet',actions:['design'],conventions:['napplet:wallet/design']}]:[]};
+   result.availability={archetype:msg.archetype,available:!!peer,hasDefault:!!peer,candidates:peer?[{dTag:'bearlett-wallet',actions:['design'],conventions:['napplet:wallet/design']}]:[]};
   }
   else if(msg.type==='intent.invoke'&&app==='notes'){
    const request=msg.request;
    const peer=request.archetype==='wallet'&&request.convention==='napplet:wallet/design'?await walletMessage({type:'find-wallet'}):null;
    const ack=peer?await walletMessage({type:'send-design',target:peer.wallet,convention:request.convention,payload:request.payload}):null;
-   result.result={ok:!!ack?.handled,handled:!!ack?.handled,archetype:'wallet',action:'design',handler:'lnurlcash-wallet',...(!ack?{error:'Open the Wallet preview in a separate tab on this same preview server.'}:{})};
+   result.result={ok:!!ack?.handled,handled:!!ack?.handled,archetype:'wallet',action:'design',handler:'bearlett-wallet',...(!ack?{error:'Open the Wallet preview in a separate tab on this same preview server.'}:{})};
   }
   else return;
  }catch(error){result.error=error.message;if(msg.type==='resource.bytes')result.type='resource.bytes.error';}
@@ -111,6 +135,10 @@ addEventListener('message',async event=>{
 });
 const sample=document.getElementById('sample');
 if(sample)sample.onclick=async()=>{mintNotes.set(await hash(demoSecret),window.demoBalance);deliver(app,'napplet:wallet/receive',{note:'https://demo.mint.test/w?k1='+demoSecret+'&amount='+window.demoBalance});};
+if(app==='wallet'){
+ const receive=document.createElement('button');receive.textContent='Receive Cashu demo';receive.id='cashu-sample';receive.onclick=()=>deliver(app,'napplet:wallet/receive',{note:cashuMint.token()});sample.after(receive);
+ const paid=document.createElement('button');paid.textContent='Fund demo invoices';paid.id='cashu-fund';paid.onclick=()=>{for(const quote of cashuMint.quotes.values())if(quote.state==='UNPAID')quote.state='PAID'};receive.after(paid);
+}
 open();
 </script></body></html>`
 

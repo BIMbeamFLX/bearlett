@@ -7,7 +7,7 @@ test('wallet runs alone: encrypted notes, design import and payments', async ({
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/wallet')
-  await expect(page).toHaveTitle('LNURLcash Wallet · local preview')
+  await expect(page).toHaveTitle('Bearlett Wallet · local preview')
   await expect(page.locator('iframe')).toHaveCount(1)
   await expect(page.locator('#notes, #wallet-tab, #designer-tab')).toHaveCount(
     0
@@ -47,7 +47,7 @@ test('wallet runs alone: encrypted notes, design import and payments', async ({
     )
   ).toBe(0)
   await wallet.getByRole('button', {name: 'Review details'}).click()
-  await expect(wallet.getByLabel('LNURLcash note')).toHaveValue(
+  await expect(wallet.getByLabel('LNURLcash or Cashu note')).toHaveValue(
     /https:\/\/demo\.mint\.test/
   )
   await wallet.getByRole('button', {name: 'Confirm receive & rotate'}).click()

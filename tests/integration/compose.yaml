@@ -1,0 +1,97 @@
+name: bearlett-regtest
+services:
+  bitcoin:
+    image: bitcoin/bitcoin:29.0
+    command:
+      [
+        '-regtest',
+        '-server',
+        '-rpcuser=bearlett',
+        '-rpcpassword=regtest-only',
+        '-rpcbind=0.0.0.0',
+        '-rpcallowip=0.0.0.0/0',
+        '-fallbackfee=0.0002',
+        '-zmqpubrawblock=tcp://0.0.0.0:28332',
+        '-zmqpubrawtx=tcp://0.0.0.0:28333'
+      ]
+  alice:
+    image: lightninglabs/lnd:v0.19.3-beta
+    command:
+      [
+        '--noseedbackup',
+        '--bitcoin.active',
+        '--bitcoin.regtest',
+        '--bitcoin.node=bitcoind',
+        '--bitcoind.rpchost=bitcoin:18443',
+        '--bitcoind.rpcuser=bearlett',
+        '--bitcoind.rpcpass=regtest-only',
+        '--bitcoind.zmqpubrawblock=tcp://bitcoin:28332',
+        '--bitcoind.zmqpubrawtx=tcp://bitcoin:28333',
+        '--rpclisten=0.0.0.0:10009',
+        '--restlisten=0.0.0.0:8080',
+        '--listen=0.0.0.0:9735',
+        '--tlsextradomain=alice',
+        '--alias=bearlett-alice'
+      ]
+    volumes: ['alice:/root/.lnd']
+    depends_on: [bitcoin]
+  bob:
+    image: lightninglabs/lnd:v0.19.3-beta
+    command:
+      [
+        '--noseedbackup',
+        '--bitcoin.active',
+        '--bitcoin.regtest',
+        '--bitcoin.node=bitcoind',
+        '--bitcoind.rpchost=bitcoin:18443',
+        '--bitcoind.rpcuser=bearlett',
+        '--bitcoind.rpcpass=regtest-only',
+        '--bitcoind.zmqpubrawblock=tcp://bitcoin:28332',
+        '--bitcoind.zmqpubrawtx=tcp://bitcoin:28333',
+        '--rpclisten=0.0.0.0:10009',
+        '--restlisten=0.0.0.0:8080',
+        '--listen=0.0.0.0:9735',
+        '--tlsextradomain=bob',
+        '--alias=bearlett-bob'
+      ]
+    volumes: ['bob:/root/.lnd']
+    depends_on: [bitcoin]
+  cashu:
+    image: cashubtc/nutshell:0.20.3
+    command: ['poetry', 'run', 'mint']
+    environment:
+      MINT_BACKEND_BOLT11_SAT: LndRestWallet
+      MINT_LND_REST_ENDPOINT: https://bob:8080
+      MINT_LND_REST_CERT: /lnd/tls.cert
+      MINT_LND_REST_MACAROON: /lnd/data/chain/bitcoin/regtest/admin.macaroon
+      MINT_LISTEN_HOST: 0.0.0.0
+      MINT_LISTEN_PORT: 3338
+      MINT_PRIVATE_KEY: bearlett-regtest-only-never-use-for-real-money
+      MINT_INPUT_FEE_PPK: 100
+      MINT_DATABASE: /data
+      LOG_LEVEL: ERROR
+    volumes: ['bob:/lnd:ro', 'cashu:/data']
+    ports: ['127.0.0.1:43338:3338']
+    depends_on: [bob]
+  lnurl:
+    build: ../../work/lnurl-mint
+    user: root
+    entrypoint: ['/app/.venv/bin/python', '-c']
+    command:
+      - "import os,pathlib,uvicorn;os.environ['FUNDINGSOURCE_MACAROON']=pathlib.Path('/lnd/data/chain/bitcoin/regtest/admin.macaroon').read_bytes().hex();uvicorn.run('lnurl_mint.server:app',host='0.0.0.0',port=8111,access_log=False)"
+    environment:
+      FUNDINGSOURCE_BACKEND: lnd
+      FUNDINGSOURCE_URL: https://alice:8080
+      FUNDINGSOURCE_CERT_PATH: /lnd/tls.cert
+      BASE_URL: https://lnurl-regtest.test
+      BASE_FEE_MSAT: 1000
+      FEE_PERCENT_PPM: 0
+      DATABASE_PATH: /data/mint.db
+    volumes: ['alice:/lnd:ro', 'lnurl:/data']
+    ports: ['127.0.0.1:48111:8111']
+    depends_on: [alice]
+volumes:
+  alice:
+  bob:
+  cashu:
+  lnurl:

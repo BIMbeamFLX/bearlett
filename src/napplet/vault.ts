@@ -1,4 +1,5 @@
 import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
+import {sha256} from '@noble/hashes/sha2.js'
 import {
   encryptSecretParts,
   decryptSecretParts,
@@ -22,8 +23,12 @@ import {validatePins, importPins} from './mints'
 import type {MintPin} from './mints'
 import type {HistoryEntry} from './wallet'
 import {verifyMeltPreimage} from '../lnurlcash'
+import {validateCashuState} from './cashu/state'
+import type {CashuState} from './cashu/state'
+import type {Transfer} from './transfers'
 
 export type Note = {
+  protocol?: 'lnurlcash' | 'cashu'
   id: string
   url: string
   amount: number
@@ -62,6 +67,14 @@ type Backup = {
 export class Vault {
   private aes: CryptoKey | null = null
   constructor(private storage: WalletHost['storage']) {}
+
+  /** Prevent spending a partially restored snapshot; retry the same authenticated backup first. */
+  async assertReady(): Promise<void> {
+    if ((await this.meta<{phase: string}>('restore-v1'))?.phase === 'active')
+      throw new Error(
+        'Backup import was interrupted. Import the same backup again before using this wallet.'
+      )
+  }
 
   /** Check setup without treating malformed existing data as an empty wallet. */
   async exists(): Promise<boolean> {
@@ -232,6 +245,7 @@ export class Vault {
 
   /** Export ciphertext and the password-wrapped key, including pending outputs. */
   async backup(): Promise<string> {
+    await this.assertReady()
     const key = JSON.parse((await this.storage.getItem(KEY)) ?? 'null')
     if (!isValidStoredSecret(key) || !key.enc)
       throw new Error('Invalid wallet key.')
@@ -328,6 +342,29 @@ export class Vault {
         if (!value || typeof value !== 'object')
           throw new Error('Invalid backup metadata value.')
         if (name === 'cash') validateCashState(value)
+        if (name === 'cashu-v1') validateCashuState(value)
+        if (
+          name === 'transfers-v1' &&
+          (!Array.isArray(value) ||
+            value.some(
+              t =>
+                !t ||
+                typeof t.id !== 'string' ||
+                !Array.isArray(t.sourceIds) ||
+                !['cashu', 'lnurlcash'].includes(t.source) ||
+                !['cashu', 'lnurlcash'].includes(t.target) ||
+                ![
+                  'preparing',
+                  'quoted',
+                  'funding',
+                  'claiming',
+                  'complete'
+                ].includes(t.phase) ||
+                !Number.isSafeInteger(t.amountMsat) ||
+                t.amountMsat <= 0
+            ))
+        )
+          throw new Error('Invalid transfer backup.')
         if (name === 'cash-imports') {
           if (!Array.isArray(value))
             throw new Error('Invalid imported cash roots.')
@@ -351,9 +388,46 @@ export class Vault {
         return [name, value] as const
       })
     )
+    const importedCashu = recoveredMeta.find(
+      ([name]) => name === 'cashu-v1'
+    )?.[1] as CashuState | undefined
+    const currentCashu = await this.meta<CashuState>('cashu-v1')
+    const fingerprint = bytesToHex(sha256(new TextEncoder().encode(text)))
+    const restore = await this.meta<{hash: string; phase: string}>('restore-v1')
+    const retry = restore?.phase === 'active' && restore.hash === fingerprint
+    if (restore?.phase === 'active' && !retry)
+      throw new Error(
+        'Finish importing the same backup before choosing a different file.'
+      )
+    if (
+      importedCashu &&
+      !retry &&
+      (currentCashu?.assets.length || currentCashu?.operations.length)
+    )
+      throw new Error(
+        'Restore a full Bearlett backup into an empty wallet to preserve pending proof ownership.'
+      )
+    if (
+      importedCashu &&
+      currentCashu &&
+      importedCashu.seed !== currentCashu.seed
+    )
+      throw new Error(
+        'Set up the empty wallet using this backup’s recovery phrase first.'
+      )
+    if (
+      importedCashu &&
+      !retry &&
+      (importedCashu.assets.length || importedCashu.operations.length) &&
+      (await this.notes()).length
+    )
+      throw new Error('Restore this full Bearlett backup into an empty wallet.')
+    if (importedCashu)
+      await this.setMeta('restore-v1', {hash: fingerprint, phase: 'active'})
     const designIds = new Map<string, string>()
+    const noteIds = new Map<string, string>()
     for (const [id, design] of designs) {
-      const newId = crypto.randomUUID()
+      const newId = importedCashu ? id : crypto.randomUUID()
       await this.saveDesign(newId, design)
       designIds.set(id, newId)
     }
@@ -364,9 +438,11 @@ export class Vault {
       const identity = noteIdentity(note)
       if (known.has(identity)) continue
       // Old ready copies must be checked online again, never silently trusted.
+      const importedId = importedCashu ? note.id : crypto.randomUUID()
+      noteIds.set(note.id, importedId)
       await this.save({
         ...note,
-        id: crypto.randomUUID(),
+        id: importedId,
         designId: designIds.get(note.designId ?? 'default'),
         status: ['spent', 'shared', 'pending'].includes(note.status)
           ? note.status
@@ -378,7 +454,38 @@ export class Vault {
       added++
     }
     for (const [name, value] of recoveredMeta) {
-      if (name === 'cash') await this.importCash(value as CashState)
+      if (name === 'restore-v1') continue
+      if (name === 'cashu-v1') {
+        const state = value as CashuState
+        state.restored = true
+        state.scanned = []
+        for (const [id, count] of Object.entries(currentCashu?.counters ?? {}))
+          state.counters[id] = Math.max(state.counters[id] ?? 0, count)
+        state.quoteCounter = Math.max(
+          state.quoteCounter,
+          currentCashu?.quoteCounter ?? 0
+        )
+        for (const a of state.assets) {
+          a.note.designId = designIds.get(a.note.designId ?? 'default')
+          if (a.note.status === 'ready') a.note.status = 'unverified'
+        }
+        await this.setMeta(name, state)
+        added += state.assets.filter(
+          a => !['spent', 'shared'].includes(a.note.status)
+        ).length
+      } else if (name === 'transfers-v1' && importedCashu) {
+        const transfers = value as Transfer[]
+        for (const t of transfers) {
+          if (t.source === 'lnurlcash') {
+            t.sourceIds = t.sourceIds.map(id => noteIds.get(id) ?? id)
+            if (t.paymentId)
+              t.paymentId = noteIds.get(t.paymentId) ?? t.paymentId
+          }
+          if (t.target === 'lnurlcash' && t.targetId)
+            t.targetId = noteIds.get(t.targetId) ?? t.targetId
+        }
+        await this.setMeta(name, transfers)
+      } else if (name === 'cash') await this.importCash(value as CashState)
       else if (name === 'cash-imports')
         for (const cash of value as CashState[]) await this.importCash(cash)
       else if (name === 'mints') await importPins(this, value as MintPin[])
@@ -404,6 +511,8 @@ export class Vault {
         ])
       } else await this.setMeta(`import-${crypto.randomUUID()}`, {name, value})
     }
+    if (importedCashu)
+      await this.setMeta('restore-v1', {hash: fingerprint, phase: 'complete'})
     return added
   }
 

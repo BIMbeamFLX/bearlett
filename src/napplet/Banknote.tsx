@@ -9,6 +9,7 @@ export default function Banknote(props: {
   serial: string
   design: NoteDesign
   specimen?: boolean
+  protocol?: 'cashu' | 'lnurlcash'
 }) {
   return (
     <div
@@ -62,7 +63,7 @@ export default function Banknote(props: {
         <span>SATOSHIS</span>
       </div>
       <div class="banknote-seal">
-        <span>LN</span>
+        <span>{props.protocol === 'cashu' ? '₿' : 'LN'}</span>
         <small>
           BEARER
           <br />

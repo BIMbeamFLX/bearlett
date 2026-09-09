@@ -21,7 +21,8 @@ function Designer() {
   const [exported, setExported] = createSignal('')
   let subscription: {close(): void} | undefined
   let edited = false
-  onMount(() => {
+  onMount(async () => {
+    await window.napplet?.shell?.ready()
     const host = window.napplet
     subscription = host?.inc?.on(DESIGN_CONVENTION, event => {
       try {
@@ -98,7 +99,7 @@ function Designer() {
           <span class="logo">✳</span>
           <span>
             Notes
-            <small>LNURLCASH · NOTE DESIGNER</small>
+            <small>BEARLETT · NOTE DESIGNER</small>
           </span>
         </div>
         <span class="studio-label">MAKE YOUR SATS YOURS</span>
@@ -273,7 +274,7 @@ function Designer() {
           </label>
         </Show>
       </main>
-      <footer>Notes · LNURLcash · MIT licensed</footer>
+      <footer>Bearlett Notes · LNURLcash & Cashu · MIT licensed</footer>
     </div>
   )
 }

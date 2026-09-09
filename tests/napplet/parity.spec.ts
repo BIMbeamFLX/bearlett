@@ -39,9 +39,9 @@ test('seed, Lightning address change, offline settings and original backups work
   await expect(wallet.getByLabel('BOLT11 invoice', {exact: true})).toHaveValue(
     'lnbc70n1qqqq'
   )
-  await wallet.getByRole('button', {name: 'Prepare exact payment note'}).click()
+  await wallet.getByRole('button', {name: 'Prepare payment & fees'}).click()
   await expect(wallet.getByRole('status')).toContainText(
-    'Exact payment note prepared'
+    'Payment prepared. Review its amount and fees'
   )
   await wallet
     .getByRole('button', {name: 'Confirm payment', exact: true})

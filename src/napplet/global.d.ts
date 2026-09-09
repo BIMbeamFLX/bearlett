@@ -12,6 +12,8 @@ import type {
 declare global {
   interface Window {
     napplet?: {
+      shell?: {ready(): Promise<unknown>; supports(domain: string): boolean}
+      cashu?: import('./cashu/transport').CashuHost
       storage?: typeof storage
       resource?: typeof resource
       inc?: typeof inc

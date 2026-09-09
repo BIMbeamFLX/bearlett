@@ -22,11 +22,11 @@ export default defineConfig(({mode}) => {
         }
       },
       nip5aManifest({
-        nappletType: designer ? 'lnurlcash-notes' : 'lnurlcash-wallet',
-        title: designer ? 'LNURLcash Notes' : 'LNURLcash Wallet',
+        nappletType: designer ? 'bearlett-notes' : 'bearlett-wallet',
+        title: designer ? 'Bearlett Notes' : 'Bearlett Wallet',
         description: designer
           ? 'Design bearer notes with your own images, colors and words.'
-          : 'Receive, mint, split, combine and spend LNURLcash notes.',
+          : 'A bearer wallet for LNURLcash and Cashu sats, connected through Lightning.',
         artifactMode: 'single-file',
         requires: designer
           ? ['storage', 'inc']

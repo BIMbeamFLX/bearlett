@@ -1,0 +1,694 @@
+From 14a141553dec31e724751f3ce690da542fe85974 Mon Sep 17 00:00:00 2001
+From: BIMbeamFLX <info@bimbeam.at>
+Date: Wed, 9 Sep 2026 12:07:00 +0200
+Subject: [PATCH] feat: add opt-in Cashu mint capability
+
+---
+ packages/acl/src/capabilities.ts             |   1 +
+ packages/acl/src/resolve.ts                  |   3 +
+ packages/paja/src/browser-devtools.test.ts   |   6 +
+ packages/paja/src/browser-devtools.ts        |   4 +
+ packages/runtime/src/acl-state.ts            |   4 +-
+ packages/runtime/src/cashu.test.ts           |  46 +++++
+ packages/runtime/src/domain-handlers.ts      |   8 +-
+ packages/runtime/src/domain-results.ts       |   3 +
+ packages/runtime/src/enforce.ts              |   1 +
+ packages/runtime/src/runtime.ts              |  12 +-
+ packages/services/src/cashu-contract.ts      |  34 ++++
+ packages/services/src/cashu-service.test.ts  |  82 +++++++++
+ packages/services/src/cashu-service.ts       | 179 +++++++++++++++++++
+ packages/services/src/index.ts               |   4 +
+ packages/shell/src/napplet-namespace.test.ts |  17 ++
+ packages/shell/src/napplet-namespace.ts      |  12 +-
+ packages/shell/src/shell-init.ts             |   2 +-
+ 17 files changed, 409 insertions(+), 9 deletions(-)
+ create mode 100644 packages/runtime/src/cashu.test.ts
+ create mode 100644 packages/services/src/cashu-contract.ts
+ create mode 100644 packages/services/src/cashu-service.test.ts
+ create mode 100644 packages/services/src/cashu-service.ts
+
+diff --git a/packages/acl/src/capabilities.ts b/packages/acl/src/capabilities.ts
+index 4eed92cc..3dd12e56 100644
+--- a/packages/acl/src/capabilities.ts
++++ b/packages/acl/src/capabilities.ts
+@@ -13,6 +13,7 @@
+  * through shell-internal `relay.publishEncrypted` instead.
+  */
+ export const ALL_CAPABILITIES = [
++  'cashu:request', // Experimental Bearlett extension
+   // v1.1 kept:
+   'relay:read', 'relay:write',
+   'cache:read', 'cache:write',
+diff --git a/packages/acl/src/resolve.ts b/packages/acl/src/resolve.ts
+index d89cc19c..4e5c5452 100644
+--- a/packages/acl/src/resolve.ts
++++ b/packages/acl/src/resolve.ts
+@@ -482,6 +482,9 @@ export function resolveCapabilitiesNap(msg: NapMessage): CapabilityResolution {
+     case 'inc':      return incMap(action);
+     case 'theme':    return themeMap(action);
+     case 'config':   return configMap(action);
++    case 'cashu': return action === 'request' || action === 'acquire'
++      ? {senderCap: 'cashu:request', recipientCap: null}
++      : {senderCap: null, recipientCap: 'cashu:request'};
+     case 'resource': return resourceMap(action);   // Phase 40 (RESOURCE-02)
+     case 'cvm':      return cvmMap(action);         // NAP-CVM ContextVM bridge
+     case 'outbox':   return outboxMap(action);      // NAP-OUTBOX outbox-aware relay routing
+diff --git a/packages/paja/src/browser-devtools.test.ts b/packages/paja/src/browser-devtools.test.ts
+index 895f2b91..4f13b1da 100644
+--- a/packages/paja/src/browser-devtools.test.ts
++++ b/packages/paja/src/browser-devtools.test.ts
+@@ -135,6 +135,12 @@ describe('Paja origin-registry proxy', () => {
+ });
+ 
+ describe('Paja message-log redaction', () => {
++  it('retains only Cashu message types in both directions', () => {
++    for (const type of ['cashu.request', 'cashu.request.result', 'cashu.acquire']) {
++      expect(redactPajaMessageForLog({ type, id: 'secret', request: { body: 'proofs' }, result: 'signatures' }))
++        .toEqual({ type });
++    }
++  });
+   it('never retains NAP-CONFIG values', () => {
+     expect(redactPajaMessageForLog({
+       type: 'config.values',
+diff --git a/packages/paja/src/browser-devtools.ts b/packages/paja/src/browser-devtools.ts
+index 52875443..711bc630 100644
+--- a/packages/paja/src/browser-devtools.ts
++++ b/packages/paja/src/browser-devtools.ts
+@@ -154,6 +154,7 @@ export function appendPajaMessageLog(
+   windowId?: string,
+ ): void {
+   if (!state) return;
++  raw = redactPajaMessageForLog(raw);
+   state.messageLog.push({
+     index: state.messageLog.length,
+     timestamp: Date.now(),
+@@ -226,6 +227,9 @@ export function createPajaPostMessageProxy(
+  * @returns The original message or a metadata-only CONFIG log record.
+  */
+ export function redactPajaMessageForLog(message: unknown): unknown {
++  if (isRecord(message) && typeof message.type === 'string' && message.type.startsWith('cashu.')) {
++    return { type: message.type };
++  }
+   if (!isRecord(message) || message.type !== 'config.values') return message;
+   return {
+     type: 'config.values',
+diff --git a/packages/runtime/src/acl-state.ts b/packages/runtime/src/acl-state.ts
+index b0b1b86e..80e00646 100644
+--- a/packages/runtime/src/acl-state.ts
++++ b/packages/runtime/src/acl-state.ts
+@@ -41,6 +41,7 @@ const CAP_FS_READ        = 1 << 25;   // 33554432 (NAP-FS discovery/read/watch)
+ const CAP_FS_WRITE       = 1 << 26;   // 67108864 (NAP-FS mutations)
+ 
+ const CAP_MAP: Record<Capability, number> = {
++  'cashu:request': 1 << 27,
+   'relay:read': CAP_RELAY_READ,
+   'relay:write': CAP_RELAY_WRITE,
+   'cache:read': CAP_CACHE_READ,
+@@ -147,12 +148,13 @@ export function createAclState(
+   function ensureRuntimeDefaultEntry(id: Identity): void {
+     if (state.defaultPolicy !== 'permissive') return;
+     if (state.entries[toKey(id)]) return;
+-    state = grant(state, id, RUNTIME_CAP_ALL);
++    state = grant(state, id, RUNTIME_CAP_ALL & ~CAP_MAP['cashu:request']);
+   }
+ 
+   return {
+     check(pubkey: string, dTag: string, aggregateHash: string, capability: Capability): boolean {
+       const id = toIdentity(pubkey, dTag, aggregateHash);
++      if (capability === 'cashu:request' && !(state.entries[toKey(id)]?.caps & CAP_MAP[capability])) return false;
+       return check(state, id, capToBit(capability));
+     },
+ 
+diff --git a/packages/runtime/src/cashu.test.ts b/packages/runtime/src/cashu.test.ts
+new file mode 100644
+index 00000000..720ed865
+--- /dev/null
++++ b/packages/runtime/src/cashu.test.ts
+@@ -0,0 +1,46 @@
++import { describe, expect, it, vi } from 'vitest';
++import { createRuntime } from './runtime.js';
++import { createMockRuntimeAdapter, createNip5dSessionEntry } from './test-utils.js';
++
++describe('experimental Cashu capability', () => {
++  it('requires a source-bound session and permission, dispatches once granted, and redacts audits', () => {
++    const ctx = createMockRuntimeAdapter();
++    const runtime = createRuntime(ctx.hooks);
++    const handleMessage = vi.fn();
++    runtime.registerService('cashu', {
++      descriptor: { name: 'cashu', version: '1.0.0' },
++      handleMessage
++    });
++    const message = { type: 'cashu.request', id: 'one', request: { body: 'secret proof payload' } };
++    runtime.handleMessage('window', message);
++    expect(handleMessage).not.toHaveBeenCalled();
++    runtime.sessionRegistry.register(
++      'window',
++      createNip5dSessionEntry('window', 'bearlett', 'a'.repeat(64))
++    );
++    runtime.handleMessage('window', message);
++    expect(handleMessage).not.toHaveBeenCalled();
++    expect(ctx.sent.at(-1)?.message).toMatchObject({ type: 'cashu.request.result', ok: false });
++    runtime.aclState.grant('', 'bearlett', 'a'.repeat(64), 'cashu:request');
++    runtime.handleMessage('window', message);
++    expect(handleMessage).toHaveBeenCalledTimes(1);
++    expect(JSON.stringify(ctx.aclChecks)).not.toContain('secret proof');
++    runtime.handleMessage('window', { ...message, type: 'cashu.request.result' });
++    expect(handleMessage).toHaveBeenCalledTimes(1);
++  });
++  it('returns a correlated denial when permission exists but the service is missing', () => {
++    const ctx = createMockRuntimeAdapter();
++    const runtime = createRuntime(ctx.hooks);
++    runtime.sessionRegistry.register(
++      'window',
++      createNip5dSessionEntry('window', 'bearlett', 'a'.repeat(64))
++    );
++    runtime.aclState.grant('', 'bearlett', 'a'.repeat(64), 'cashu:request');
++    runtime.handleMessage('window', { type: 'cashu.acquire', id: 'one' });
++    expect(ctx.sent.at(-1)?.message).toMatchObject({
++      type: 'cashu.acquire.result',
++      id: 'one',
++      ok: false
++    });
++  });
++});
+diff --git a/packages/runtime/src/domain-handlers.ts b/packages/runtime/src/domain-handlers.ts
+index c0987ecb..1654ddf2 100644
+--- a/packages/runtime/src/domain-handlers.ts
++++ b/packages/runtime/src/domain-handlers.ts
+@@ -26,6 +26,7 @@ export type RuntimeDomainHandlers = {
+   theme: DomainHandler;
+   config: DomainHandler;
+   resource: DomainHandler;
++  cashu: DomainHandler;
+   cvm: DomainHandler;
+   outbox: DomainHandler;
+   upload: DomainHandler;
+@@ -48,6 +49,7 @@ export function createRuntimeDomainHandlers(context: RuntimeDomainContext): Runt
+     notify: (windowId, msg) => handleNotifyMessage(context, windowId, msg),
+     theme: (windowId, msg) => handleThemeMessage(context, windowId, msg),
+     config: (windowId, msg) => handleServiceOnlyMessage(context, 'config', windowId, msg),
++    cashu: (windowId, msg) => handleServiceOnlyMessage(context, 'cashu', windowId, msg),
+     resource: (windowId, msg) => handleServiceOnlyMessage(context, 'resource', windowId, msg),
+     cvm: (windowId, msg) => handleServiceOnlyMessage(context, 'cvm', windowId, msg),
+     outbox: (windowId, msg) => handleServiceOnlyMessage(context, 'outbox', windowId, msg),
+@@ -174,7 +176,7 @@ function handleThemeMessage(context: RuntimeDomainContext, windowId: string, msg
+ 
+ function handleServiceOnlyMessage(
+   context: RuntimeDomainContext,
+-  name: 'config' | 'resource' | 'cvm' | 'outbox' | 'upload' | 'intent' | 'link' | 'common' | 'lists' | 'serial' | 'ble' | 'webrtc' | 'dm' | 'fs',
++  name: 'cashu' | 'config' | 'resource' | 'cvm' | 'outbox' | 'upload' | 'intent' | 'link' | 'common' | 'lists' | 'serial' | 'ble' | 'webrtc' | 'dm' | 'fs',
+   windowId: string,
+   msg: NappletMessage,
+ ): void {
+@@ -188,6 +190,10 @@ function handleServiceOnlyMessage(
+   }
+   const service = context.serviceRegistry[name];
+   if (!service) {
++    if (name === 'cashu') {
++      const result = createCanonicalDomainResult(msg);
++      if (result) context.hooks.sendToNapplet(windowId, result);
++    }
+     if (name === 'intent') {
+       const result = createIntentServiceUnavailableResult(msg);
+       if (result) context.hooks.sendToNapplet(windowId, result);
+diff --git a/packages/runtime/src/domain-results.ts b/packages/runtime/src/domain-results.ts
+index 7df43747..08809596 100644
+--- a/packages/runtime/src/domain-results.ts
++++ b/packages/runtime/src/domain-results.ts
+@@ -119,6 +119,9 @@ export function createIntentServiceUnavailableResult(
+  * dispatch boundary can ignore them rather than synthesize a generic error.
+  */
+ export function createCanonicalDomainResult(message: NappletMessage): NappletMessage | undefined {
++  if (['cashu.request', 'cashu.acquire'].includes(message.type)) {
++    return Object.assign(createRuntimeOwnedResultEnvelope(message.type + '.result', (message as {id?: string}).id ?? ''), {ok: false, error: 'Cashu capability unavailable or denied.'});
++  }
+   if (!isRuntimeOwnedIdentityOrThemeRequest(message.type)) return undefined;
+ 
+   const id = (message as NappletMessage & { id?: string }).id ?? '';
+diff --git a/packages/runtime/src/enforce.ts b/packages/runtime/src/enforce.ts
+index d6706d57..6fc12972 100644
+--- a/packages/runtime/src/enforce.ts
++++ b/packages/runtime/src/enforce.ts
+@@ -132,6 +132,7 @@ export function createNapEnforceGate(config: NapEnforceConfig): (windowId: strin
+   const { checkAcl, resolveIdentityByWindowId, onAclCheck } = config;
+ 
+   return function enforceNap(windowId: string, capability: Capability, message?: NapMessage): EnforceResult {
++    if (message?.type.startsWith('cashu.')) message = {type: message.type};
+     const entry = resolveIdentityByWindowId(windowId);
+     const dTag = entry?.dTag ?? '';
+     const aggregateHash = entry?.aggregateHash ?? '';
+diff --git a/packages/runtime/src/runtime.ts b/packages/runtime/src/runtime.ts
+index daa5cd2a..b401c04e 100644
+--- a/packages/runtime/src/runtime.ts
++++ b/packages/runtime/src/runtime.ts
+@@ -169,7 +169,8 @@ function createNapEnvelopeDispatcher(handlers: RuntimeNapHandlers): (windowId: s
+   return (windowId, envelope) => {
+     currentWindowId = windowId;
+     try {
+-      napDispatch.dispatch(envelope);
++      if (envelope.type.startsWith('cashu.')) handlers.cashu(windowId, envelope);
++      else napDispatch.dispatch(envelope);
+     } finally {
+       currentWindowId = null;
+     }
+@@ -290,7 +291,7 @@ function createFirewallGate(config: FirewallGateConfig): (windowId: string, enve
+       const intentDenial = createIntentPolicyDenial(envelope);
+       if (intentDenial) {
+         hooks.sendToNapplet(windowId, intentDenial);
+-        hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope } as FirewallEvent);
++        hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope.type.startsWith('cashu.') ? {type: envelope.type} : envelope } as FirewallEvent);
+         if (decision === 'prompt') fireConsent(windowId, napplet);
+         return 'drop';
+       }
+@@ -298,7 +299,7 @@ function createFirewallGate(config: FirewallGateConfig): (windowId: string, enve
+       const canonicalResult = createCanonicalDomainResult(envelope);
+       if (canonicalResult) {
+         hooks.sendToNapplet(windowId, canonicalResult);
+-        hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope } as FirewallEvent);
++        hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope.type.startsWith('cashu.') ? {type: envelope.type} : envelope } as FirewallEvent);
+         if (decision === 'prompt') fireConsent(windowId, napplet);
+         return 'drop';
+       }
+@@ -306,7 +307,7 @@ function createFirewallGate(config: FirewallGateConfig): (windowId: string, enve
+       const denial = createDenialResponse(envelope, `firewall: ${reason}`);
+       if (denial) hooks.sendToNapplet(windowId, denial);
+ 
+-      hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope } as FirewallEvent);
++      hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope.type.startsWith('cashu.') ? {type: envelope.type} : envelope } as FirewallEvent);
+ 
+       if (decision === 'prompt') {
+         // POLICY-02: reject current message AND fire async consent prompt
+@@ -318,7 +319,7 @@ function createFirewallGate(config: FirewallGateConfig): (windowId: string, enve
+     // decision === 'pass'
+     if (action === 'flag') {
+       // RUNTIME-04: flag → audit + dispatch (message is NOT dropped)
+-      hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope } as FirewallEvent);
++      hooks.onFirewallEvent?.({ windowId, napplet, opClass, decision, action, ruleId, reason, message: envelope.type.startsWith('cashu.') ? {type: envelope.type} : envelope } as FirewallEvent);
+     }
+     return 'dispatch';
+   };
+@@ -366,6 +367,7 @@ function createMessageHandler(
+     // ACL, firewall, service routing, and domain dispatch.
+     if (!sessionRegistry.getEntryByWindowId(windowId)) return;
+     const domain = envelope.type.slice(0, dotIdx);
++    if (domain === 'cashu' && !['cashu.request', 'cashu.acquire'].includes(envelope.type)) return;
+     if (hooks.isDomainAllowed && !hooks.isDomainAllowed(windowId, domain)) return;
+     if (isIdentityOrThemeMessage(envelope) && !createCanonicalDomainResult(envelope)) return;
+ 
+diff --git a/packages/services/src/cashu-contract.ts b/packages/services/src/cashu-contract.ts
+new file mode 100644
+index 00000000..37dfe58f
+--- /dev/null
++++ b/packages/services/src/cashu-contract.ts
+@@ -0,0 +1,34 @@
++export const CASHU_OPERATIONS = {
++  info: ['GET', '/v1/info'],
++  keysets: ['GET', '/v1/keysets'],
++  keys: ['GET', '/v1/keys'],
++  mintQuote: ['POST', '/v1/mint/quote/bolt11'],
++  mintQuoteState: ['GET', '/v1/mint/quote/bolt11'],
++  mint: ['POST', '/v1/mint/bolt11'],
++  swap: ['POST', '/v1/swap'],
++  meltQuote: ['POST', '/v1/melt/quote/bolt11'],
++  meltQuoteState: ['GET', '/v1/melt/quote/bolt11'],
++  melt: ['POST', '/v1/melt/bolt11'],
++  checkstate: ['POST', '/v1/checkstate'],
++  restore: ['POST', '/v1/restore']
++} as const;
++export type CashuOperation = keyof typeof CASHU_OPERATIONS;
++export type CashuRequest = {
++  mint: string;
++  operation: CashuOperation;
++  parameter?: string;
++  body?: string;
++};
++export type CashuResponse = { status: number; body: string; retryAfterMs?: number };
++export type CashuHost = {
++  acquire?(): Promise<void>;
++  request(request: CashuRequest): Promise<CashuResponse>;
++};
++
++/** Canonical mint identity includes its path; never follow a token's credentials or fragment. */
++export function mintUrl(input: string): string {
++  const url = new URL(input);
++  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
++    throw new Error('Use an HTTPS mint URL without credentials, query or fragment.');
++  return url.href.replace(/\/+$/, '');
++}
+diff --git a/packages/services/src/cashu-service.test.ts b/packages/services/src/cashu-service.test.ts
+new file mode 100644
+index 00000000..5aa109fe
+--- /dev/null
++++ b/packages/services/src/cashu-service.test.ts
+@@ -0,0 +1,82 @@
++import { describe, expect, it, vi } from 'vitest';
++import { cashuEndpoint, createCashuService } from './cashu-service.js';
++import type { CashuRequest } from './cashu-contract.js';
++
++const request: CashuRequest = { mint: 'https://mint.example/base', operation: 'info' };
++describe('Cashu host capability', () => {
++  it('maps only approved endpoints and omits credentials, redirects and caches', async () => {
++    const fetch = vi.fn(async () => new Response('{}', { headers: { 'Retry-After': '2' } }));
++    const host = createCashuService({ scope: () => 'wallet', allowed: () => true, fetch });
++    expect(await host.request('a', request)).toEqual({
++      status: 200,
++      body: '{}',
++      retryAfterMs: 2000
++    });
++    expect(fetch).toHaveBeenCalledWith(
++      'https://mint.example/base/v1/info',
++      expect.objectContaining({
++        credentials: 'omit',
++        redirect: 'error',
++        cache: 'no-store',
++        referrerPolicy: 'no-referrer'
++      })
++    );
++  });
++  it('denies unapproved mints and simultaneous writers before network access', async () => {
++    const fetch = vi.fn(async () => new Response('{}'));
++    const host = createCashuService({ scope: () => 'wallet', allowed: id => id === 'a', fetch });
++    await host.request('a', request);
++    await expect(host.request('b', request)).rejects.toThrow('another window');
++    host.onWindowDestroyed?.('a');
++    await expect(host.request('b', request)).rejects.toThrow('not approved');
++    expect(fetch).toHaveBeenCalledTimes(1);
++  });
++  it.each([
++    'http://mint.example',
++    'https://user:secret@mint.example',
++    'https://mint.example/?token=secret',
++    'https://mint.example/#secret'
++  ])('rejects unsafe mint %s', mint => {
++    expect(() => cashuEndpoint({ ...request, mint })).toThrow();
++  });
++  it('rejects path traversal, arbitrary operations and unsupported POST fields', () => {
++    expect(() => cashuEndpoint({ ...request, operation: 'keys', parameter: '../info' })).toThrow();
++    expect(() => cashuEndpoint({ ...request, operation: 'constructor' as never })).toThrow();
++    expect(() =>
++      cashuEndpoint({
++        ...request,
++        operation: 'mintQuote',
++        body: JSON.stringify({ amount: 1, unit: 'usd' })
++      })
++    ).toThrow();
++    expect(() =>
++      cashuEndpoint({
++        ...request,
++        operation: 'swap',
++        body: JSON.stringify({ inputs: [], outputs: [], url: 'https://evil.test' })
++      })
++    ).toThrow();
++  });
++  it('redacts bearer contents in error replies', async () => {
++    const host = createCashuService({
++      scope: () => 'wallet',
++      allowed: () => true,
++      fetch: async () => {
++        throw new Error('secret bearer payload');
++      }
++    });
++    const reply = await new Promise(resolve =>
++      host.handleMessage(
++        'a',
++        {
++          type: 'cashu.request',
++          id: 'id',
++          request
++        } as unknown as import('@napplet/core').NappletMessage,
++        resolve
++      )
++    );
++    expect(reply).toMatchObject({ type: 'cashu.request.result', id: 'id', ok: false });
++    expect(JSON.stringify(reply)).not.toContain('secret bearer payload');
++  });
++});
+diff --git a/packages/services/src/cashu-service.ts b/packages/services/src/cashu-service.ts
+new file mode 100644
+index 00000000..bbc5af7e
+--- /dev/null
++++ b/packages/services/src/cashu-service.ts
+@@ -0,0 +1,179 @@
++import type { NappletMessage } from '@napplet/core';
++import type { ServiceHandler } from '@kehto/runtime';
++import { CASHU_OPERATIONS, mintUrl } from './cashu-contract.js';
++import type { CashuRequest, CashuResponse } from './cashu-contract.js';
++
++export type CashuServiceOptions = {
++  allowed(windowId: string, mint: string): boolean | Promise<boolean>;
++  scope(windowId: string): string | undefined;
++  fetch?: typeof fetch;
++  timeoutMs?: number;
++};
++type Envelope = { type: string; id: string; request?: CashuRequest };
++
++/** Map a validated operation to a fixed mint endpoint; no arbitrary URL or headers cross the boundary. */
++export function cashuEndpoint(request: CashuRequest): { url: string; method: string } {
++  if (
++    !request ||
++    typeof request !== 'object' ||
++    !Object.hasOwn(CASHU_OPERATIONS, request.operation)
++  )
++    throw new Error('Invalid operation.');
++  const mint = mintUrl(request.mint),
++    [method, path] = CASHU_OPERATIONS[request.operation];
++  const needsParameter = ['mintQuoteState', 'meltQuoteState'].includes(request.operation);
++  if (
++    (needsParameter && !request.parameter) ||
++    (request.parameter !== undefined &&
++      (!['keys', 'mintQuoteState', 'meltQuoteState'].includes(request.operation) ||
++        !/^[a-zA-Z0-9_-]{1,200}$/.test(request.parameter)))
++  )
++    throw new Error('Invalid operation parameter.');
++  if (method === 'GET' && request.body !== undefined) throw new Error('GET cannot carry a body.');
++  if (method === 'POST') {
++    if (typeof request.body !== 'string' || new TextEncoder().encode(request.body).length > 512000)
++      throw new Error('Invalid request body.');
++    const data = JSON.parse(request.body);
++    if (!data || typeof data !== 'object' || Array.isArray(data))
++      throw new Error('Invalid request body.');
++    const fields: Record<string, string[]> = {
++      mintQuote: ['amount', 'unit', 'description', 'pubkey'],
++      mint: ['quote', 'outputs', 'signature'],
++      meltQuote: ['request', 'unit'],
++      melt: ['quote', 'inputs', 'outputs', 'prefer_async'],
++      swap: ['inputs', 'outputs'],
++      checkstate: ['Ys'],
++      restore: ['outputs']
++    };
++    if (Object.keys(data).some(k => !fields[request.operation]?.includes(k)))
++      throw new Error('Unsupported request field.');
++    if ('unit' in data && data.unit !== 'sat') throw new Error('Only sat is supported.');
++    for (const name of ['inputs', 'outputs', 'Ys'])
++      if (name in data && (!Array.isArray(data[name]) || data[name].length > 2048))
++        throw new Error('Request has too many items.');
++  }
++  return {
++    url: mint + path + (request.parameter ? '/' + encodeURIComponent(request.parameter) : ''),
++    method
++  };
++}
++
++/** Kehto-compatible, source-bound service. Its errors and diagnostics never include bearer payloads. */
++export function createCashuService(
++  options: CashuServiceOptions
++): ServiceHandler & { request(windowId: string, request: CashuRequest): Promise<CashuResponse> } {
++  const scopes = new Map<string, string>(),
++    inFlight = new Set<string>();
++  const claim = (windowId: string) => {
++    const scope = options.scope(windowId);
++    if (!scope) throw new Error('Wallet session unavailable.');
++    const owner = scopes.get(scope);
++    if (owner && owner !== windowId)
++      throw new Error('This wallet is already open in another window.');
++    scopes.set(scope, windowId);
++  };
++  const request = async (windowId: string, request: CashuRequest): Promise<CashuResponse> => {
++    claim(windowId);
++    const { url, method } = cashuEndpoint(request);
++    if (!(await options.allowed(windowId, mintUrl(request.mint))))
++      throw new Error('Mint access is not approved.');
++    if (inFlight.has(windowId)) throw new Error('A mint request is already running.');
++    inFlight.add(windowId);
++    const controller = new AbortController();
++    const timeout = setTimeout(
++      () => controller.abort(),
++      options.timeoutMs ?? (request.operation === 'melt' ? 300000 : 30000)
++    );
++    try {
++      const response = await (options.fetch ?? fetch)(url, {
++        method,
++        body: request.body,
++        headers: {
++          Accept: 'application/json',
++          ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {})
++        },
++        credentials: 'omit',
++        redirect: 'error',
++        cache: 'no-store',
++        referrerPolicy: 'no-referrer',
++        signal: controller.signal
++      });
++      const reader = response.body?.getReader(),
++        chunks: Uint8Array[] = [];
++      let size = 0;
++      if (!reader) throw new Error('Empty mint response.');
++      while (true) {
++        const next = await reader.read();
++        if (next.done) break;
++        size += next.value.length;
++        if (size > 2 * 1024 * 1024) {
++          await reader.cancel();
++          throw new Error('Mint response exceeds size limit.');
++        }
++        chunks.push(next.value);
++      }
++      const bytes = new Uint8Array(size);
++      let offset = 0;
++      for (const chunk of chunks) {
++        bytes.set(chunk, offset);
++        offset += chunk.length;
++      }
++      const retry = response.headers.get('Retry-After');
++      return {
++        status: response.status,
++        body: new TextDecoder().decode(bytes),
++        ...(retry && /^\d+$/.test(retry)
++          ? { retryAfterMs: Math.min(Number(retry) * 1000, 3600000) }
++          : {})
++      };
++    } finally {
++      clearTimeout(timeout);
++      inFlight.delete(windowId);
++    }
++  };
++  return {
++    descriptor: {
++      name: 'cashu',
++      version: '1.0.0',
++      description: 'Bearlett Cashu mint transport (experimental extension)'
++    },
++    request,
++    handleMessage(windowId: string, raw: unknown, send: (message: NappletMessage) => void): void {
++      const msg = raw as Envelope;
++      if (
++        !msg ||
++        !['cashu.request', 'cashu.acquire'].includes(msg.type) ||
++        typeof msg.id !== 'string' ||
++        msg.id.length > 100
++      )
++        return;
++      void (async () => {
++        try {
++          claim(windowId);
++          const result =
++            msg.type === 'cashu.request' ? await request(windowId, msg.request!) : undefined;
++          send({
++            type: msg.type + '.result',
++            id: msg.id,
++            ok: true,
++            result
++          } as unknown as NappletMessage);
++        } catch (error) {
++          send({
++            type: msg.type + '.result',
++            id: msg.id,
++            ok: false,
++            error:
++              error instanceof Error &&
++              error.message === 'This wallet is already open in another window.'
++                ? error.message
++                : 'Cashu request unavailable, denied, or interrupted. Check the stored operation before retrying.'
++          } as unknown as NappletMessage);
++        }
++      })();
++    },
++    onWindowDestroyed(windowId: string): void {
++      for (const [scope, owner] of scopes) if (owner === windowId) scopes.delete(scope);
++    }
++  };
++}
+diff --git a/packages/services/src/index.ts b/packages/services/src/index.ts
+index 1e1698ca..0ed14161 100644
+--- a/packages/services/src/index.ts
++++ b/packages/services/src/index.ts
+@@ -307,3 +307,7 @@ export type {
+   FsService,
+   FsServiceOptions,
+ } from './fs-service.js';
++
++export {createCashuService} from './cashu-service.js';
++export type {CashuServiceOptions} from './cashu-service.js';
++export type {CashuRequest, CashuResponse} from './cashu-contract.js';
+diff --git a/packages/shell/src/napplet-namespace.test.ts b/packages/shell/src/napplet-namespace.test.ts
+index 61d428cc..0b37f307 100644
+--- a/packages/shell/src/napplet-namespace.test.ts
++++ b/packages/shell/src/napplet-namespace.test.ts
+@@ -1802,3 +1802,20 @@ describe('NIP-5D napplet namespace prelude', () => {
+     });
+   });
+ });
++
++
++describe('experimental Cashu shim', () => {
++  it('exposes Cashu only when granted and accepts replies only from the parent', async () => {
++    const absent = createPreludeTestWindow();
++    runPrelude(renderNappletNamespacePrelude({domains: ['storage']}), absent);
++    expect(absent.napplet?.cashu).toBeUndefined();
++    const target = createPreludeTestWindow();
++    runPrelude(renderNappletNamespacePrelude({domains: ['cashu']}), target);
++    const cashu = target.napplet!.cashu as {request(input: unknown): Promise<unknown>};
++    const response = cashu.request({mint: 'https://mint.example', operation: 'info'});
++    const outbound = target.postedMessages.at(-1)!;
++    target.dispatchMessage({}, {type: 'cashu.request.result', id: outbound.id, ok: true, result: 'forged'});
++    target.dispatchParentMessage({type: 'cashu.request.result', id: outbound.id, ok: true, result: {status: 200, body: '{}'}});
++    await expect(response).resolves.toEqual({status: 200, body: '{}'});
++  });
++});
+diff --git a/packages/shell/src/napplet-namespace.ts b/packages/shell/src/napplet-namespace.ts
+index 7ecdeb67..15b5a1ae 100644
+--- a/packages/shell/src/napplet-namespace.ts
++++ b/packages/shell/src/napplet-namespace.ts
+@@ -1565,15 +1565,25 @@ function nappletNamespacePrelude(domains: string[]): void {
+     return intent;
+   }
+ 
++  function makeCashu(): Record<string, unknown> {
++    const invoke = (type: string, body?: unknown) => request({type, ...(body ? {request: body} : {})}, type + '.result', msg => {
++      if (msg.ok !== true) throw new Error('Cashu capability unavailable or denied.');
++      return msg.result;
++    }, {timeoutMs: 310000});
++    return Object.freeze({request: (body: unknown) => invoke('cashu.request', body), acquire: () => invoke('cashu.acquire')});
++  }
++
+   function isProtectedDomain(domain: string): boolean {
+     return domain === 'shell'
+       || domain === 'inc'
+       || domain === 'identity'
+       || domain === 'theme'
+-      || domain === 'intent';
++      || domain === 'intent'
++      || domain === 'cashu';
+   }
+ 
+   function makeDomain(domain: string, existing: unknown): unknown {
++    if (domain === 'cashu') return makeCashu();
+     if (domain === 'shell') return shell;
+     if (domain === 'inc') return makeProtectedInc(existing);
+     if (domain === 'identity') return makeProtectedIdentity();
+diff --git a/packages/shell/src/shell-init.ts b/packages/shell/src/shell-init.ts
+index a85c5708..3c552cfc 100644
+--- a/packages/shell/src/shell-init.ts
++++ b/packages/shell/src/shell-init.ts
+@@ -8,7 +8,7 @@ const RUNTIME_NATIVE_DOMAINS = [
+ const SERVICE_ONLY_DOMAINS = [
+   'outbox', 'config', 'resource', 'cvm', 'upload', 'intent', 'link', 'common',
+   'lists', 'serial', 'ble', 'webrtc', 'dm', 'count',
+-  'fs',
++  'fs', 'cashu',
+ ] as const;
+ 
+ /**
+-- 
+2.53.0.windows.1
+

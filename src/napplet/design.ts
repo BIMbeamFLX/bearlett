@@ -7,7 +7,7 @@ export type NoteDesign = {
 }
 
 export const DEFAULT_DESIGN: NoteDesign = {
-  title: 'LNURLCASH BEARER NOTE',
+  title: 'BEARLETT BEARER NOTE',
   subtitle: 'Whoever holds the note holds the sats.',
   ink: '#174c3a',
   paper: '#f3ecd3'

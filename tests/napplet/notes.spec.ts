@@ -7,7 +7,7 @@ test('notes runs alone: upload, export, draft recovery and reviewed intent', asy
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/notes')
-  await expect(page).toHaveTitle('LNURLcash Notes · local preview')
+  await expect(page).toHaveTitle('Bearlett Notes · local preview')
   await expect(page.locator('iframe')).toHaveCount(1)
   await expect(
     page.locator('#wallet, #wallet-tab, #designer-tab, #sample')
