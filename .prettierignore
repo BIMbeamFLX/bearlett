@@ -11,3 +11,4 @@ test-results/
 playwright-report/
 docs/UPSTREAM-LNURLWALLET.md
 contributions/*.patch
+docs/prototype/
