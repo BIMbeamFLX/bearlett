@@ -2,7 +2,7 @@
   "name": "bearlett",
   "private": true,
   "packageManager": "npm@12.0.2",
-  "description": "A wallet napplet for LNURLcash and Cashu bearer assets",
+  "description": "Bearlett — Bearer Asset Wallet for LNURLcash and Cashu",
   "author": "Bearlett contributors; based on LNURLwallet by dni",
   "license": "MIT",
   "scripts": {
