@@ -11,11 +11,19 @@ built or ordered.
 Bearlett does not run its own mint for sats. Three classes of issuer, all
 present or operated by third parties:
 
+**Decided on 10 September 2026.** Lightning and sats run on dni's mint.
+Cards run on our own NutFT mint. It fixes the shape of the whole system: one
+issuer we do not operate for money, one we do operate for assets.
+
+That names the LNURLcash issuer, which had none, and confirms the card mint,
+which was already first-party. It does **not** settle the Cashu sats row, and
+section E is where that matters: the choice costs BOLT12 unless that row stays.
+
 | Asset             | Issuer                                                                                                                                                                                     | Present                                        | To do                                                                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cashu sats        | Existing Nutshell mints. Regtest: `cashubtc/nutshell:0.20.3` on LND Bob, host port 43338. Production: choose public mints against criteria                                                  | Regtest yes, production mint selection no      | Apply the criteria list: NUT-07, NUT-08, NUT-09, NUT-13, NUT-20, fee policy, reachability, BOLT12 signal; at least two mints per unit for failover            |
-| LNURLcash notes   | Existing LNURLmint instances (dni's `lnurl-mint`). Regtest: image `bearlett-regtest-lnurl:latest`, source `bd21f61`, on LND Alice, host port 48111                                         | Regtest yes, production service not identified | Identify public LNURLcash services and check them against LUD-25; no in-house operation in V1                                                                      |
-| NutFT cards       | First-party mint of the TCG wallet (`TCG600nap/server/nutft-mint.js`). Per [TCG-WALLET-2026-09-09.md](TCG-WALLET-2026-09-09.md) it is required and not replaceable by third-party mints     | Code yes, operation see section F              | Hosting, Lightning backend, catalogue and artwork; instructions in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md)                                             |
+| LNURLcash notes   | **dni's mint**, decided 10 September 2026. Regtest: image `bearlett-regtest-lnurl:latest`, source `bd21f61`, on LND Alice, host port 48111                                                | Issuer decided, address not yet recorded       | Get the production address from dni and check it against LUD-25; no in-house operation, and no second issuer for failover on this path                             |
+| NutFT cards       | **Our own mint** (`TCG600nap/server/nutft-mint.js`), confirmed 10 September 2026. Per [TCG-WALLET-2026-09-09.md](TCG-WALLET-2026-09-09.md) it is required and not replaceable by third-party mints | Code yes, operation see section F              | Hosting, Lightning backend, catalogue and artwork; instructions in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md). The collection napplet needs its address at build time as `BEARLETT_MINT` |
 
 All a mint needs to serve Bearlett is an HTTPS endpoint with
 the named NUTs and correct CORS headers. Both regtest mints answer
@@ -183,6 +191,28 @@ identity carries no `nip44` at all; see
 3. LNURLcash has no BOLT12. BOLT12 payments from LNURLcash balances go through
    the existing Lightning bridge to a Cashu mint. No new infrastructure,
    but an extra regtest path.
+
+**What choosing dni's mint costs, recorded 10 September 2026.** dni's mint is an
+LNURLcash mint, and point 3 above is therefore no longer a side note: it is the
+whole BOLT12 story. Offers cannot come from the issuer that holds the balance.
+
+That leaves three ways forward, and it is a decision rather than a task:
+
+| | BOLT11 | BOLT12 | Cost |
+| --- | --- | --- | --- |
+| dni's mint alone | yes | **no** | nothing to build; the Pay surface ships without offers |
+| dni's mint plus a Cashu mint with offers | yes | yes, by bridging a balance across | a second issuer to select against the NUT criteria, and a bridge step the holder can see |
+| dni's mint plus our own CDK mint | yes | yes | a mint we operate for money, which the principle at the top of this file rules out |
+
+The second is the only one that keeps both the principle and BOLT12. It also
+means the Cashu sats row in the table above stays, rather than being dropped
+along with the other selection questions, because that row is where the offers
+would come from.
+
+Until that is settled, no Pay surface should promise BOLT12. Section 7.1 of the
+[design brief](UI-DESIGN-2026-09-09.md) already blocks the BOLT12 conventions
+behind a separate decision about the `wallet` archetype, so nothing is shipped
+on this assumption today.
 
 ### F. NutFT mint for cards
 
