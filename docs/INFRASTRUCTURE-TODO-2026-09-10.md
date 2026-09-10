@@ -6,23 +6,25 @@ test plan) and [UI-DESIGN-2026-09-09.md](UI-DESIGN-2026-09-09.md) (twelve compos
 napplets). This document lists only what is missing, and orders it. None of it is
 built or ordered.
 
-## Principle: use existing mints
+## Principle: two mints of our own, no Cashu mint
 
-Bearlett does not run its own mint for sats. Three classes of issuer, all
-present or operated by third parties:
+**Decided on 10 September 2026.** We operate exactly two issuers: an **LNURL
+mint**, which is dni's software, and our **NutFT mint** for cards. No Cashu sats
+mint of our own, and no third-party Cashu mint selected either.
 
-**Decided on 10 September 2026.** Lightning and sats run on dni's mint.
-Cards run on our own NutFT mint. It fixes the shape of the whole system: one
-issuer we do not operate for money, one we do operate for assets.
+Neither is a new kind of thing to run. The regtest already starts an LNURL mint
+from image `bearlett-regtest-lnurl:latest`, and the source sits at
+`G:\Github\lnurl-mint` (`feature/nord-assets`, `fc6e943`), so a production
+instance is an operating step rather than a build. The NutFT mint was already
+first-party and not replaceable.
 
-That names the LNURLcash issuer, which had none, and confirms the card mint,
-which was already first-party. It does **not** settle the Cashu sats row, and
-section E is where that matters: the choice costs BOLT12 unless that row stays.
+What this costs is BOLT12, and section E says why: neither of these two speaks
+it. That is a live open point, not a solved one.
 
 | Asset             | Issuer                                                                                                                                                                                     | Present                                        | To do                                                                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cashu sats        | Existing Nutshell mints. Regtest: `cashubtc/nutshell:0.20.3` on LND Bob, host port 43338. Production: choose public mints against criteria                                                  | Regtest yes, production mint selection no      | Apply the criteria list: NUT-07, NUT-08, NUT-09, NUT-13, NUT-20, fee policy, reachability, BOLT12 signal; at least two mints per unit for failover            |
-| LNURLcash notes   | **dni's mint**, decided 10 September 2026. Regtest: image `bearlett-regtest-lnurl:latest`, source `bd21f61`, on LND Alice, host port 48111                                                | Issuer decided, address not yet recorded       | Get the production address from dni and check it against LUD-25; no in-house operation, and no second issuer for failover on this path                             |
+| Cashu sats        | Existing Nutshell mints, still unselected. Regtest: `cashubtc/nutshell:0.20.3` on LND Bob, host port 43338                                                                                 | Regtest yes, no production mint, none of our own | Not in scope as of 10 September 2026: we run no Cashu mint and have selected none. The wallet keeps its Cashu support; the criteria list waits for a reason to apply it |
+| LNURLcash notes   | **Our own LNURL mint**, dni's software, decided 10 September 2026. Regtest: image `bearlett-regtest-lnurl:latest`, source `bd21f61`, on LND Alice, host port 48111                        | Regtest yes, production instance not deployed  | Section I. Hosting, a Lightning backend, TLS, and the LUD-25 check against our own instance rather than someone else's                                              |
 | NutFT cards       | **Our own mint** (`TCG600nap/server/nutft-mint.js`), confirmed 10 September 2026. Per [TCG-WALLET-2026-09-09.md](TCG-WALLET-2026-09-09.md) it is required and not replaceable by third-party mints | Code yes, operation see section F              | Hosting, Lightning backend, catalogue and artwork; instructions in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md). The collection napplet needs its address at build time as `BEARLETT_MINT` |
 
 All a mint needs to serve Bearlett is an HTTPS endpoint with
@@ -192,27 +194,28 @@ identity carries no `nip44` at all; see
    the existing Lightning bridge to a Cashu mint. No new infrastructure,
    but an extra regtest path.
 
-**What choosing dni's mint costs, recorded 10 September 2026.** dni's mint is an
-LNURLcash mint, and point 3 above is therefore no longer a side note: it is the
-whole BOLT12 story. Offers cannot come from the issuer that holds the balance.
+**What the two-mint decision costs, recorded 10 September 2026.** Neither mint
+we operate speaks BOLT12, and point 3 above is therefore no longer a side note:
+it is the whole BOLT12 story.
 
-That leaves three ways forward, and it is a decision rather than a task:
+- An LNURL mint issues LNURLcash notes. LNURLcash has no BOLT12, and the source
+  at `G:\Github\lnurl-mint` (`fc6e943`) contains no offer handling.
+- The NutFT mint takes payment for cards through `server/funding.js`, whose
+  backends expose `createInvoice` and `isSettled` only. BOLT11. Even with
+  phoenixd, which can do offers as a node, the mint does not ask it for one.
 
-| | BOLT11 | BOLT12 | Cost |
-| --- | --- | --- | --- |
-| dni's mint alone | yes | **no** | nothing to build; the Pay surface ships without offers |
-| dni's mint plus a Cashu mint with offers | yes | yes, by bridging a balance across | a second issuer to select against the NUT criteria, and a bridge step the holder can see |
-| dni's mint plus our own CDK mint | yes | yes | a mint we operate for money, which the principle at the top of this file rules out |
+So BOLT12 has no home in the system as decided. Two ways to give it one, both
+open:
 
-The second is the only one that keeps both the principle and BOLT12. It also
-means the Cashu sats row in the table above stays, rather than being dropped
-along with the other selection questions, because that row is where the offers
-would come from.
+| | Cost |
+| --- | --- |
+| A third-party Cashu mint with offers, bridged | an issuer to select against the NUT criteria, and a bridge step a holder can see |
+| Teach one of our two mints to ask its node for an offer | a change in someone else's codebase, or a fork |
 
-Until that is settled, no Pay surface should promise BOLT12. Section 7.1 of the
+Until one is chosen, no Pay surface should promise BOLT12. Section 7.1 of the
 [design brief](UI-DESIGN-2026-09-09.md) already blocks the BOLT12 conventions
 behind a separate decision about the `wallet` archetype, so nothing is shipped
-on this assumption today.
+on an assumption that has now twice turned out to be wrong.
 
 ### F. NutFT mint for cards
 
@@ -286,9 +289,80 @@ To build or operate:
 3. GitHub Actions stay off until the client authorises them. The earlier
    authorisation check refused enabling them without asking.
 
+### I. Our own LNURL mint
+
+Added 10 September 2026. Planning only. **Nothing here is deployed**: a public
+mint deploy is outside what this repository is authorised to do, and needs its
+own explicit go-ahead.
+
+1. **What to run.** dni's `lnurl-mint`, the same software the regtest already
+   starts. The local checkout is `G:\Github\lnurl-mint` at `fc6e943` on
+   `feature/nord-assets`. A Python service with its own SQLite database and a
+   Lightning node behind it.
+2. **The criteria now point at us.** The list written to judge other operators
+   applies to our instance: LUD-25 conformance, reachability, a stated fee
+   policy, and correct CORS for a browser wallet. There is nobody else to ask.
+3. **The seed is the money.** A holder's LNURLcash note is redeemable only
+   against this mint. This is the difference between the two mints we run:
+   losing the NutFT database loses claims to artwork, and losing this one loses
+   other people's balances with no recovery available to them. Backup and
+   restore have to be rehearsed, not merely configured.
+4. **Liquidity is an operating duty, not a setting.** A withdrawal needs
+   outbound channel balance at the moment it is asked for. A mint that cannot
+   pay out is not a slow mint, it is one whose balances have stopped being
+   money.
+5. **Downtime is custody.** A note is a bearer instrument, but only the issuer
+   can redeem it. While the mint is unreachable, every holder's balance is
+   unreachable too.
+6. **Holding other people's sats is a liability.** Whatever the arrangement is
+   called, funds are held that bearers can come back for. Worth deciding and
+   writing down before anyone is invited to use it, rather than after.
+
+Section I comes after F. The card mint teaches the operating practice on a mint
+that holds no money.
+
+### The asset layer in dni's mint, and why cards stay NutFT
+
+Read on 10 September 2026 from the specification in `nostr-ordinals` at
+`93c17fb` and the implementation in `G:\Github\lnurl-mint` at `fc6e943` on
+`feature/nord-assets`. Source only, not run. It does carry an asset layer, which
+corrects the earlier finding that it had none. NORD-01 is our own draft, not
+dni's; his mint is where it is implemented.
+
+**Correction, same day.** A first pass through this file said a NORD asset is
+owned by a named npub and is therefore not a bearer instrument. That is wrong,
+and the specification is explicit about it: a receiver *may* disclose an npub at
+rotate time, and where none is disclosed the hop is recorded ownerless, which
+NORD-01 calls "exactly a banknote changing pockets". Both are bearer.
+
+The real difference is narrower and sharper:
+
+| | NORD-01 | NutFT |
+| --- | --- | --- |
+| The instrument | an LNURLcash note whose charge the mint holds | a Cashu proof, amount 1, unit is the collection |
+| Bearer | yes; naming a receiver is optional | yes |
+| Every transfer | published as a signed event | invisible to everyone but the mint |
+| Mint can link issue to redeem | yes, it made the preimage | **no, the signature is blind** |
+| Supply countable by a stranger | yes, count the genesis events | only as the signed catalogue states |
+| Carries sats | yes, and melting pays them out | no, and there is no melt |
+| Offline check | recoverable ECDSA over amount and `sha256(k1)` | DLEQ against the mint keyset |
+| Double-issue detectable | yes, two children of one tip is equivocation | no, only the mint's books would show it |
+
+Cards stay NutFT, for the reason above rather than the one first written down.
+Blinding is what keeps a collection unenumerable, and a card carrying no sats
+means a compromised mint costs the collection and not a balance.
+
+NORD is the better answer wherever the trail is the point: a numbered edition, a
+ticket, anything whose history is part of its value. Public issuance and
+detectable equivocation are real properties that NutFT does not have, and both
+protocols share the Blossom hash-commitment approach this repository already
+uses for card faces.
+
 ## What is explicitly not built
 
-- No sats mint of its own, neither Cashu nor LNURLcash.
+- No Cashu mint of its own, and no third-party Cashu mint selected. The wallet
+  keeps its Cashu support; nothing issues into it that we run.
+- No BOLT12 anywhere, as of this decision. See section E.
 - No marketplace, no prices, no HTLC swaps: Granola stays V2.
 - No compare-and-swap relay for Cashu-sync; not required for V1.
 - Hashtree and Envelope are optional extras, not a prerequisite for
@@ -300,7 +374,10 @@ Planning budget from the inventory, explicitly an estimate: 4 GB RAM for builds
 and mints, 8 to 16 GB with Android emulator, 10 to 30 GB disk for SDK, AVD and
 images, 256 MiB for a small relay. No VPS and no real sats for local
 tests. For operating the NutFT mint, a relay and a Blossom mirror
-a server with TLS is added; size per section F.
+a server with TLS is added; size per section F. The LNURL mint in section I adds
+a Lightning node with channels, and with it a working balance that is not a
+budget line, plus a backup arrangement rehearsed before anyone is invited to
+hold a balance there.
 
 Recommended order: A, then B and C in parallel, then E and F, then G, last H
 and Android.
