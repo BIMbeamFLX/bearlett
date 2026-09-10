@@ -36,7 +36,11 @@ export const NUTFT_OPERATIONS = {
   blob: {method: 'GET', path: '/blossom', segment: true},
   state: {method: 'GET', path: '/nutft/state'},
   /** The signed, chained supply ledger; see `src/napplet/collection/supply.ts`. */
-  supply: {method: 'GET', path: '/nutft/supply'},
+  /* `from` is a snapshot sequence number. The chain is served a page at a
+     time, so a wallet that remembers an older snapshot has to be able to ask
+     for the page beginning at it; without this key both this contract and the
+     transport refuse the request and the wallet can never look back. */
+  supply: {method: 'GET', path: '/nutft/supply', query: 'from'},
   eligibility: {method: 'GET', path: '/nutft/eligibility'},
   quote: {method: 'GET', path: '/nutft/quote', query: 'deck'},
   reveal: {method: 'GET', path: '/nutft/reveal', query: 'payment_hash'},

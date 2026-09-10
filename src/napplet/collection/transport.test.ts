@@ -37,6 +37,13 @@ describe('routeRequest', () => {
       kind: 'operation',
       operation: 'supply'
     })
+    /* The chain is paged, so a wallet reaching back to a snapshot it
+       remembers must be able to name where to start. */
+    expect(routeRequest(`${MINT}/nutft/supply?from=42`, 'GET', where)).toEqual({
+      kind: 'operation',
+      operation: 'supply',
+      parameter: '42'
+    })
     expect(
       routeRequest(`${MINT}/nutft/quote?deck=blackout`, 'GET', where)
     ).toEqual({kind: 'operation', operation: 'quote', parameter: 'blackout'})

@@ -10,18 +10,23 @@ import {nutftMintUrl} from '../../host/nutft-contract'
  * mint's books. The mint signs those books on a timer: one Nostr event per
  * snapshot, signed with the catalogue key this wallet already trusts, each
  * naming the one before it. The format is the mint's
- * `docs/nutft-supply-ledger.md`. This module checks a chain of them and
- * refuses the lot if any link is wrong. It is pure: events in, verdict out.
- * Fetching and remembering live at the bottom, behind injected `fetch` and
- * storage.
+ * `docs/nutft-supply-ledger.md`. This module checks them and refuses the lot
+ * if any link is wrong. It is pure: events in, verdict out. Fetching and
+ * remembering live at the bottom, behind injected `fetch` and storage.
  *
  * What is checked, in order: every event is signed by the issuer and hashes
- * to its own id; it names this collection and census; the sequence is
- * complete from 1 with each event naming its predecessor; remaining counts
+ * to its own id; it names this collection and census; sequence numbers run
+ * consecutively with each event naming its predecessor; remaining counts
  * cover exactly the printed cards and never grow; packs sold never shrink;
  * and the books balance, printed − remaining = sold × issued_per_pack. A
- * witness remembered from an earlier session must still be in the chain at
- * its sequence number, or the mint has rewritten its history.
+ * snapshot remembered from an earlier session must still carry the same id
+ * at the same sequence number, and the figures must not have moved backwards
+ * since, or the mint has rewritten its history.
+ *
+ * The mint serves a PAGE, not the whole chain. A snapshot carries one count
+ * per printed card, so the chain outgrows any single response eventually;
+ * `verifySupplyPage` therefore checks a window that need not begin at the
+ * first snapshot, and `loadSupply` stitches the remembered one to it.
  *
  * The figures are ISSUED cards, not allocated ones. A mint that takes
  * committed purchases reserves a pack before anyone claims it and puts it
@@ -68,12 +73,38 @@ export type SupplyExpectation = {
   assets: readonly {asset_id: string; copies: number | null}[]
 }
 
-/** The last snapshot a wallet saw: enough to catch a rewritten history. */
-export type SupplyWitness = {seq: number; id: string}
+/** The parts of a snapshot that may only ever move one way. */
+export type SupplyFigures = Pick<
+  SupplySnapshot,
+  'packs' | 'issuedPerPack' | 'sold' | 'remaining'
+>
 
-export type SupplyChain = {
+/**
+ * The last snapshot a wallet saw, kept between sessions.
+ *
+ * The id catches a mint that rewrote that snapshot. The figures beside it are
+ * what let a wallet that has been away longer than one page hold the mint to
+ * them without fetching everything in between: whatever the mint serves now
+ * has to have moved forward from these. The census is stored too, so a
+ * witness left over from a different edition is discarded rather than
+ * compared against figures it was never about.
+ */
+export type SupplyWitness = SupplyFigures & {
+  seq: number
+  id: string
+  censusSha256: string
+}
+
+/** One verified page of the chain, oldest first. */
+export type SupplyPage = {
   snapshots: readonly SupplySnapshot[]
+  oldest: SupplySnapshot
   latest: SupplySnapshot
+}
+
+export type SupplyChain = SupplyPage & {
+  /** The newest sequence number the mint says exists. */
+  total: number
 }
 
 export class SupplyError extends Error {
@@ -249,22 +280,56 @@ export function parseSupplyEvent(
 }
 
 /**
- * The whole chain, or nothing. Every event is checked on its own, then the
- * links between them, then the witness. The first thing wrong is the error.
+ * Everything that must hold between an earlier set of figures and a later
+ * one. Used between neighbours on a page, and across a gap between what this
+ * wallet remembers and the oldest snapshot the mint now serves.
  */
-export function verifySupplyChain(
+export function stillGoingForward(
+  before: SupplyFigures,
+  here: SupplyFigures
+): void {
+  if (
+    here.packs !== before.packs ||
+    here.issuedPerPack !== before.issuedPerPack
+  )
+    fail('The supply record changes the size of the edition.')
+  if (here.sold < before.sold) fail('The supply record un-sells packs.')
+  for (const id of Object.keys(before.remaining)) {
+    const later = here.remaining[id]
+    if (later === undefined) fail(`The supply record stops counting ${id}.`)
+    if (later > before.remaining[id]!)
+      fail(`The supply record grows the stock of ${id}.`)
+  }
+}
+
+/**
+ * One page, or nothing. Every event is checked on its own, then the links
+ * between them.
+ *
+ * A page need not begin at the first snapshot. The mint serves at most a
+ * hundred at a time: the newest by default, or the page beginning at a
+ * requested sequence number. So a page that starts at 1 must name no
+ * predecessor, and a page that starts anywhere else must name one it does not
+ * itself carry. What a page cannot tell you on its own is whether it descends
+ * from what you saw last time; that is the witness, in `loadSupply`.
+ */
+export function verifySupplyPage(
   events: readonly unknown[],
-  expect: SupplyExpectation,
-  witness?: SupplyWitness | null
-): SupplyChain {
+  expect: SupplyExpectation
+): SupplyPage {
   if (!Array.isArray(events) || !events.length)
     fail('The mint has published no supply record yet.')
   const snapshots = events
     .map(event => parseSupplyEvent(event, expect))
     .sort((a, b) => a.seq - b.seq)
-  const first = snapshots[0]
-  if (!first || first.seq !== 1 || first.prev !== null)
-    fail('The supply record does not start at its first snapshot.')
+  const first = snapshots[0]!
+  if (first.seq === 1) {
+    if (first.prev !== null)
+      fail('The first supply snapshot names a predecessor it cannot have.')
+  } else if (first.prev === null)
+    fail(
+      'A supply snapshot away from the start of the chain names no predecessor.'
+    )
   for (let i = 1; i < snapshots.length; i++) {
     const before = snapshots[i - 1]!
     const here = snapshots[i]!
@@ -275,24 +340,9 @@ export function verifySupplyChain(
       fail('A supply snapshot does not name the one before it.')
     if (here.at < before.at)
       fail('A supply snapshot is dated before the one it follows.')
-    if (
-      here.packs !== before.packs ||
-      here.issuedPerPack !== before.issuedPerPack
-    )
-      fail('The supply record changes the size of the edition.')
-    if (here.sold < before.sold) fail('The supply record un-sells packs.')
-    for (const id of Object.keys(before.remaining))
-      if (here.remaining[id]! > before.remaining[id]!)
-        fail(`The supply record grows the stock of ${id}.`)
+    stillGoingForward(before, here)
   }
-  if (witness) {
-    const seen = snapshots[witness.seq - 1]
-    if (!seen)
-      fail('The supply record is shorter than what this wallet saw before.')
-    if (seen.id !== witness.id)
-      fail('The mint has rewritten a supply snapshot this wallet saw before.')
-  }
-  return {snapshots, latest: snapshots[snapshots.length - 1]!}
+  return {snapshots, oldest: first, latest: snapshots[snapshots.length - 1]!}
 }
 
 export type IssuedCount = {issued: number; copies: number}
@@ -314,23 +364,65 @@ export function issuedCounts(
 export const supplyWitnessKeyFor = (edition: {id: string}): string =>
   `bearlett:nutft:${edition.id}:supply`
 
-const readWitness = (raw: string | null): SupplyWitness | null => {
+/**
+ * What this wallet wrote down last time, or nothing. Anything unreadable,
+ * malformed, or about a different census is discarded rather than repaired:
+ * a witness is only useful if it is exactly what was verified, and starting
+ * over costs nothing but one session of history.
+ */
+const readWitness = (
+  raw: string | null,
+  censusSha256: string
+): SupplyWitness | null => {
   if (!raw) return null
   try {
-    const value: unknown = JSON.parse(raw)
+    const v: unknown = JSON.parse(raw)
+    if (!isRecord(v) || v.censusSha256 !== censusSha256) return null
+    const counts = v.remaining
+    if (!isRecord(counts)) return null
+    const whole = (value: unknown, least: number) =>
+      Number.isInteger(value) && (value as number) >= least
     if (
-      isRecord(value) &&
-      Number.isInteger(value.seq) &&
-      (value.seq as number) >= 1 &&
-      typeof value.id === 'string' &&
-      HEX64.test(value.id)
+      !whole(v.seq, 1) ||
+      !whole(v.sold, 0) ||
+      !whole(v.packs, 1) ||
+      !whole(v.issuedPerPack, 1) ||
+      typeof v.id !== 'string' ||
+      !HEX64.test(v.id)
     )
-      return {seq: value.seq as number, id: value.id}
+      return null
+    const remaining: Record<string, number> = {}
+    for (const [id, left] of Object.entries(counts)) {
+      if (!whole(left, 0)) return null
+      remaining[id] = left as number
+    }
+    return {
+      seq: v.seq as number,
+      id: v.id,
+      censusSha256,
+      packs: v.packs as number,
+      issuedPerPack: v.issuedPerPack as number,
+      sold: v.sold as number,
+      remaining
+    }
   } catch {
     /* A witness this wallet cannot read is no witness. */
   }
   return null
 }
+
+const witnessOf = (
+  snapshot: SupplySnapshot,
+  censusSha256: string
+): SupplyWitness => ({
+  seq: snapshot.seq,
+  id: snapshot.id,
+  censusSha256,
+  packs: snapshot.packs,
+  issuedPerPack: snapshot.issuedPerPack,
+  sold: snapshot.sold,
+  remaining: snapshot.remaining
+})
 
 export type SupplyDeps = {
   /** The collection router: it maps the mint URL onto the `supply` operation. */
@@ -343,16 +435,14 @@ export type SupplyDeps = {
   expect: SupplyExpectation
 }
 
-/**
- * Fetch the chain from the mint, verify it against the catalogue and the
- * remembered witness, and remember the new head. The witness only advances
- * on a verified chain, so a bad answer can never erase what was seen.
- */
-export async function loadSupply(deps: SupplyDeps): Promise<SupplyChain> {
-  const key = supplyWitnessKeyFor(deps.edition)
-  const witness = readWitness(await deps.storage.getItem(key))
+/** One page from the mint, verified, with the chain length it reports. */
+async function readPage(
+  deps: SupplyDeps,
+  from?: number
+): Promise<{page: SupplyPage; total: number}> {
+  const mint = nutftMintUrl(deps.edition.mint) + '/nutft/supply'
   const response = await deps.fetch(
-    nutftMintUrl(deps.edition.mint) + '/nutft/supply'
+    from === undefined ? mint : `${mint}?from=${from}`
   )
   if (!response.ok) fail('The mint did not answer for its supply record.')
   let body: unknown
@@ -366,12 +456,76 @@ export async function loadSupply(deps: SupplyDeps): Promise<SupplyChain> {
     fail(
       `The mint reports that its own books do not balance: ${body.fault.slice(0, 200)}`
     )
-  const events = Array.isArray(body.events) ? body.events : []
-  const chain = verifySupplyChain(events, deps.expect, witness)
-  if (!witness || chain.latest.seq > witness.seq)
+  const page = verifySupplyPage(
+    Array.isArray(body.events) ? body.events : [],
+    deps.expect
+  )
+  /* An older mint that serves the whole chain and no `total` is read as
+     "this page is all of it", which is exactly what it is there. */
+  const total = Number.isInteger(body.total)
+    ? (body.total as number)
+    : page.latest.seq
+  if (total < page.latest.seq)
+    fail('The mint says its supply record is shorter than what it just served.')
+  return {page, total}
+}
+
+/**
+ * Read the mint's supply record, hold it to what this wallet saw last time,
+ * and write down the new head.
+ *
+ * The mint serves a page, not the whole chain, so this takes one request in
+ * the ordinary case and two after a long absence:
+ *
+ *   - The newest page always comes first. Each snapshot balances its own
+ *     books, so the current figures stand on their own.
+ *   - If the remembered snapshot is on that page, its id must match, and the
+ *     page's own checks cover everything since.
+ *   - If it is older than the page, one more request asks for it by sequence
+ *     number: the mint must still sign the same id there, and the remembered
+ *     figures must not have moved backwards on the way to the newest page.
+ *
+ * That is two requests whatever the size of the gap. Walking every page in
+ * between would be stricter, but the checks above already catch the two
+ * things the chain exists to catch: a rewritten snapshot, and figures that
+ * went the wrong way.
+ *
+ * The witness only ever advances on a page that verified, so a bad answer
+ * cannot erase what this wallet already knows.
+ */
+export async function loadSupply(deps: SupplyDeps): Promise<SupplyChain> {
+  const key = supplyWitnessKeyFor(deps.edition)
+  const witness = readWitness(
+    await deps.storage.getItem(key),
+    deps.expect.censusSha256
+  )
+  const {page, total} = await readPage(deps)
+
+  if (witness) {
+    const shorter =
+      'The supply record is shorter than what this wallet saw before.'
+    const rewritten =
+      'The mint has rewritten a supply snapshot this wallet saw before.'
+    if (witness.seq > total) fail(shorter)
+    if (witness.seq >= page.oldest.seq) {
+      const seen = page.snapshots[witness.seq - page.oldest.seq]
+      if (!seen || seen.seq !== witness.seq) fail(shorter)
+      if (seen.id !== witness.id) fail(rewritten)
+    } else {
+      const older = await readPage(deps, witness.seq)
+      if (older.page.oldest.seq !== witness.seq)
+        fail(
+          'The mint did not serve the supply snapshot this wallet asked for.'
+        )
+      if (older.page.oldest.id !== witness.id) fail(rewritten)
+      stillGoingForward(witness, page.oldest)
+    }
+  }
+
+  if (!witness || page.latest.seq > witness.seq)
     await deps.storage.setItem(
       key,
-      JSON.stringify({seq: chain.latest.seq, id: chain.latest.id})
+      JSON.stringify(witnessOf(page.latest, deps.expect.censusSha256))
     )
-  return chain
+  return {...page, total}
 }
