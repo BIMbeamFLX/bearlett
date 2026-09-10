@@ -19,3 +19,6 @@ docs/prototype/
 # decision. Every source file, config and non-Markdown doc is still checked.
 docs/**/*.md
 README.md
+
+# Vendored upstream, kept byte-identical so the provenance hash verifies.
+src/napplet/collection/vendor/
