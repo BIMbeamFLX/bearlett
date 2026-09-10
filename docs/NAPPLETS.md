@@ -86,9 +86,8 @@ switcher or app selection by URL hash. `build:designer` remains a build alias.
 Scarcity is a claim about the mint's books, so the napplet does not take
 `/nutft/state` at its word. The mint signs its figures on a timer: one Nostr
 event per snapshot, kind 7610, with the catalogue key the wallet already
-trusts, each snapshot naming the one before it. The napplet fetches the whole
-chain through the `supply` operation and verifies it in
-`src/napplet/collection/supply.ts`: signatures, sequence, that no count ever
+trusts, each snapshot naming the one before it. The napplet fetches it through
+the `supply` operation and verifies it in `src/napplet/collection/supply.ts`: signatures, sequence, that no count ever
 grows, that packs sold never shrink, and that printed − remaining equals sold
 × issued per pack.
 
@@ -100,6 +99,14 @@ sound thing to insist on here. Its draw commitment follows allocation and is
 not part of a snapshot, so nothing in this file checks it. The last snapshot seen is remembered in the shell's
 storage, so a mint that rewrites a snapshot a holder has already seen is
 caught on the next open.
+
+The mint serves a page, not the whole chain, because a snapshot carries one
+count per printed card and the chain outgrows any single response. Reading it
+takes one request in the ordinary case: the newest page, with the remembered
+snapshot somewhere on it. After an absence longer than a page it takes a
+second, asking for the remembered snapshot by its sequence number, and the
+figures kept beside it bridge whatever gap is left. Two requests, whatever the
+size of the gap.
 
 A chain that fails any check shows its reason and no issued counts. The cards
 themselves are unaffected: they are proofs, the ledger is a claim. The event
