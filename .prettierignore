@@ -9,6 +9,13 @@ dist-notes/
 dist-designer/
 test-results/
 playwright-report/
-docs/UPSTREAM-LNURLWALLET.md
 contributions/*.patch
 docs/prototype/
+
+# Prose, not code. The reports and the README carry hand-aligned tables that
+# Prettier re-pads cell by cell, which rewrites hundreds of lines and buries
+# the real edit in every diff. A wider printWidth does not help: Prettier
+# still recomputes the padding. Formatting these files stays an author
+# decision. Every source file, config and non-Markdown doc is still checked.
+docs/**/*.md
+README.md
