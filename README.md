@@ -208,6 +208,7 @@ docs/                architecture, audits, protocol notes, design brief, screens
 | [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                             |
 | [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, using existing mints             |
 | [docs/HOW-TO-MINT-ASSETS.md](docs/HOW-TO-MINT-ASSETS.md)                               | What it takes to mint your own bearer game assets with the NutFT mint          |
+| [docs/NUTFT-LIBRARY-WIRING-2026-09-10.md](docs/NUTFT-LIBRARY-WIRING-2026-09-10.md)     | What the NutFT card library needs from a napplet host                          |
 | [tests/integration/README.md](tests/integration/README.md)                             | Regtest environment with LNURLmint, Nutshell and two LND nodes                 |
 
 ### Contributing
