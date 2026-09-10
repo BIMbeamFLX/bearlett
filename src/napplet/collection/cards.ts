@@ -36,7 +36,14 @@ export type OwnedItem = {
 
 /** What the wallet's `snapshot()` resolves to. */
 export type Snapshot = {
-  catalog: {collection_id?: string; assets?: readonly CardAsset[]} | null
+  catalog: {
+    collection_id?: string
+    census_sha256?: string
+    catalog_uri?: string
+    /** The catalogue signer, x-only hex. The supply ledger is signed with it. */
+    issuer_pubkey?: string
+    assets?: readonly CardAsset[]
+  } | null
   owned: readonly OwnedItem[]
   spent: readonly OwnedItem[]
   invalid: readonly {error?: string}[]

@@ -35,6 +35,8 @@ export const NUTFT_OPERATIONS = {
   /** The signed catalogue by its own hash, served beside the mint. */
   blob: {method: 'GET', path: '/blossom', segment: true},
   state: {method: 'GET', path: '/nutft/state'},
+  /** The signed, chained supply ledger; see `src/napplet/collection/supply.ts`. */
+  supply: {method: 'GET', path: '/nutft/supply'},
   eligibility: {method: 'GET', path: '/nutft/eligibility'},
   quote: {method: 'GET', path: '/nutft/quote', query: 'deck'},
   reveal: {method: 'GET', path: '/nutft/reveal', query: 'payment_hash'},
