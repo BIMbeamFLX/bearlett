@@ -1,2 +1,6 @@
 # Preserve format-patch context markers and signature separators verbatim.
 contributions/*.patch -whitespace
+
+# Vendored upstream, pinned byte-identical: no end-of-line conversion, ever.
+# Its provenance hash is checked in bootstrap.test.ts and CRLF would break it.
+src/napplet/collection/vendor/nutft-wallet.js -text
