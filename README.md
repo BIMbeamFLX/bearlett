@@ -227,6 +227,15 @@ twelve-napplet catalogue: [docs/NAPPLETS.md](docs/NAPPLETS.md),
 
 ### Cards, and counting them in public
 
+A card is a Cashu proof of amount 1 whose unit is the collection, bound to a
+key and to one catalogue entry. That shape is
+[brenorb](https://github.com/brenorb)'s
+[NUT-31 draft](https://github.com/brenorb/NutFT/blob/main/31.md) and its
+[trading-card profile](https://github.com/brenorb/NutFT/blob/main/docs/demo-spec.md);
+Bearlett neither invented it nor changed it.
+
+What follows is the part we added on top.
+
 A collection is valued on how scarce it is, and scarcity is a claim about the
 mint's books. Blind signatures hide **who** holds a card. They were never meant
 to hide **how many exist**.
@@ -264,7 +273,7 @@ repository.
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | LNURLcash ([LUD-25](https://github.com/lnurl/luds/blob/lnurlcash/25.md), draft) | Receive, rotate, split, merge, hand over, mint, melt; LUD-25 hash commitment via the LUD-12 comment                      |
 | Cashu ([NUTs](https://github.com/cashubtc/nuts)) via `@cashu/cashu-ts` 4.10.1   | NUT-07 and NUT-09 mandatory, NUT-08 for melts, NUT-13 restore, NUT-20 quote keys; `sat` unit only                        |
-| NutFT (NUT-31 draft, trading-card profile)                                      | Hold, inspect and hand over cards; P2BK-bound proofs of amount 1, DLEQ required, signed catalogue and supply ledger verified |
+| NutFT ([NUT-31 draft](https://github.com/brenorb/NutFT/blob/main/31.md) and its [trading-card profile](https://github.com/brenorb/NutFT/blob/main/docs/demo-spec.md), by [brenorb](https://github.com/brenorb)) | Hold, inspect and hand over cards; P2BK-bound proofs of amount 1, DLEQ required, signed catalogue and supply ledger verified |
 | Blossom                                                                         | Card artwork fetched by SHA-256 from allow-listed mirrors and re-hashed before it is displayed                            |
 | Lightning BOLT11                                                                | Pay fixed-amount invoices and Lightning addresses; fund via mint quotes                                                  |
 | Lightning BOLT12                                                                | Available in cashu-ts 4.10.1; **not wired**, and neither mint we operate offers it                                      |
@@ -335,10 +344,28 @@ in [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md). The original
 webwallet source remains for compatibility and regression testing; Bearlett's
 installable products are the napplets.
 
+### Standing on brenorb's work
+
+The cards in Bearlett exist because [brenorb](https://github.com/brenorb) wrote
+the specification for them. Credit where it is owed:
+
+| Work                                                                | What it gave this project                                                                                             |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [NutFT](https://github.com/brenorb/NutFT)                           | The `31.md` NUT-31 draft and its trading-card profile: the whole idea of a Cashu proof that is a card. Followed, not forked |
+| [cashu-sync](https://github.com/brenorb/cashu-sync)                 | The snapshot rule the card wallet follows: replace after a head check, never merge                                    |
+| [Envelope](https://github.com/brenorb/envelope)                     | Verified pointers and the launch-fragment design, read while designing bearer storage and the intent opener           |
+| [Granola](https://github.com/brenorb/granola)                       | The Cashu HTLC settlement ADR, read while deciding how a card could ever be swapped for sats                          |
+| [napplets-workshop](https://github.com/brenorb/napplets-workshop)   | An early SDK and manifest reference                                                                                   |
+
+Each is pinned to the commit that was actually read, in
+[docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md). None of brenorb's code
+is copied into this repository; the debt is to the specifications and the
+design.
+
 The NutFT card library in `src/napplet/collection/vendor/` is MIT, copyright the
 600Billion contributors, vendored unchanged from the
 [600B Timelock TCG](https://github.com/BIMbeamFLX/600BillionTimelockTCG)
-repository.
+repository. It implements the NUT-31 draft above; it is not brenorb's code.
 
 Card artwork in the design prototype belongs to the 600B Edition One catalogue
 and is used here for design review only.
