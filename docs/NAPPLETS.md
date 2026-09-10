@@ -145,7 +145,30 @@ Network requests go through NAP-RESOURCE, use HTTPS, and add a fresh
 remain on the selected issuer's HTTPS origin. The host sees the request URLs,
 including bearer secrets when redeemed; use a trusted shell with appropriate
 resource policy and no sensitive URL logging. Mints must tolerate an unknown
-query parameter. The napplet never invokes a Nostr signer.
+query parameter.
+
+### The napplet never invokes a Nostr signer
+
+That is stated as a rule elsewhere and enforced here. The collection napplet
+seals `nostr` on its own global to a non-configurable `undefined` before any
+wallet code runs (`src/napplet/collection/no-signer.ts`), so an extension that
+injects into the frame after it loads finds the slot already taken. Where the
+seal cannot be applied, the napplet refuses to start rather than run beside a
+reachable signer.
+
+Sealing is needed because the NutFT card library reads a signer at the moment it
+signs, not when it is imported. Its `nip98Header` helper takes `root.nostr` and
+signs a kind-27235 event with whatever it finds. Two paths lead there, a refused
+booster quote and a refused POST, and both are reached only when a mint answers
+`early access`.
+
+What this costs is exact: **a napplet cannot buy from a gated mint.** Reading the
+catalogue, verifying holdings, receiving a card, handing one over, backing up and
+proving possession are all anonymous at the mint and are unaffected. Buying is
+the shop's job, and a shop is a web page. If in-napplet buying from a gated mint
+is ever wanted, the route is the shell's signer, not this one, and it needs three
+decisions first: an authorization path in the NutFT capability, kind 27235 in the
+wallet's own grant, and acceptance that the mint learns the login key.
 
 ## Archetypes and intents
 
