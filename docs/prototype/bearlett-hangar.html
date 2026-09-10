@@ -17,7 +17,8 @@
   --sys:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 *{box-sizing:border-box}
-html{color-scheme:dark}
+:root{color-scheme:dark}
+option{background:var(--a-panel);color:var(--cream)}
 body{margin:0;background:var(--iron);color:var(--body);font:12px/1.7 var(--mono);-webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer}
 input,select,textarea{font:inherit}
@@ -80,6 +81,7 @@ input,select,textarea{font:inherit}
 .a-btn.ghost{background:transparent;color:var(--purple);border-color:var(--purple-deep)}
 .a-btn.ghost:hover{color:var(--cream);border-color:var(--purple)}
 .a-btn:disabled{opacity:.45;cursor:not-allowed}
+.a-btn.ghost[aria-pressed=true]{background:var(--ember);color:#100800;border-color:var(--ember)}
 .a-in{background:var(--a-panel);border:1px solid var(--a-line);color:var(--cream);padding:9px 12px;font:12px/1.5 var(--mono);width:100%}
 .a-in:focus{border-color:var(--purple)}
 .a-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -94,7 +96,7 @@ input,select,textarea{font:inherit}
 /* ---------- collection ---------- */
 .console{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin:16px 0 18px;padding:12px;border:1px solid var(--a-line);background:var(--a-soot)}
 .console label{display:grid;gap:5px}
-.console select{background:var(--a-panel);border:1px solid var(--a-line);color:var(--cream);padding:8px 10px;font:12px var(--mono)}
+.console select{background:var(--a-panel);border:1px solid var(--a-line);color:var(--cream);padding:8px 10px;font:12px var(--mono);color-scheme:dark}
 .edition{display:flex;align-items:baseline;gap:12px;margin:10px 0 12px;padding-top:12px;border-top:1px solid var(--a-line)}
 .edition h3{margin:0;font:400 18px/1 var(--display);letter-spacing:.04em;color:var(--cream);text-transform:uppercase}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:18px 14px}
@@ -112,7 +114,7 @@ input,select,textarea{font:inherit}
 .tile[data-tier=basic]{--foil:rgba(255,255,255,.1)}
 .tile__n{position:absolute;top:6px;right:6px;background:var(--ember);color:#100800;font:600 10px/1 var(--mono);padding:4px 5px;letter-spacing:.06em}
 .tile__sel{position:absolute;top:6px;left:6px;width:18px;height:18px;border:1px solid var(--cream);background:rgba(9,8,11,.6);display:none;align-items:center;justify-content:center;font:600 11px/1 var(--mono);color:var(--cream)}
-.grid[data-select=true] .tile__sel{display:flex}
+.collection[data-select=true] .tile__sel{display:flex}
 .tile[aria-pressed=true] .tile__sel{background:var(--ember);color:#100800;border-color:var(--ember)}
 .tile[aria-pressed=true] .tile__inner{outline:2px solid var(--ember)}
 .tile__meta{display:grid;gap:3px;padding:7px 2px 0}
@@ -127,6 +129,11 @@ input,select,textarea{font:inherit}
 .listv .row:hover{background:var(--a-panel)}
 .listv img{width:44px;aspect-ratio:5/7;object-fit:cover;display:block}
 .listv .n{color:var(--cream)}
+.row__sel{display:none;width:18px;height:18px;border:1px solid var(--cream);align-items:center;justify-content:center;font:600 11px/1 var(--mono);color:var(--cream)}
+.collection[data-select=true] .listv .row{grid-template-columns:18px 44px 1fr auto auto}
+.collection[data-select=true] .row__sel{display:flex}
+.listv .row[aria-pressed=true]{background:rgba(255,106,0,.08)}
+.listv .row[aria-pressed=true] .row__sel{background:var(--ember);color:#100800;border-color:var(--ember)}
 .collection[data-view=list] .grid{display:none}
 .collection[data-view=list] .listv{display:block}
 .hiddenbox{margin-top:26px;padding-top:14px;border-top:1px solid var(--a-line)}
@@ -318,6 +325,7 @@ input,select,textarea{font:inherit}
             <button class="a-btn" id="btnTrade" disabled>Weitergeben (0)</button>
             <button class="a-btn ghost" id="btnRefresh">Aktualisieren</button>
             <span class="tiny" id="invState">Frage Vault nach Bestand …</span>
+            <span class="tiny" id="selHint" hidden style="color:var(--cream)"></span>
           </div>
           <div id="collectionBody"></div>
           <div class="hiddenbox">
@@ -701,10 +709,10 @@ function render(){
   $('#cCards').textContent = all.reduce((s,c)=>s+c.owned,0); $('#cDistinct').textContent = all.length; $('#cDupes').textContent = all.reduce((s,c)=>s+Math.max(0,c.owned-1),0);
   const body = $('#collectionBody');
   body.innerHTML = `<div class="edition"><h3>${esc(COLLECTION_ID)}</h3><span class="tiny">Edition One · signierter Katalog · ${list.length} von ${all.length} Karten</span></div>
-    <div class="grid" id="grid" data-select="${$('#btnSelect').getAttribute('aria-pressed')}">${list.map(tileHtml).join('')}</div>
+    <div class="grid" id="grid">${list.map(tileHtml).join('')}</div>
     <div class="listv">${list.map(rowHtml).join('')}</div>` + (list.length ? '' : '<div class="empty">Keine Karte passt zu Filter und Suche.</div>');
   $$('.tile', body).forEach(bindTile);
-  $$('.listv .row', body).forEach(r => r.addEventListener('click', () => intent('card','open',{collection_id:COLLECTION_ID, asset_id:r.dataset.id})));
+  $$('.listv .row', body).forEach(r => r.addEventListener('click', () => selectMode() ? toggleSel(r.dataset.id) : intent('card','open',{collection_id:COLLECTION_ID, asset_id:r.dataset.id})));
 }
 function tileHtml(c){
   return `<button class="tile" type="button" data-id="${c.id}" data-tier="${c.rarity}" aria-pressed="${sel.has(c.id)}" aria-label="${esc(c.name)}, ${TIER_LABEL[c.rarity]}, ${c.owned} Exemplare">
@@ -712,22 +720,22 @@ function tileHtml(c){
     ${c.owned > 1 ? `<span class="tile__n">×${c.owned}</span>` : ''}<span class="tile__sel">${sel.has(c.id) ? '✓' : ''}</span>
     <div class="tile__meta"><span class="n">${esc(c.name)}</span><span class="r">${TIER_LABEL[c.rarity]}</span></div></button>`;
 }
-function rowHtml(c){ return `<button class="row" type="button" data-id="${c.id}"><img src="${c.data}" alt=""><span class="n">${esc(c.name)}<br><span class="tiny">${esc(c.type_line)}</span></span><span class="tiny">${TIER_LABEL[c.rarity]}</span><span class="mono">×${c.owned}</span></button>`; }
+function rowHtml(c){ return `<button class="row" type="button" data-id="${c.id}" aria-pressed="${sel.has(c.id)}"><span class="row__sel">${sel.has(c.id) ? '✓' : ''}</span><img src="${c.data}" alt=""><span class="n">${esc(c.name)}<br><span class="tiny">${esc(c.type_line)}</span></span><span class="tiny">${TIER_LABEL[c.rarity]}</span><span class="mono">×${c.owned}</span></button>`; }
 function bindTile(t){
   const inner = $('.tile__inner', t);
   if (!RM){
     t.addEventListener('pointermove', e => { const r = t.getBoundingClientRect(); const px = (e.clientX - r.left)/r.width*2-1, py = (e.clientY - r.top)/r.height*2-1; inner.style.setProperty('--ry', (px*12).toFixed(2)+'deg'); inner.style.setProperty('--rx', (-py*10).toFixed(2)+'deg'); inner.style.setProperty('--mx', ((px+1)/2*100).toFixed(1)+'%'); inner.style.setProperty('--my', ((py+1)/2*100).toFixed(1)+'%'); });
     t.addEventListener('pointerleave', () => { inner.style.removeProperty('--rx'); inner.style.removeProperty('--ry'); });
   }
-  t.addEventListener('click', () => {
-    if ($('#btnSelect').getAttribute('aria-pressed') === 'true'){ const id = t.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); t.setAttribute('aria-pressed', sel.has(id)); $('.tile__sel', t).textContent = sel.has(id) ? '✓' : ''; updateTradeBtn(); }
-    else intent('card', 'open', {collection_id:COLLECTION_ID, asset_id:t.dataset.id});
-  });
+  t.addEventListener('click', () => { if (selectMode()) toggleSel(t.dataset.id); else intent('card', 'open', {collection_id:COLLECTION_ID, asset_id:t.dataset.id}); });
 }
-function updateTradeBtn(){ const b = $('#btnTrade'); b.disabled = sel.size === 0; b.textContent = `Weitergeben (${sel.size})`; }
+const selectMode = () => $('#btnSelect').getAttribute('aria-pressed') === 'true';
+function updateTradeBtn(){ const b = $('#btnTrade'); b.disabled = sel.size === 0; b.textContent = `Weitergeben (${sel.size})`; const h = $('#selHint'); h.hidden = !selectMode(); h.textContent = sel.size ? `${sel.size} gewählt · weitere Karten antippen oder Weitergeben drücken` : 'Karten antippen, um sie auszuwählen'; }
+function toggleSel(id){ sel.has(id) ? sel.delete(id) : sel.add(id); const on = sel.has(id); $$(`.tile[data-id="${id}"], .listv .row[data-id="${id}"]`).forEach(el => { el.setAttribute('aria-pressed', on); const box = $('.tile__sel, .row__sel', el); if (box) box.textContent = on ? '✓' : ''; }); updateTradeBtn(); }
+function setSelectMode(on){ const b = $('#btnSelect'); b.setAttribute('aria-pressed', on); b.textContent = on ? 'Auswahl beenden' : 'Auswählen'; $('#nap-collection').dataset.select = on; if (!on){ sel.clear(); $$('.tile, .listv .row').forEach(el => { el.setAttribute('aria-pressed', 'false'); const box = $('.tile__sel, .row__sel', el); if (box) box.textContent = ''; }); } updateTradeBtn(); }
 $('#q').addEventListener('input', render); $('#fTier').addEventListener('change', render); $('#fSort').addEventListener('change', render);
 $('#fView').addEventListener('change', e => $('#nap-collection').dataset.view = e.target.value);
-$('#btnSelect').addEventListener('click', e => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); if (!on) sel.clear(); updateTradeBtn(); render(); });
+$('#btnSelect').addEventListener('click', () => setSelectMode(!selectMode()));
 $('#btnTrade').addEventListener('click', () => intent('trade','open',{collection_id:COLLECTION_ID, assets:[...sel]}));
 $('#btnRefresh').addEventListener('click', () => { inventory = null; intent('vault','refresh',{collection_id:COLLECTION_ID},{focus:false}); intent('vault','inventory',{},{focus:false}); $('#invState').textContent = 'Aktualisiere …'; });
 
@@ -760,7 +768,7 @@ $('#vUnlock').addEventListener('click', () => {
   const rev = () => {
     if (vaultJob && vaultJob.receive){ log('vault: /nutft/trade angenommen', 'gespeichert', true); const revealCards = ['E1-043','E1-160','E1-212','E1-037','E1-262']; intent('reveal','open',{kind:'nutft/reveal', version:1, source:'trade', assets:revealCards.map(id => ({asset_id:id, tier:byId[id].rarity, name:byId[id].name}))}); return; }
     log('vault: /nutft/trade', 'signature · dleq ok', true);
-    for (const id of vaultJob.assets) OWNED[id] = Math.max(0, (OWNED[id]||0) - 1); inventory = null; sel.clear(); updateTradeBtn();
+    for (const id of vaultJob.assets) OWNED[id] = Math.max(0, (OWNED[id]||0) - 1); inventory = null; setSelectMode(false);
     drawQr($('#vQr'), 600 + vaultJob.assets.length); $('#vToken').textContent = 'cashuB' + 'eyJ0IjpbeyJpIjoiNjAwQi1FMSIsInAiOlt7ImEiOjEsInMiOiJudXRmdCJ9XX1dfQ'.slice(0, 40) + '… (Demo, nicht einlösbar)';
     steps.forEach((s,j)=>s.hidden = j!==3);
   };
