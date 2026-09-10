@@ -18,3 +18,4 @@ outputs/
 docs/checks/*.json
 STARTPROMPT.md
 docs/*-infographic-prompt.txt
+dist-collection-*/
