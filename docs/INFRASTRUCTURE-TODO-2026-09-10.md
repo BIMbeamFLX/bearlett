@@ -14,7 +14,7 @@ mint of our own, and no third-party Cashu mint selected either.
 
 Neither is a new kind of thing to run. The regtest already starts an LNURL mint
 from image `bearlett-regtest-lnurl:latest`, and the source sits at
-`G:Githublnurl-mint` (`feature/nord-assets`, `fc6e943`), so a production
+`G:\Github\lnurl-mint` (`feature/nord-assets`, `fc6e943`), so a production
 instance is an operating step rather than a build. The NutFT mint was already
 first-party and not replaceable.
 
@@ -199,7 +199,7 @@ we operate speaks BOLT12, and point 3 above is therefore no longer a side note:
 it is the whole BOLT12 story.
 
 - An LNURL mint issues LNURLcash notes. LNURLcash has no BOLT12, and the source
-  at `G:Githublnurl-mint` (`fc6e943`) contains no offer handling.
+  at `G:\Github\lnurl-mint` (`fc6e943`) contains no offer handling.
 - The NutFT mint takes payment for cards through `server/funding.js`, whose
   backends expose `createInvoice` and `isSettled` only. BOLT11. Even with
   phoenixd, which can do offers as a node, the mint does not ask it for one.
@@ -296,7 +296,7 @@ mint deploy is outside what this repository is authorised to do, and needs its
 own explicit go-ahead.
 
 1. **What to run.** dni's `lnurl-mint`, the same software the regtest already
-   starts. The local checkout is `G:Githublnurl-mint` at `fc6e943` on
+   starts. The local checkout is `G:\Github\lnurl-mint` at `fc6e943` on
    `feature/nord-assets`. A Python service with its own SQLite database and a
    Lightning node behind it.
 2. **The criteria now point at us.** The list written to judge other operators
@@ -323,29 +323,40 @@ that holds no money.
 
 ### The asset layer in dni's mint, and why cards stay NutFT
 
-Read on 10 September 2026 from `G:Githublnurl-mint` at `fc6e943`, source only,
-not run. The branch is `feature/nord-assets` and it does carry an asset layer,
-which corrects the earlier finding that it had none. Assets are pre-committed
-and queued, a settling mint invoice of exactly the right amount claims one, and
-artwork travels as a URL with a `sha256` beside it, where the hash is the
-commitment and the URL only transport.
+Read on 10 September 2026 from the specification in `nostr-ordinals` at
+`93c17fb` and the implementation in `G:\Github\lnurl-mint` at `fc6e943` on
+`feature/nord-assets`. Source only, not run. It does carry an asset layer, which
+corrects the earlier finding that it had none. NORD-01 is our own draft, not
+dni's; his mint is where it is implemented.
 
-It is a different instrument from a NutFT card, and the difference decides which
-one holds a collection:
+**Correction, same day.** A first pass through this file said a NORD asset is
+owned by a named npub and is therefore not a bearer instrument. That is wrong,
+and the specification is explicit about it: a receiver *may* disclose an npub at
+rotate time, and where none is disclosed the hop is recorded ownerless, which
+NORD-01 calls "exactly a banknote changing pockets". Both are bearer.
 
-| | NORD-01, dni's mint | NutFT, our mint |
+The real difference is narrower and sharper:
+
+| | NORD-01 | NutFT |
 | --- | --- | --- |
-| What it is | a Nostr event chain, genesis kind 7600 | a Cashu proof of amount 1 |
-| Who owns it | the `claimer` named in the chain tip | whoever can spend the P2BK key |
-| Bearer | no, ownership is a named npub | yes |
-| Who can see the holdings | anyone reading the relay | nobody; the mint sees a transfer, the public sees nothing |
-| How it is checked | follow the chain from the genesis | DLEQ against a signed catalogue |
+| The instrument | an LNURLcash note whose charge the mint holds | a Cashu proof, amount 1, unit is the collection |
+| Bearer | yes; naming a receiver is optional | yes |
+| Every transfer | published as a signed event | invisible to everyone but the mint |
+| Mint can link issue to redeem | yes, it made the preimage | **no, the signature is blind** |
+| Supply countable by a stranger | yes, count the genesis events | only as the signed catalogue states |
+| Carries sats | yes, and melting pays them out | no, and there is no melt |
+| Offline check | recoverable ECDSA over amount and `sha256(k1)` | DLEQ against the mint keyset |
+| Double-issue detectable | yes, two children of one tip is equivocation | no, only the mint's books would show it |
 
-Bearlett is a bearer asset wallet, so cards stay NutFT. Putting them on NORD-01
-would publish who owns which card, which is a different product rather than a
-cheaper route to the same one. The asset layer is still worth knowing about: it
-is the natural fit for anything meant to be publicly attributed, and it shares
-the Blossom hash-commitment approach this repository already uses for faces.
+Cards stay NutFT, for the reason above rather than the one first written down.
+Blinding is what keeps a collection unenumerable, and a card carrying no sats
+means a compromised mint costs the collection and not a balance.
+
+NORD is the better answer wherever the trail is the point: a numbered edition, a
+ticket, anything whose history is part of its value. Public issuance and
+detectable equivocation are real properties that NutFT does not have, and both
+protocols share the Blossom hash-commitment approach this repository already
+uses for card faces.
 
 ## What is explicitly not built
 
