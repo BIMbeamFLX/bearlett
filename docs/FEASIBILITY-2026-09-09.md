@@ -1,323 +1,327 @@
-# Bearlett: Machbarkeits- und Spec-Check
+# Bearlett: feasibility and spec check
 
-Prüfdatum: 9. September 2026. Ausgangspunkt: `87fd4f0` auf
-`feature/bearlett`. STARTPROMPT.md und die darin genannten Projektdokumente
-wurden vollständig gelesen. Die bestehenden Änderungen an README.md und
-package.json sowie STARTPROMPT.md bleiben erhalten. Keine Wallet-Neuimplementierung,
-kein Push, keine Veröffentlichung, keine Änderung an Actions oder fremden
-Docker-Projekten. Ausschließlich Testcoins und synthetische Testschlüssel.
+Check date: 9 September 2026. Starting point: `87fd4f0` on
+`feature/bearlett`. STARTPROMPT.md and the project documents named in it
+were read in full. The existing changes to README.md and
+package.json, and STARTPROMPT.md, remain. No wallet reimplementation,
+no push, no publication, no change to Actions or third-party
+Docker projects. Test coins and synthetic test keys only.
 
-## Urteil
+## Verdict
 
-**Das Produkt ist technisch machbar; der vorhandene Stand ist eine brauchbare
-experimentelle Basis, aber noch keine belastbar sichere Wallet.** Beide Protokolle
-und die Lightning-Brücke funktionieren im reproduzierten Regtest. Fünf zusätzliche
-Reproduktionen zeigen jedoch Lücken an der Speicher-/Recovery-Grenze. Diese müssen
-vor neuen Plattformen behoben werden. Insbesondere bedeutet ein erfülltes
-`storage.setItem()` im aktuellen Kehto-/Shim-Paar nicht zuverlässig, dass der
-Schreibvorgang erfolgreich war.
+**The product is technically feasible; the present state is a usable
+experimental base, but not yet a wallet that can be trusted with real funds.**
+Both protocols and the Lightning bridge work in the reproduced regtest. Five
+additional reproductions, however, show gaps at the storage/recovery boundary.
+These must be fixed before new platforms are built. In particular, a fulfilled
+`storage.setItem()` in the current Kehto/shim pair does not reliably mean that
+the write succeeded.
 
-Empfehlung: gemeinsamer TypeScript-Transaktionskern, explizite Speicher-,
-Transport-, Signer- und Lifecycle-Adapter; Web/PWA zuerst, Android über einen
-begrenzten Capacitor/Kotlin-Spike. Für standardnahe Napplets gehört der
-schlüsselhaltende Wallet-Dienst in den vertrauenswürdigen Host. Notes bleibt ein
-unabhängiger Designer. Details und Abnahmekriterien stehen in
+Recommendation: a shared TypeScript transaction core, explicit storage,
+transport, signer and lifecycle adapters; Web/PWA first, Android through a
+limited Capacitor/Kotlin spike. For spec-aligned napplets the key-holding
+wallet service belongs in the trusted host. Notes remains an independent
+designer. Details and acceptance criteria are in
 [ARCHITECTURE-2026-09-09.md](ARCHITECTURE-2026-09-09.md).
 
-**Bestätigte Produktentscheidung:** Ein aktiv schreibendes Gerät mit ausdrücklichem
-Gerätewechsel genügt für V1. Ein eigener CAS-Relay ist daher keine V1-Voraussetzung.
-Die Entscheidung wurde zuerst in der lokalen SQLite-Prüfakte festgehalten.
+**Confirmed product decision:** One actively writing device with an explicit
+device change is enough for V1. A dedicated CAS relay is therefore not a V1
+prerequisite. The decision was first recorded in the local SQLite audit file.
 
-Während der Prüfung zusätzlich gewünschte Richtung: XMR-/USDT-Swaps über
-Mints mit Granola. Das ist als gesonderte, noch unbelegte Erweiterung in der
-Architektur erfasst. Granolas heutige Testnut-SAT/USD-Swaps sind weder native
-XMR-/USDT-Swaps noch eine fertige Anbindung in dnis LNURLwallet.
+Direction additionally requested during the check: XMR/USDT swaps through
+mints with Granola. That is captured in the architecture as a separate, still
+unproven extension. Granola's present Testnut SAT/USD swaps are neither native
+XMR/USDT swaps nor a finished integration in dni's LNURLwallet.
 
-## Funktions-/Plattformmatrix
+## Feature/platform matrix
 
-„Belegt“ gilt jeweils nur für die angegebene Testgrenze. „Experimentell“ bedeutet
-vorhandene Implementierung mit offenen Integrations- oder Sicherheitsfragen;
-„fehlend“ bedeutet keine entsprechende Bearlett-Implementierung.
+"Proven" applies only to the stated test boundary. "Experimental" means an
+existing implementation with open integration or security questions;
+"missing" means no corresponding Bearlett implementation.
 
-| Funktion                                              | Napplets heute                                                                                            | Web/PWA heute                                                          | Android heute                                 |
+| Function                                              | Napplets today                                                                                            | Web/PWA today                                                          | Android today                                 |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------- |
-| Grafische LNURLcash-/Cashu-Sammlung                   | Belegt im Preview, experimentell im echten Host                                                           | Original-Webwallet nur LNURLcash; gemeinsame Bearlett-Oberfläche fehlt | App fehlt                                     |
-| Getrennte Notes-App, Bildupload, Designübergabe       | Belegt: zwei Builds, getrennte Tabs, Review, keine Protokoll-Secrets im Vertrag                           | Code wiederverwendbar; eigener Bearlett-Webflow fehlt                  | Machbar, noch nicht integriert                |
-| LNURLcash Empfang, Rotation, Split, Merge, Weitergabe | Unit-/Browserbelege; Mint/Transfer im Regtest. RESOURCE-Mutationen sind eine semantische Host-Erweiterung | Original vorhanden und Build grün; Hardware nicht real geprüft         | Kern wiederverwendbar; Adapter fehlen         |
-| Cashu A/B, ungebundene sats, Empfang mit Rotation     | Crypto-Fixtures und Browser belegt, echte Mint-/Melt-Operationen im Regtest                               | Engine vorhanden, Webintegration fehlt                                 | Engine wiederverwendbar; App fehlt            |
-| Lightning mint/melt und Protokollwechsel              | Beide Richtungen im Regtest belegt; Fehlerpfade experimentell                                             | Noch keine entsprechende Bearlett-Webversion                           | Fehlt                                         |
-| Lokale verschlüsselte Backups                         | Vorhanden, aber F00–F04 verhindern Freigabe                                                               | Legacy-Backup vorhanden; gemeinsames Backup fehlt                      | Sicherer Speicher und Restore fehlen          |
-| Phrase-Recovery                                       | Vorhanden, unvollständige Counter-Suche F04; Mint-Liste separat nötig                                     | LNURLcash vorhanden; Cashu nicht integriert                            | Fehlt                                         |
-| Wallet-Nostr-Key, Relay-Backup                        | Fehlen; IDENTITY/RELAY allein reichen nicht                                                               | NIP-07/NIP-46 technisch verfügbar, Integration fehlt                   | NIP-55 technisch verfügbar, Integration fehlt |
-| Gerätewechsel                                         | Fehlt; lokaler Host-Lease ist kein Geräte-Lock                                                            | Fehlt                                                                  | Fehlt                                         |
-| Kamera                                                | Kein allgemeiner Kamera-NAP im geprüften Vertrag                                                          | Originalscanner vorhanden; echte Kamera ungeprüft                      | Native Kamera möglich, Gerätetest fehlt       |
-| NFC                                                   | Unter `allow-scripts` nicht als Web-NFC nutzbar                                                           | Original vorhanden; Web-NFC ist browser-/geräteabhängig                | Native NFC-Anbindung möglich, ungeprüft       |
-| USB/BLE-Gerätevault                                   | Adapter und simulierte Tests vorhanden                                                                    | Originalfunktionen vorhanden                                           | Portierung und echte Geräteprüfung fehlen     |
-| HTLC/P2PK, USD, Börsen-/Atomic-Swaps                  | Nicht V1                                                                                                  | Nicht V1                                                               | Nicht V1                                      |
+| Graphical LNURLcash/Cashu collection                  | Proven in preview, experimental on a real host                                                            | Original webwallet LNURLcash only; shared Bearlett UI missing          | App missing                                   |
+| Separate Notes app, image upload, design handover     | Proven: two builds, separate tabs, review, no protocol secrets in the contract                            | Code reusable; dedicated Bearlett web flow missing                     | Feasible, not yet integrated                  |
+| LNURLcash receive, rotation, split, merge, handover   | Unit/browser evidence; mint/transfer in regtest. RESOURCE mutations are a semantic host extension         | Original present and build green; hardware not checked on real devices | Core reusable; adapters missing               |
+| Cashu A/B, unbound sats, receive with rotation        | Crypto fixtures and browser proven, real mint/melt operations in regtest                                  | Engine present, web integration missing                                | Engine reusable; app missing                  |
+| Lightning mint/melt and protocol switch               | Both directions proven in regtest; error paths experimental                                               | No corresponding Bearlett web version yet                              | Missing                                       |
+| Local encrypted backups                               | Present, but F00–F04 block release                                                                        | Legacy backup present; shared backup missing                           | Secure storage and restore missing            |
+| Phrase recovery                                       | Present, incomplete counter search F04; mint list needed separately                                       | LNURLcash present; Cashu not integrated                                | Missing                                       |
+| Wallet Nostr key, relay backup                        | Missing; IDENTITY/RELAY alone are not enough                                                              | NIP-07/NIP-46 technically available, integration missing               | NIP-55 technically available, integration missing |
+| Device change                                         | Missing; a local host lease is not a device lock                                                          | Missing                                                                | Missing                                       |
+| Camera                                                | No general camera NAP in the checked contract                                                             | Original scanner present; real camera unchecked                        | Native camera possible, device test missing   |
+| NFC                                                   | Not usable as Web NFC under `allow-scripts`                                                               | Original present; Web NFC is browser/device dependent                  | Native NFC wiring possible, unchecked         |
+| USB/BLE device vault                                  | Adapters and simulated tests present                                                                      | Original functions present                                             | Port and real device check missing            |
+| HTLC/P2PK, USD, exchange/atomic swaps                 | Not V1                                                                                                    | Not V1                                                                 | Not V1                                        |
 
-## Reproduzierte Prüfungen
+## Reproduced checks
 
-Ausgeführt mit Node **24.15.0**, npm **11.12.1**, Git **2.53.0.windows.1**.
-package.json nennt npm 12.0.2; das ist hier keine tatsächlich verwendete Version.
-Bestehende Bearlett-node_modules wurden verwendet; kein frisches `npm ci` für den
-Hauptcheckout. Drittprojekte wurden getrennt aus ihren Lockfiles installiert.
+Run with Node **24.15.0**, npm **11.12.1**, Git **2.53.0.windows.1**.
+package.json names npm 12.0.2; that is not a version actually used here.
+Existing Bearlett node_modules were used; no fresh `npm ci` for the
+main checkout. Third-party projects were installed separately from their
+lockfiles.
 
-| Prüfung                                             | Ergebnis dieser Session                                                                                         | Lokales Rohprotokoll                                   |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `npm test`                                          | 353 bestanden, 1 opt-in Integrationstest übersprungen                                                           | `unit.log`                                             |
-| `npm run tsc`                                       | Bestanden                                                                                                       | `tsc.log`                                              |
-| Original-Webwallet, Wallet, Notes Build             | Alle bestanden; finale HTMLs 418.712 / 34.631 Bytes für Wallet/Notes                                            | `build-web.log`, `build-wallet.log`, `build-notes.log` |
-| `npm run test:napplet:browser`                      | 12 bestanden; Windows-Preview-Prozess musste nach Testende beendet werden, Gesamtlauf 8,3 Minuten               | `browser.log`                                          |
-| `npm run format:check`                              | Fehlgeschlagen: 139 Dateien                                                                                     | `format.log`                                           |
-| Prettier mit `--end-of-line auto`                   | Nur STARTPROMPT.md verbleibt; überwiegend CRLF/LF, keine pauschale Umformatierung vorgenommen                   | `format-auto-eol.log`                                  |
-| `npm audit --json`                                  | 0 gemeldete Schwachstellen; kein Sicherheitsbeweis                                                              | `npm-audit.json`                                       |
-| Echter bidirektionaler Regtest                      | 1 Test bestanden, 5,58 s; verlorene Melt-Antwort, Restore, Wechselgeld, nur ein Melt                            | `regtest.log`                                          |
-| Zusätzliche isolierte Fehlerreproduktionen          | 5 beobachtete Fehlverhalten bestätigt; **keine** grünen Sicherheits-Abnahmetests                                | `reproductions.log`                                    |
-| Gepatchtes Kehto: betroffene Pakete + Paja-Devtools | 1.103 Tests in 65 Dateien bestanden                                                                             | `kehto-tests.log`                                      |
-| Gesamtes gepatchtes Kehto                           | 1.757 bestanden, 9 Testfehler; 9 fehlgeschlagene Dateien einschließlich 4 Ladefehler                            | `kehto-full-tests.log`                                 |
-| Cashu Sync: `src/sync` und `src/v0`                 | 222 Tests in 19 Dateien bestanden                                                                               | `cashu-sync-tests.log`                                 |
-| Cashu Sync: Go-Relay                                | Alle vier Testpakete bestanden; zwei Command-Pakete ohne Tests                                                  | `cashu-sync-relay-tests.log`                           |
-| Granola                                             | 442 bestanden, 7 übersprungen, 52 Dateien                                                                       | `granola-tests.log`                                    |
-| Envelope                                            | 36 lokale Tests bestanden                                                                                       | `envelope-tests.log`                                   |
-| Napplets Workshop                                   | Typecheck/Build bestanden; Conformance: 8 bestanden, 1 Warnungsfehler, 2 übersprungen, CLI urteilt „CONFORMANT“ | `workshop-verify.log`, `workshop-conformance.log`      |
+| Check                                               | Result this session                                                                                         | Local raw log                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `npm test`                                          | 353 passed, 1 opt-in integration test skipped                                                               | `unit.log`                                             |
+| `npm run tsc`                                       | Passed                                                                                                      | `tsc.log`                                              |
+| Original webwallet, Wallet, Notes build             | All passed; final HTMLs 418,712 / 34,631 bytes for Wallet/Notes                                             | `build-web.log`, `build-wallet.log`, `build-notes.log` |
+| `npm run test:napplet:browser`                      | 12 passed; Windows preview process had to be killed after the tests ended, total run 8.3 minutes            | `browser.log`                                          |
+| `npm run format:check`                              | Failed: 139 files                                                                                           | `format.log`                                           |
+| Prettier with `--end-of-line auto`                  | Only STARTPROMPT.md remains; mostly CRLF/LF, no blanket reformat done                                       | `format-auto-eol.log`                                  |
+| `npm audit --json`                                  | 0 reported vulnerabilities; not a security proof                                                            | `npm-audit.json`                                       |
+| Real bidirectional regtest                          | 1 test passed, 5.58 s; lost melt reply, restore, change, only one melt                                      | `regtest.log`                                          |
+| Additional isolated fault reproductions             | 5 observed misbehaviours confirmed; **no** green security acceptance tests                                  | `reproductions.log`                                    |
+| Patched Kehto: affected packages + Paja Devtools    | 1103 tests passed in 65 files                                                                               | `kehto-tests.log`                                      |
+| Entire patched Kehto                                | 1757 passed, 9 test failures; 9 failed files including 4 load failures                                      | `kehto-full-tests.log`                                 |
+| Cashu Sync: `src/sync` and `src/v0`                 | 222 tests passed in 19 files                                                                                | `cashu-sync-tests.log`                                 |
+| Cashu Sync: Go relay                                | All four test packages passed; two command packages without tests                                           | `cashu-sync-relay-tests.log`                           |
+| Granola                                             | 442 passed, 7 skipped, 52 files                                                                             | `granola-tests.log`                                    |
+| Envelope                                            | 36 local tests passed                                                                                       | `envelope-tests.log`                                   |
+| Napplets Workshop                                   | Typecheck/build passed; conformance: 8 passed, 1 warning failure, 2 skipped, CLI judges "CONFORMANT"        | `workshop-verify.log`, `workshop-conformance.log`      |
 
-Rohprotokolle, Quellenstände und SQLite liegen unter
-`outputs/feasibility-2026-09-09/` und werden gemäß .gitignore nicht versioniert.
-Der [Evidenzindex](checks/evidence-2026-09-09.json) enthält SHA-256-Prüfsummen
-der lokalen Artefakte und einen Export der zuvor in SQLite erfassten Entscheidungen.
-Die Reproduktionen unter [checks/](checks/) sind versionierbar und ohne Docker
-oder Netzwerk ausführbar. Sie behaupten absichtlich das beobachtete Fehlverhalten;
-nach einer Korrektur müssen daraus Tests der gewünschten Invarianten werden.
+Raw logs, source snapshots and SQLite live under
+`outputs/feasibility-2026-09-09/` and are not versioned, per .gitignore.
+The [evidence index](checks/evidence-2026-09-09.json) contains SHA-256 checksums
+of the local artifacts and an export of the decisions previously recorded in
+SQLite. The reproductions under [checks/](checks/) are versionable and runnable
+without Docker or network. They deliberately assert the observed misbehaviour;
+after a fix they must become tests of the desired invariants.
 
-Der Regtest benutzt echte Bitcoin-/LND-/Mint-Implementierungen, aber einen
-In-Memory-Walletspeicher und einen direkten Node-Transport mit zwei fest
-abgebildeten HTTPS-Testidentitäten. Er beweist weder dauerhafte Browserablage
-noch TLS, Android, Signer oder den produktiven Kehto-Permissionflow.
+The regtest uses real Bitcoin/LND/mint implementations, but an
+in-memory wallet store and a direct Node transport with two fixed
+mapped HTTPS test identities. It proves neither durable browser storage
+nor TLS, Android, signer or the production Kehto permission flow.
 
-Die Kehto-Gesamtfehler betreffen unter anderem CRLF-/Pfad-sensitive Assertions,
-Paket-/Lockfile-Abgleich, drei Script-Lader und den ungebauten Paja-CLI-Export.
-Die ursprüngliche Aussage „gesamtes Kehto nicht grün“ bleibt damit richtig.
+The Kehto overall failures include CRLF/path-sensitive assertions,
+package/lockfile alignment, three script loaders and the unbuilt Paja CLI
+export. The original statement "entire Kehto not green" remains correct.
 
-## Priorisierte Befunde
+## Prioritised findings
 
-### F00 — P1: Falsche Erfolgsbestätigung bei Host-Speicherfehlern
+### F00 — P1: False success acknowledgement on host storage errors
 
-Kehtos `packages/shell/src/hooks-adapter.ts:220` fängt Speicherfehler ab und gibt
-bei `set` false zurück; fehlgeschlagene Reads können als null/leere Liste erscheinen.
-`packages/runtime/src/state-handler.ts:208` antwortet auf den Write mit
-`{ok: success}`. Der installierte Shim 0.28.0 lehnt ausschließlich Antworten mit
-`error` ab und ignoriert `ok:false`.
+Kehto's `packages/shell/src/hooks-adapter.ts:220` catches storage errors and
+returns false on `set`; failed reads can appear as null/empty list.
+`packages/runtime/src/state-handler.ts:208` answers the write with
+`{ok: success}`. The installed shim 0.28.0 rejects only replies with
+`error` and ignores `ok:false`.
 
-Der fünfte Reproduktionstest führt den **tatsächlich installierten offiziellen
-Prelude-Code** in einer isolierten VM aus: `setItem()` erfüllt sich auf eine
-korrelierte `storage.set.result`-Antwort mit `ok:false`. Damit kann die Wallet
-nach einem nicht gespeicherten Journal weiterarbeiten. Die Tests des lokalen
-Vaults benutzen einen Storage-Adapter, der Fehler korrekt wirft, und entdecken
-diesen Integrationsfehler daher nicht.
+The fifth reproduction test runs the **actually installed official
+prelude code** in an isolated VM: `setItem()` fulfils on a
+correlated `storage.set.result` reply with `ok:false`. The wallet can therefore
+continue after an unsaved journal. The local vault's tests use a storage adapter
+that correctly throws errors, and therefore do not discover this integration
+fault.
 
-Abhilfe: Host muss fehlgeschlagene Reads/Writes als Fehler transportieren; Shim
-muss negative ACKs ablehnen. Anschließend QuotaExceeded-/I/O-Fehler vom echten
-Storage bis zur verbotenen Mint-Mutation testen. Ein Read-back alleine wäre
-keine Transaktions- oder Stromausfallgarantie.
+Fix: the host must transport failed reads/writes as errors; the shim
+must reject negative ACKs. Then test QuotaExceeded/I/O errors from real
+storage through to a forbidden mint mutation. A read-back alone would not be
+a transaction or power-loss guarantee.
 
-### F01 — P1: Fehlendes Wechselgeld kann einen Melt abschließen
+### F01 — P1: Missing change can complete a melt
 
-In `src/napplet/cashu/engine.ts:493` verarbeitet `resume()` einen PAID-Quote und
-setzt `quote.change ?? []` ein. `finish()` markiert Inputs danach spent und den
-Vorgang complete. Die Reproduktion bezahlt 10 aus 32 Testsats, die Fixture stellt
-21 Sats Wechselgeld aus; die Quote-Antwort lässt `change` weg. Ergebnis: complete,
-kein verfügbares Guthaben, kein NUT-09-Fallback. Der Payment-Preimage ist korrekt.
+In `src/napplet/cashu/engine.ts:493` `resume()` processes a PAID quote and
+inserts `quote.change ?? []`. `finish()` then marks inputs spent and the
+operation complete. The reproduction pays 10 of 32 testsats; the fixture issues
+21 sats of change; the quote reply omits `change`. Result: complete,
+no available balance, no NUT-09 fallback. The payment preimage is correct.
 
-Abhilfe: Quote-ID, Invoice, Einheit, Betrag und Gebühren an das Journal binden;
-Mindestwechselgeld `reservedAmount - maximumDebit` durchsetzen; vorhandene
-Blank-Outputs restaurieren und deren Zustand prüfen. Fehlt erforderliches
-Wechselgeld, bleibt die Zahlung in Abklärung. Der unmittelbar erfolgreiche
-`pay()`-Pfad braucht dieselbe Wertbilanz, nicht nur der Resume-Pfad.
+Fix: bind quote ID, invoice, unit, amount and fees to the journal;
+enforce minimum change `reservedAmount - maximumDebit`; restore existing
+blank outputs and check their state. If required change is missing,
+the payment stays in reconciliation. The immediately successful
+`pay()` path needs the same value balance, not only the resume path.
 
-### F02 — P1: Backup authentifiziert einzelne Records, nicht Vollständigkeit
+### F02 — P1: Backup authenticates individual records, not completeness
 
-`src/napplet/vault.ts:247` exportiert einen unversiegelten Container verschlüsselter
-Records; `restore()` prüft nur die tatsächlich enthaltenen Records. Entfernen
-von `metadata['cashu-v1']` aus einem gültigen Backup wird akzeptiert und ergibt
-in der Reproduktion einen scheinbar erfolgreichen Import ohne Cashu-Guthaben.
-Auch das Mischen älterer gültiger Records ist damit nicht grundsätzlich erkannt.
+`src/napplet/vault.ts:247` exports an unsealed container of encrypted
+records; `restore()` checks only the records actually present. Removing
+`metadata['cashu-v1']` from a valid backup is accepted and, in the reproduction,
+yields an apparently successful import with no Cashu balance.
+Mixing older valid records is therefore also not fundamentally detected.
 
-Abhilfe: gesamtes Backup mit Version, Wallet-ID, Revision, vollständigem
-Record-Verzeichnis, Countern und Journal-Referenzen authentifizieren; keine
-Auslassung als „Legacy“ interpretieren. Echte Legacy-Formate ausdrücklich getrennt
-importieren. Eine gültige Signatur eines alten Komplettsnapshots beweist trotzdem
-keine Aktualität.
+Fix: authenticate the entire backup with version, wallet ID, revision, a complete
+record directory, counters and journal references; do not interpret an
+omission as "legacy". Import real legacy formats in an explicit separate
+path. A valid signature of an old complete snapshot still does not prove
+freshness.
 
-### F03 — P1: Seed-Zuordnung beim Vollimport unvollständig
+### F03 — P1: Seed assignment incomplete on full import
 
-`src/napplet/vault.ts:410` vergleicht Cashu-Seeds nur, wenn die Zielwallet bereits
-`cashu-v1` besitzt. Eine neue LNURLcash-Wallet mit **anderer** Phrase und noch
-deaktiviertem Cashu importiert deshalb ein fremdes Cashu-Backup. Ihre aktuelle
-Phrase und der danach gespeicherte Cashu-Seed passen nicht zusammen; der fremde
-LNURLcash-Root landet separat in `cash-imports`.
+`src/napplet/vault.ts:410` compares Cashu seeds only when the target wallet
+already has `cashu-v1`. A new LNURLcash wallet with a **different** phrase and
+Cashu still disabled therefore imports a foreign Cashu backup. Its current
+phrase and the Cashu seed stored afterwards do not match; the foreign
+LNURLcash root lands separately in `cash-imports`.
 
-Abhilfe: Vollrestore muss die Identität aller Protokollwurzeln vor dem ersten
-Write beweisen bzw. die gesamte Wallet ausdrücklich wiederherstellen. „Assets
-aus fremder Wallet importieren“ braucht einen getrennten Migrationsflow, keine
-stillschweigende Phrase-Behauptung.
+Fix: a full restore must prove the identity of all protocol roots before the
+first write, or restore the entire wallet explicitly. "Import assets
+from a foreign wallet" needs a separate migration flow, not a
+silent phrase claim.
 
-### F04 — P1: Seed-Recovery stoppt zu früh und gibt Mint wieder frei
+### F04 — P1: Seed recovery stops too early and re-enables the mint
 
-`src/napplet/cashu/engine.ts:687` beendet die Suche nach **einer** leeren
-100er-Range und setzt den Mint auf scanned. Die aktuelle NUT-13 empfiehlt drei
-aufeinanderfolgende leere Ranges. Eine simulierte abgebrochene Reservierung 0–99,
-gefolgt von real signierten Outputs ab 100, bleibt vollständig unentdeckt; der
-neue Counter bleibt null, obwohl die Mint wieder für Outputs freigegeben wird.
+`src/napplet/cashu/engine.ts:687` ends the search after **one** empty
+range of 100 and sets the mint to scanned. Current NUT-13 recommends three
+consecutive empty ranges. A simulated aborted reservation 0–99,
+followed by actually signed outputs from 100, remains completely undetected; the
+new counter stays null even though the mint is re-enabled for outputs.
 
-Abhilfe: mindestens aktuelle NUT-13-Suche, gespeicherte High-Water-Marks und
-explizite erweiterte Suche. Beliebig große reservierte, nie signierte Lücken sind
-auch mit drei Batches nicht durch die Phrase beweisbar. Ein Vollbackup bleibt
-notwendig; bei unsicherer/kompromittierter alter Writer-Instanz Guthaben unter
-einen neuen Seed migrieren.
+Fix: at least the current NUT-13 search, stored high-water marks and
+explicit extended search. Arbitrarily large reserved, never-signed gaps are
+not provable from the phrase even with three batches. A full backup remains
+necessary; if the old writer instance is unsafe/compromised, migrate funds under
+a new seed.
 
-### Weitere Integrations- und Spezifikationslücken
+### Further integration and specification gaps
 
-| Priorität | Befund / Beleg                                                                                                                                                                                    | Konsequenz                                                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| P1        | `src/host/cashu-service.ts:78`: Writer-Besitzer nur in einer Map pro Service; ohne Cashu fehlt `acquire()`. `CashuEngine.exclusive` und `Transfers.exclusive` schützen nur die jeweilige Instanz. | Kein globaler Wallet-Lock zwischen Shell-Tabs, Prozessen, Geräten oder sämtlichen LNURLcash-/Backup-Aktionen.                            |
-| P1        | `Vault.backup()` liest mehrere Items; LNURLcash-Records und `transfers-v1` sind nicht atomar mit `cashu-v1`. UI-`busy` schützt nicht alle zukünftigen API-/Adapter-Aufrufe.                       | Backup und alle Mutationen müssen denselben Writer/Transaktionsrahmen verwenden.                                                         |
-| P1        | Phrase, Cashu-Seed, Proofs und lokale AES-Verarbeitung befinden sich im Napplet (`Vault`, `CashuEngine`).                                                                                         | „Secrets verlassen nie den Signer“ ist für diesen Code falsch. Die Host-Sandbox ersetzt keine sichere Wallet-Verwahrung.                 |
-| P2        | Transfers persistieren Verknüpfungen erst nach dem Erstellen einzelner Ziel-/Quelloperationen. `resume` behandelt nur funding/claiming.                                                           | Abbruch in preparing/quoted kann verwaiste Quote/Reservierung hinterlassen. Keine zweite Zahlung, aber fehlender Reconcile-/Cancel-Flow. |
-| P2        | Der aktuelle NAP-STORAGE-Entwurf isoliert nach `(dTag, aggregateHash)`. Kehtos Defaultquota beträgt 512 KiB. Ciphertext, Journale und Artwork wachsen.                                            | Upgrade-Migration, Kapazitätswarnungen und atomare Ablage außerhalb des Artifact-Scope fehlen. Nicht einfach Scope-Isolation abschalten. |
-| P2        | Der bestehende Regtest-Helper wartet auf LND-Sync, erzeugt aber bei alter vorhandener Kette keinen frischen Block. Bitcoin-Daten liegen in einem anonymen Image-Volume.                           | Wiederanlauf braucht frischen Block; Neuaufbau muss Bitcoin-Volume explizit benennen. Bestehendes Volume nicht ersetzen.                 |
-| P2        | FORMAT scheitert unter aktuellem Windows-Checkout; historischer grüner Check ist nicht übertragbar.                                                                                               | EOL-Verhalten separat und klein korrigieren; bestehende Änderungen nicht überformatieren.                                                |
-| P2        | Aktuelles dni-Upstream ist `b391530` (note tags), lokaler Ausgangspunkt älter.                                                                                                                    | Feature-Parität anhand des neuen Stands nachführen; kein stilles Merge in dieser Prüfung.                                                |
+| Priority | Finding / evidence                                                                                                                                                                                | Consequence                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| P1       | `src/host/cashu-service.ts:78`: writer owner only in a map per service; without Cashu, `acquire()` is missing. `CashuEngine.exclusive` and `Transfers.exclusive` protect only the respective instance. | No global wallet lock between shell tabs, processes, devices or all LNURLcash/backup actions.                                        |
+| P1       | `Vault.backup()` reads several items; LNURLcash records and `transfers-v1` are not atomic with `cashu-v1`. UI `busy` does not protect all future API/adapter calls.                               | Backup and all mutations must use the same writer/transaction frame.                                                                     |
+| P1       | Phrase, Cashu seed, proofs and local AES processing live in the napplet (`Vault`, `CashuEngine`).                                                                                                 | "Secrets never leave the signer" is false for this code. The host sandbox does not replace secure wallet custody.                        |
+| P2       | Transfers persist links only after creating individual target/source operations. `resume` handles only funding/claiming.                                                                          | Abort in preparing/quoted can leave an orphan quote/reservation. No second payment, but no reconcile/cancel flow.                        |
+| P2       | The current NAP-STORAGE draft isolates by `(dTag, aggregateHash)`. Kehto's default quota is 512 KiB. Ciphertext, journals and artwork grow.                                                       | Upgrade migration, capacity warnings and atomic storage outside the artifact scope are missing. Do not simply turn off scope isolation.  |
+| P2       | The existing regtest helper waits for LND sync, but does not produce a fresh block when an old chain is already present. Bitcoin data lives in an anonymous image volume.                         | Restart needs a fresh block; rebuild must name the Bitcoin volume explicitly. Do not replace the existing volume.                        |
+| P2       | FORMAT fails under the current Windows checkout; a historical green check is not transferable.                                                                                                    | Correct EOL behaviour separately and in small steps; do not reformat existing changes.                                                   |
+| P2       | Current dni upstream is `b391530` (note tags); local starting point is older.                                                                                                                     | Catch up feature parity against the new state; no silent merge in this check.                                                            |
 
-## Aktuelle Spezifikationen gegen Implementierung
+## Current specifications against implementation
 
-Die exakten Quellenstände und Statusbelege stehen in
-[SOURCES-2026-09-09.md](SOURCES-2026-09-09.md). „Im Repository vorhanden“,
-„PR gemergt“, „draft“ und „SDK implementiert“ sind unterschiedliche Aussagen.
+Exact source snapshots and status evidence are in
+[SOURCES-2026-09-09.md](SOURCES-2026-09-09.md). "Present in the repository",
+"PR merged", "draft" and "SDK implemented" are different statements.
 
-- **Manifest/NIP-5D:** Der offene NIP-5D-PR 2303 definiert Napplet-Kinds
-  5129/15129/35129 und übernimmt das Tag-Schema von NIP-5A. NIP-5A selbst
-  beschreibt nsites mit 15128/35128. Die NAP-Registry nennt dagegen noch 35128
-  für Napplets. Bearletts Build erzeugt 35129: zum aktuellen NIP-5D-PR und SDK
-  passend, kein Beweis eines verabschiedeten NIP-5D. Der Dateiname
-  `.nip5a-manifest.json` stammt aus dem Plugin.
-- **Sandbox:** `allow-scripts`, kein `allow-same-origin`, Namespace vor App-Code,
-  Source-Binding und CSP sind im Preview belegt. NIP-07 darf nicht direkt in das
-  Napplet injiziert werden. Standardnahe Wallet-Verwahrung erfordert den Host.
-- **SHELL:** verpflichtender Handshake; beide Apps warten auf `shell.ready()`.
-  Discovery zeigt Fähigkeiten, ersetzt aber nicht Freigabe, dauerhaften Speicher
-  oder vertrauenswürdige Scope-Zuordnung.
-- **INTENT/INC:** registrierte APIs, NAP-INTENT/SHELL in Registry Active;
-  `wallet`, `bearer-designer` und alle vier `wallet/*`-Verträge bleiben eigene
-  Konventionen. `ok/handled` ist Zustellung, keine Zahlungs-/Importbestätigung.
-  Cold-start braucht subscription-aware Zustellung; nur `shell.ready` kann zu
-  früh sein. Ziel- und Senderbindung im echten Paja prüfen.
-- **Design:** `noteDesignMessage` und `parseDesign` lassen nur Darstellung zu.
-  Kein Betrag, Proof, k1, Invoice oder spendbarer QR im Vertrag. Freitext und
-  hochgeladene Bilder können vom Nutzer natürlich beliebige Inhalte enthalten;
-  die App darf nie automatisch Secrets hineinrendern.
-- **STORAGE:** scoped KV, keine CAS-/Mehrfachrecord-Transaktionen oder
-  Gerätekoordination. Entwurf verlangt Reload-Persistenz, keine universelle
-  Wallet-Durabilitätsgarantie. F00 ist zusätzlich ein konkreter Implementierungsfehler.
-- **IDENTITY/Signer:** `getPublicKey` ist read-only und beweist keine Kontrolle.
-  Paja implementiert `none/dev/nip07/nip46`, keine NIP-55-Anbindung. Ein
-  Wallet-eigener Key wird nicht durch IDENTITY oder NIP-07 erzeugt.
-- **RELAY/OUTBOX:** `publishEncrypted` und Routing sind vorhanden; keine
-  allgemeine Napplet-Decrypt-API (`identity.decrypt` wurde entfernt). ACKs und
-  Outbox-Routing sind weder Backup-Aufbewahrungsvertrag noch verteilter Lock.
-- **RESOURCE:** Byteauflösung, kein freier POST-Transport. Die Cashu-Capability
-  bleibt erforderlich und experimentell. Auch LNURLcash-Mutationen per GET
-  liegen semantisch außerhalb einer rein lesenden Resource-Capability. Der
-  Nonce vermeidet URL-Caches, erteilt aber keine Zahlungsberechtigung.
-- **LUD-25:** nach wie vor draft auf Branch `lnurlcash`; LUD-03/06/12/16/17/21
-  liefern die Bausteine. Rotate-/Split-/Merge-Replacements vorher speichern;
-  ein verschwundenes k1 ist kein Zahlungsnachweis. Ohne Preimage braucht die
-  Brücke nachgewiesenen Quellverbrauch und Ausgabe zum exakt gebundenen Ziel.
-- **Cashu:** NUT-00 A/V3 wird noch gelesen, ist deprecated; B/V4 empfohlen.
-  NUT-01/02: Keyset/Einheit/Fees, NUT-03: Swap; 04/05/23: Quotes/BOLT11.
-  Fee-PPK wird über Inputs summiert und aufgerundet; Routingreserve und
-  Mintgebühren getrennt anzeigen. 07/09 sind hier erforderlich, 08 für Melts.
-  NUT-09 benötigt die exakten Outputs inklusive Blinding-Material, 13 die
-  versionsabhängige Ableitung für 00- und 01-Keysets und monotone Counter.
-  19 ist ein optionaler Requestcache mit TTL, keine Erlaubnis zum blinden
-  Wiederbezahlen. 20 schützt Quote-Einlösung und hat einen separaten Counter;
-  der vorhandene Ableitungspfad entspricht dem aktuellen NUT-20.
-- **Quote-Recovery:** Invoice-/Quote-Ablauf vor neuer Zahlung beachten; eine
-  schon bezahlte abgelaufene Quote nicht lokal vernichten. Unbekannte Zahlungen
-  reserviert lassen. Moderne `amount_paid/amount_issued/updated_at` werden
-  teilweise geprüft; vollständige Bindung und Bilanz in sämtlichen Pfaden fehlt.
-- **BOLT11:** Checks für Betrag, Checksumme, Ablauf, Signatur und Paymenthash
-  vorhanden. Kein Nachweis der vollständigen offiziellen BOLT11-/Cashu-Vektoren;
-  der Crypto-Testinvoice-Generator ist selbst Teil dieser Codebasis. Vor Release
-  unabhängige gültige/ungültige Vektoren ergänzen.
+- **Manifest/NIP-5D:** The open NIP-5D PR 2303 defines napplet kinds
+  5129/15129/35129 and takes the tag schema from NIP-5A. NIP-5A itself
+  describes nsites with 15128/35128. The NAP registry still names 35128
+  for napplets. Bearlett's build produces 35129: matching the current NIP-5D PR
+  and SDK, not a proof of an adopted NIP-5D. The filename
+  `.nip5a-manifest.json` comes from the plugin.
+- **Sandbox:** `allow-scripts`, no `allow-same-origin`, namespace before app
+  code, source binding and CSP are proven in preview. NIP-07 must not be
+  injected directly into the napplet. Spec-aligned wallet custody requires the
+  host.
+- **SHELL:** mandatory handshake; both apps wait for `shell.ready()`.
+  Discovery shows capabilities, but does not replace grant, durable storage
+  or trusted scope assignment.
+- **INTENT/INC:** registered APIs, NAP-INTENT/SHELL in registry Active;
+  `wallet`, `bearer-designer` and all four `wallet/*` contracts remain local
+  conventions. `ok/handled` is delivery, not a payment/import confirmation.
+  Cold-start needs subscription-aware delivery; `shell.ready` alone can be too
+  early. Check target and sender binding in real Paja.
+- **Design:** `noteDesignMessage` and `parseDesign` allow presentation only.
+  No amount, proof, k1, invoice or spendable QR in the contract. Free text and
+  uploaded images can of course contain arbitrary content from the user;
+  the app must never automatically render secrets into them.
+- **STORAGE:** scoped KV, no CAS/multi-record transactions or
+  device coordination. The draft requires reload persistence, not a universal
+  wallet durability guarantee. F00 is additionally a concrete implementation
+  fault.
+- **IDENTITY/Signer:** `getPublicKey` is read-only and does not prove control.
+  Paja implements `none/dev/nip07/nip46`, no NIP-55 wiring. A
+  wallet-owned key is not created by IDENTITY or NIP-07.
+- **RELAY/OUTBOX:** `publishEncrypted` and routing are present; no
+  general napplet decrypt API (`identity.decrypt` was removed). ACKs and
+  outbox routing are neither a backup custody contract nor a distributed lock.
+- **RESOURCE:** byte resolution, not a free POST transport. The Cashu
+  capability remains required and experimental. LNURLcash mutations via GET
+  also lie semantically outside a purely reading resource capability. The
+  nonce avoids URL caches; it does not grant payment authorisation.
+- **LUD-25:** still draft on branch `lnurlcash`; LUD-03/06/12/16/17/21
+  supply the building blocks. Persist rotate/split/merge replacements first;
+  a vanished k1 is not a payment proof. Without a preimage the
+  bridge needs proven source consumption and issuance to the exactly bound
+  target.
+- **Cashu:** NUT-00 A/V3 is still read, is deprecated; B/V4 recommended.
+  NUT-01/02: keyset/unit/fees, NUT-03: swap; 04/05/23: quotes/BOLT11.
+  Fee PPK is summed over inputs and rounded up; show routing reserve and
+  mint fees separately. 07/09 are required here, 08 for melts.
+  NUT-09 needs the exact outputs including blinding material, 13 the
+  version-dependent derivation for 00 and 01 keysets and monotonic counters.
+  19 is an optional request cache with TTL, not permission to blindly
+  repay. 20 protects quote redemption and has a separate counter;
+  the existing derivation path matches current NUT-20.
+- **Quote recovery:** observe invoice/quote expiry before a new payment; do not
+  destroy locally a quote that is already paid but expired. Leave unknown
+  payments reserved. Modern `amount_paid/amount_issued/updated_at` are
+  partly checked; full binding and balance across all paths is missing.
+- **BOLT11:** checks for amount, checksum, expiry, signature and payment hash
+  present. No proof of the complete official BOLT11/Cashu vectors;
+  the crypto test-invoice generator is itself part of this codebase. Before
+  release add independent valid/invalid vectors.
 
-## Brenos Projekte: verwertbare Erkenntnisse
+## Breno's projects: usable findings
 
 ### Cashu Sync
 
-Stand `b5bcb00`, Wallet-SDK tatsächlich 4.7.0. Im Code bestätigt: Snapshot v0
-fest auf `usd`, ein Authority-Mint, Event 30078 mit eigenem d-Tag, NIP-44 an
-eigenen Pubkey; Eventsignatur, Schema und innerer/äußerer Vorgänger werden geprüft.
-Go 1.26, Khatru 0.19.1, SQLite 1.56.0. `store.Advance` prüft `prev` gegen den
-aktuellen Head und schreibt beide innerhalb einer SQLite-Transaktion; eine
-Verbindung/ein Prozess serialisiert v0. NIP-42-Auth, Autorenbindung und Limits
-liegen in der Relay-Policy. Der Coordinator speichert vorbereitete Requests und
-verlangt Relay-Zustimmung vor Submit; unklare Ergebnisse bleiben zur Abklärung.
+Revision `b5bcb00`, wallet SDK actually 4.7.0. Confirmed in the code: snapshot
+v0 fixed to `usd`, one authority mint, event 30078 with its own d-tag, NIP-44
+to own pubkey; event signature, schema and inner/outer predecessor are checked.
+Go 1.26, Khatru 0.19.1, SQLite 1.56.0. `store.Advance` checks `prev` against the
+current head and writes both inside a SQLite transaction; one
+connection/one process serialises v0. NIP-42 auth, author binding and limits
+live in the relay policy. The coordinator stores prepared requests and
+requires relay consent before submit; unclear results stay for reconciliation.
 
-Das ist mehr als „Backups auf gewöhnlichen Relays“, aber kein universelles
-Fencing am Mint. Bereits autorisierte Requests lassen sich nach einem
-Gerätewechsel nicht durch einen Relay-Head zurückrufen. Die starke Annahme ist
-ein kooperierender Clientverbund mit einem verfügbaren Koordinationsdienst.
-Keine Bearlett-Parität für Tokenimport/-export, LNURLcash oder Multi-Mint.
-Die 222 Wallet-Tests und alle vier Go-Testpakete wurden lokal reproduziert;
-Pairing auf zwei echten Telefonen und Live-Deployment nicht.
+This is more than "backups on ordinary relays", but not universal
+fencing at the mint. Already authorised requests cannot be recalled after a
+device change through a relay head. The strong assumption is
+a cooperating client group with an available coordination service.
+No Bearlett parity for token import/export, LNURLcash or multi-mint.
+The 222 wallet tests and all four Go test packages were reproduced locally;
+pairing on two real phones and live deployment were not.
 
-Lizenz: `wallet/LICENSE.md` enthält MIT/Cashu 2023. Für den eigenständigen Relay
-und übrige Root-Dateien wurde keine entsprechende Lizenzdatei gefunden. Deren
-Code nicht in Bearlett übernehmen. Gute Referenz für Zustandsautomat,
-Konfliktbehandlung und Tests; kein Grund, V1 um einen CAS-Dienst zu erweitern.
+License: `wallet/LICENSE.md` contains MIT/Cashu 2023. For the standalone relay
+and remaining root files no corresponding license file was found. Do not take
+their code into Bearlett. Good reference for state machine,
+conflict handling and tests; not a reason to extend V1 with a CAS service.
 
 ### Granola
 
-Stand `e25a4ec`, Cashu SDK 4.7.1. `src/cashu/htlc.ts`, Trade-Coordinator,
-Proof-Reservierungen und Nostr-Transport bestätigen NUT-14-/P2PK-basierte
-HTLC-Swaps mit gemeinsamem Hash, Refund-Zeiten, persistierten Requests und
-privater Nostr-Koordination. Web Locks schützen lokal, kein globaler Geräte-Lock.
-Das ist eine andere Operation als LNURLcash↔Cashu über BOLT11. 442 Tests
-bestanden, sieben übersprungen; kein eigener Live-Testnet-Swap durchgeführt.
+Revision `e25a4ec`, Cashu SDK 4.7.1. `src/cashu/htlc.ts`, trade coordinator,
+proof reservations and Nostr transport confirm NUT-14/P2PK-based
+HTLC swaps with a shared hash, refund times, persisted requests and
+private Nostr coordination. Web Locks protect locally, no global device lock.
+This is a different operation from LNURLcash↔Cashu over BOLT11. 442 tests
+passed, seven skipped; no own live testnet swap was performed.
 
-Keine LICENSE-Datei und keine Lizenzangabe im package.json gefunden. Keine
-Codeübernahme. Architektur-/Fehlermatrix als Lesereferenz nützlich; funktional
-außerhalb V1.
+No LICENSE file and no license statement in package.json found. No
+code uptake. Architecture/fault matrix useful as a reading reference;
+functionally outside V1.
 
 ### Envelope
 
-Stand `7d7ff1c`, installierter Paja 0.11.0. Pointer-Resolver nutzt Kehto zum
-Prüfen von Signatur, Manifest, Hashes und Blobs. Der angepasste Host startet
-verifizierte Targets; Intent-Verträge kommen aus dem Manifest. Der Opener
-transportiert Startzustand per Intent. Grenzen sind Timeout, fehlender Vertrag
-und fehlendes erstes Online-Caching; Offlinecache macht keine Mint erreichbar.
-36 lokale Tests bestanden, öffentliche Live-E2E bewusst nicht ausgeführt.
+Revision `7d7ff1c`, installed Paja 0.11.0. Pointer resolver uses Kehto to
+check signature, manifest, hashes and blobs. The adapted host starts
+verified targets; intent contracts come from the manifest. The opener
+transports start state by intent. Limits are timeout, missing contract
+and missing first-online caching; an offline cache does not make a mint
+reachable. 36 local tests passed; public live E2E deliberately not run.
 
-`package.json` und Root-Lockeintrag deklarieren MIT; keine eigenständige LICENSE
-gefunden. Das ist eine positive Lizenzdeklaration, aber Copyright-/Lizenztext
-vor Übernahme klären. Adapteridee verwertbar. Bearlett-Secrets nicht in
-Envelope-Fragmente/Browserhistorie kopieren; Encoding ist keine Verschlüsselung.
+`package.json` and the root lock entry declare MIT; no standalone LICENSE
+found. That is a positive license declaration, but clarify copyright/license
+text before uptake. Adapter idea usable. Do not copy Bearlett secrets into
+Envelope fragments/browser history; encoding is not encryption.
 
 ### Napplets Workshop
 
-Stand `45459f6`, SDK ^0.12.0, Shim ^0.13.0, Plugin ^0.8.1: deutlich ältere
-Referenz. Kleines Breakout-/SDK-Manifest-Beispiel, MIT-LICENSE vorhanden.
-Typecheck/Build bestehen. Conformance-CLI meldet trotz Warnungsfehler insgesamt
-CONFORMANT: `theme`, `storage`, `identity` wurden ohne Deklaration emittiert;
-Lifecycle nicht gemessen. Kein Wallet-/Signer-/Recovery-Nachweis. Geeignet als
-kleine Lernreferenz mit erhaltenen Lizenzhinweisen, nicht als aktueller
-Produktionsvertrag.
+Revision `45459f6`, SDK ^0.12.0, shim ^0.13.0, plugin ^0.8.1: a distinctly
+older reference. Small breakout/SDK manifest example, MIT LICENSE present.
+Typecheck/build pass. Conformance CLI reports overall CONFORMANT despite a
+warning failure: `theme`, `storage`, `identity` were emitted without
+declaration; lifecycle not measured. No wallet/signer/recovery proof.
+Suitable as a small learning reference with license notices retained, not as
+a current production contract.
 
-## Noch fehlende Nachweise
+## Evidence still missing
 
-Ein echter integrierter Kehto/Paja-Host mit Cashu-Freigabe, belastbarem Storage,
-Upgrade-Migration und Signer; vollständige Fault-Matrix, unabhängige Vektoren,
-Relay-Roundtrip/Restore, Wallet-Key-Lifecycle, Geräteübergabe, reale Android-
-Lifecycle-/Keystore-/Kamera-/NFC-Prüfung. Das konkrete Inventar, Start/Stop und
-die ausführbaren Prüfkommandos stehen in
+A real integrated Kehto/Paja host with Cashu grant, durable storage,
+upgrade migration and signer; complete fault matrix, independent vectors,
+relay round-trip/restore, wallet-key lifecycle, device handover, real Android
+lifecycle/keystore/camera/NFC check. The concrete inventory, start/stop and
+the runnable check commands are in
 [INFRASTRUCTURE-2026-09-09.md](INFRASTRUCTURE-2026-09-09.md).

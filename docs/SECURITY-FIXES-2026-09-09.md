@@ -1,99 +1,100 @@
-# Bearlett: Korrekturen und Übergabe zum externen Audit
+# Bearlett: corrections and handover for external audit
 
-Stand: 9. September 2026, abschließender lokaler Prüflauf. Basis:
-`87fd4f01156a2c3f701eb473386cca727257d0c2`; Arbeitsbranch:
-`fix/bearlett-security-boundaries`. Dies ist ein geprüfter Teststand, keine
-Freigabe für echte Guthaben. Keine Veröffentlichung und kein Merge.
+State: 9 September 2026, final local check run. Base:
+`87fd4f01156a2c3f701eb473386cca727257d0c2`; working branch:
+`fix/bearlett-security-boundaries`. This is a checked test state, not a
+release for real funds. No publication and no merge.
 
-Dieser Bericht aktualisiert den Status aus [FEASIBILITY](FEASIBILITY-2026-09-09.md)
-und [INFRASTRUCTURE](INFRASTRUCTURE-2026-09-09.md). Deren ursprüngliche Befunde,
-Testzahlen und Reproduktionen bleiben als historische Belege erhalten.
-Nappelin ist die Plattform, Bearlett die Brieftasche. Granola bleibt außerhalb von V1.
+This report updates the status from [FEASIBILITY](FEASIBILITY-2026-09-09.md)
+and [INFRASTRUCTURE](INFRASTRUCTURE-2026-09-09.md). Their original findings,
+test counts and reproductions remain as historical evidence.
+Nappelin is the platform, Bearlett the wallet. Granola stays outside V1.
 
-## Was geändert und nachgewiesen wurde
+## What was changed and proven
 
-| Bereich                     | Korrektur                                                                                                                                                                                                                      | Beleg / Grenze                                                                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Zahlungszustimmung          | Bestätigte Note und Rechnung werden vor dem ersten asynchronen Speicherzugriff festgehalten. Ein Intent befüllt die Oberfläche; eine Zahlung benötigt die Wallet-Bestätigung.                                                  | Browser-Regressionsfall ändert die Rechnung während eines verzögerten Reads; bezahlt wird nur die bestätigte Rechnung.                          |
-| Entsperrung                 | Eigenes Wallet-Passwort bleibt erforderlich. Lock funktioniert während einer laufenden Anfrage; alte Unlock-/Create-/Reset-Antworten öffnen keine neue Sitzung. Unvertrauenswürdige DOM-Eingaben verlängern den Timeout nicht. | Unit- und Browser-Tests; keine behauptete Isolation gegenüber einem kompromittierten übergeordneten Host.                                       |
-| F00: Speicherfehler         | Eigener Storage-Adapter verlangt explizites `ok: true`, passende Request-ID, Antwortart und Parent-Quelle; Fehler und Timeout brechen ab.                                                                                      | Negatives Write-ACK reproduziert und abgefangen. Das installierte SDK selbst wurde nicht geändert.                                              |
-| F01: Wechselgeld            | Bezahlte Cashu-Quotes werden an das Journal gebunden. Fehlendes Change wird mit den bereits gespeicherten Blank-Outputs per NUT-09 rekonstruiert. Grenzen, Zuordnung und UNSPENT-Status werden geprüft.                        | Fehlendes, unvollständiges, fremdes, doppeltes und verbrauchtes Change; genau ein Melt bei Antwortverlust.                                      |
-| F02: Backup-Vollständigkeit | Backup v2 authentifiziert zusätzlich den gesamten verschlüsselten Bestand einschließlich Namen und eingepacktem Schlüssel. Entfernte Records werden vor dem ersten Import-Write erkannt.                                       | Manipulations-Tests; v1 nur mit ausdrücklich gewähltem Legacy-Import. Keine Aktualitätsgarantie gegen Replay eines vollständigen alten Backups. |
-| F03: Falscher Seed          | Ein Cashu-Backup muss zur LNURLcash-Ableitung der Quell- und Zielwallet passen, auch wenn Cashu im Ziel noch deaktiviert ist.                                                                                                  | Fremdseed-Test verlangt Ablehnung ohne Schreibzugriff.                                                                                          |
-| F04: Recovery-Lücken        | Scan berücksichtigt bekannte Reservierungen, verwendet standardmäßig 300 leere Counter und erlaubt Startcounter und begrenzte Fortsetzung. Ein Scan gibt den alten Seed niemals zum Schreiben frei.                            | Funds hinter leerem 100er-Bereich und explizite spätere Suche getestet. Ein endlicher Gap ist kein Vollständigkeitsbeweis.                      |
-| Bearer-Übergabe             | Empfangene LNURLcash-Secrets werden rotiert. Restore/Seed-Recovery bleibt in Quarantäne; Export zur frischen Wallet reserviert die Kopie als shared. Auch rekonstruiertes Cashu-Change bleibt nach Restore unverified.         | Unit-Tests und echter Mint-Regtest: neue Wallet erhält Wert, alte Kopien sind nach Rotation verbraucht.                                         |
-| Lokale Überschneidungen     | Cashu-Mutationen, LNURLcash pay/transform/share und Backup/Restore nutzen den gemeinsamen Lock desselben Storage-Adapterobjekts. Snapshot-Revision erkennt zusätzliche lokale Writes.                                          | Gleichzeitige Engines und Backup während Mutation abgewiesen. Kein Cross-Tab-/Cross-Device-Lock, keine Datenbanktransaktion.                    |
+| Area                     | Correction                                                                                                                                                                                                                     | Evidence / bound                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payment consent          | Confirmed note and invoice are captured before the first asynchronous storage access. An intent populates the UI; a payment needs wallet confirmation.                                                                         | Browser regression case changes the invoice during a delayed read; only the confirmed invoice is paid.                                          |
+| Unlock                   | Own wallet password remains required. Lock works during an in-flight request; old unlock/create/reset replies do not open a new session. Untrusted DOM inputs do not extend the timeout.                                       | Unit and browser tests; no claimed isolation against a compromised parent host.                                                                 |
+| F00: storage errors      | Own storage adapter requires explicit `ok: true`, matching request ID, reply type and parent origin; errors and timeout abort.                                                                                                 | Negative write ACK reproduced and caught. The installed SDK itself was not changed.                                                             |
+| F01: change              | Paid Cashu quotes are bound to the journal. Missing change is reconstructed with the already stored blank outputs via NUT-09. Bounds, assignment and UNSPENT status are checked.                                              | Missing, incomplete, foreign, duplicate and spent change; exactly one melt on lost reply.                                                       |
+| F02: backup completeness | Backup v2 additionally authenticates the entire encrypted holdings including names and wrapped key. Removed records are detected before the first import write.                                                                | Tamper tests; v1 only with an explicitly chosen legacy import. No freshness guarantee against replay of a complete old backup.                  |
+| F03: wrong seed          | A Cashu backup must match the LNURLcash derivation of the source and target wallet, even if Cashu is still disabled on the target.                                                                                             | Foreign-seed test requires rejection with no write access.                                                                                      |
+| F04: recovery gaps       | Scan accounts for known reservations, uses 300 empty counters by default and allows a start counter and limited continuation. A scan never releases the old seed for writing.                                                  | Funds behind an empty range of 100 and explicit later search tested. A finite gap is not a completeness proof.                                  |
+| Bearer handover          | Received LNURLcash secrets are rotated. Restore/seed recovery stays in quarantine; export to a fresh wallet reserves the copy as shared. Reconstructed Cashu change also remains unverified after restore.                     | Unit tests and real mint regtest: new wallet receives value, old copies are spent after rotation.                                               |
+| Local overlap            | Cashu mutations, LNURLcash pay/transform/share and backup/restore use the shared lock of the same storage-adapter object. Snapshot revision detects additional local writes.                                                   | Concurrent engines and backup during mutation rejected. No cross-tab/cross-device lock, no database transaction.                                |
 
-## Abschließende Ergebnisse
+## Final results
 
-| Prüfung                                                               | Ergebnis                                                                                                                   |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Bearlett Unit-Suite                                                   | **389 bestanden, 1 übersprungen**, keine fehlgeschlagenen Tests                                                            |
-| TypeScript                                                            | bestanden                                                                                                                  |
-| Original-Webbuild, Wallet-Napplet, Notes-Napplet                      | alle drei bestanden                                                                                                        |
-| Playwright / Chromium                                                 | **18 bestanden**, 9 je Desktop- und Mobil-Viewport, keine Retries/Flakes                                                   |
-| Bitcoin/LND/Nutshell/LNURLmint Regtest                                | **1 vollständiger Integrationsfall bestanden**                                                                             |
-| Nappelin Hangar, Identität, Locker, Login-Lifecycle                   | **31 bestanden**                                                                                                           |
-| TCG-Wallet-Sync                                                       | **6 bestanden**; Mock-Relay/-Blossom, kein realer Backup-Dienst                                                            |
-| Formatprüfung aller geänderten Quell-/Testdateien und Diff-Whitespace | bestanden                                                                                                                  |
-| Repositoryweiter `npm run format:check`                               | weiterhin nicht grün; bestehende Format-/Zeilenende-Probleme außerhalb dieses Fixes, Log `outputs/security-format-all.txt` |
+| Check                                                                 | Result                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Bearlett unit suite                                                   | **389 passed, 1 skipped**, no failed tests                                                                             |
+| TypeScript                                                            | passed                                                                                                                 |
+| Original web build, Wallet napplet, Notes napplet                     | all three passed                                                                                                       |
+| Playwright / Chromium                                                 | **18 passed**, 9 each for desktop and mobile viewport, no retries/flakes                                               |
+| Bitcoin/LND/Nutshell/LNURLmint regtest                                | **1 complete integration case passed**                                                                                 |
+| Nappelin Hangar, identity, locker, login lifecycle                    | **31 passed**                                                                                                          |
+| TCG wallet sync                                                       | **6 passed**; mock relay/Blossom, no real backup service                                                               |
+| Format check of all changed source/test files and diff whitespace     | passed                                                                                                                 |
+| Repository-wide `npm run format:check`                                | still not green; existing format/line-ending problems outside this fix, log `outputs/security-format-all.txt`          |
 
-Der übersprungene Alt-Test `src/integration.test.ts` benötigt `MINT_K1` und eine
-separate Mint auf Port 8137. Diese Voraussetzung wurde nicht künstlich gesetzt.
-Der separate Regtest verwendet reale lokale Dienste und ausschließlich Testgeld.
-Mobil-Viewport bedeutet Chromium mit kleiner Bildschirmgröße, kein Android-Gerät.
-Build-Warnungen zu Vite-Konfiguration, veraltetem inlineDynamicImports und dem
-großen Original-Webbundle sind weiterhin vorhanden.
+The skipped legacy test `src/integration.test.ts` needs `MINT_K1` and a
+separate mint on port 8137. That prerequisite was not set artificially.
+The separate regtest uses real local services and test funds only.
+Mobile viewport means Chromium with a small screen size, not an Android device.
+Build warnings about Vite configuration, deprecated inlineDynamicImports and the
+large original web bundle remain.
 
-Der historische Negativtest `docs/checks/feasibility.test.ts` wurde ebenfalls
-erneut ausgeführt: **4 absichtlich überholte Fehlerbehauptungen schlagen nun fehl**
-(F01–F04). F00 besteht dort weiterhin, weil er das unveränderte installierte SDK
-direkt prüft. Das ist keine grüne Abnahmesuite. Die entsprechenden positiven
-Regressionsprüfungen liegen jetzt unter `src/napplet/`.
+The historical negative test `docs/checks/feasibility.test.ts` was also
+re-run: **4 deliberately obsolete fault assertions now fail**
+(F01–F04). F00 still passes there, because it tests the unchanged installed SDK
+directly. That is not a green acceptance suite. The corresponding positive
+regression checks now live under `src/napplet/`.
 
-Die Nappelin- und TCG-Tests liefen gegen die vorhandenen Arbeitskopien; deren
-HEADs waren `1b2f2c8ca84e779aa51c31ce2d274341aca50c68` beziehungsweise
-`d7535057480d3a16fcb6878eba78d70c66951fc5`. Nicht als unveränderte Checkouts oder
-vollständiger integrierter Bearlett-in-Nappelin-Nachweis zu verstehen.
+The Nappelin and TCG tests ran against the existing working copies; their
+HEADs were `1b2f2c8ca84e779aa51c31ce2d274341aca50c68` and
+`d7535057480d3a16fcb6878eba78d70c66951fc5` respectively.
+Not to be read as unmodified checkouts or a complete integrated
+Bearlett-in-Nappelin proof.
 
-## Wichtigste offenen Aufgaben für den Audit
+## Highest-priority open work for the audit
 
-1. **Gerätewechsel ist noch kein fertiger Ablauf.** Nach Backup-Restore wird
-   der alte Seed dauerhaft als Recovery-Quelle behandelt. Im Regtest werden
-   Zielnote und Wechselgeld in eine frische Wallet rotiert; das alte
-   Transferjournal bleibt `claiming`. Ein wiederaufnehmbarer Migrationsablauf
-   mit Verknüpfung und Abschluss beider Journale fehlt. Den alten Seed nicht
-   durch einen scanned-Schalter entsperren.
-2. **Host-Integration und Speichervertrag.** Bearlett verlangt jetzt bei
-   `storage.get`, `storage.set` und `storage.keys` explizites `ok: true`.
-   Ältere Hosts ohne dieses Feld werden abgewiesen. Der Preview-Host erfüllt
-   dies. Echter Kehto/Paja/Nappelin-Host mit dauerhaftem Store und Cashu-
-   Capability muss angepasst und separat getestet werden. Ein ACK beweist
-   allein noch keinen fsync oder atomaren Datenträger-Commit.
-3. **Writer- und Crash-Grenzen.** Der lokale WeakMap-Lock schützt nur dasselbe
-   Adapterobjekt. Er ersetzt keine exklusive Host-Lease und umfasst nicht
-   jede LNURLcash-Methode oder den gesamten protokollübergreifenden Transfer.
-   Multi-Tab, Prozesskill an jedem Journal-Schritt und unvollständiger reiner
-   LNURLcash-/Legacy-Import benötigen zusätzliche Tests und einen belastbaren
-   Speicheradapter. Der Restore-Marker deckt bisher insbesondere Cashu-
-   Gesamtimporte ab.
-4. **Schlüssel und Isolation.** Plattformschlüssel und Wallet-Passwort sind
-   getrennt, aber ein bösartiger Parent-Host kann eine Web-Sandbox beeinflussen.
-   Wallet-Nostr-Key, dessen Ableitung/Verwahrung, Recovery-UX und Schutz gegen
-   kompromittierte Nappelin-Logins sind noch kein durchgehend implementierter
-   Systemnachweis. Die Wallet verarbeitet ihre Secrets im eigenen JS-Prozess.
-5. **Blossom/Nostr und Android fehlen als echte Integrationsnachweise.**
-   Bearlett besitzt noch keinen fertigen Remote-Backup-Client. Kein isolierter
-   Blossom-/Nostr-Roundtrip wurde für diesen Stand ausgeführt; TCG-Sync-Tests
-   verwenden Mocks. Android-App, Keystore, Signer, NFC, Kamera und echte
-   Lifecycle-/Gerätetests bleiben offen. Der Regtest benötigt diese Dienste nicht.
-6. **Weitere Prüfbreite.** Externe Protokollvektoren, weitere Mintimplementationen,
-   vollständige Abbruchmatrix in beiden Transferrichtungen und adversariale
-   Mint-/Hostantworten ausbauen. Tests ersetzen keine kryptografische Prüfung.
+1. **Device change is not yet a finished flow.** After backup restore the
+   old seed is treated permanently as a recovery source. In the regtest,
+   target note and change are rotated into a fresh wallet; the old
+   transfer journal stays `claiming`. A resumable migration flow
+   with linking and completion of both journals is missing. Do not unlock
+   the old seed with a scanned switch.
+2. **Host integration and storage contract.** Bearlett now requires explicit
+   `ok: true` on `storage.get`, `storage.set` and `storage.keys`.
+   Older hosts without this field are rejected. The preview host satisfies
+   this. A real Kehto/Paja/Nappelin host with durable store and Cashu
+   capability must be adapted and tested separately. An ACK alone still does
+   not prove an fsync or atomic disk commit.
+3. **Writer and crash bounds.** The local WeakMap lock protects only the same
+   adapter object. It does not replace an exclusive host lease and does not
+   cover every LNURLcash method or the entire cross-protocol transfer.
+   Multi-tab, process kill at every journal step and incomplete pure
+   LNURLcash/legacy import need additional tests and a durable
+   storage adapter. The restore marker so far covers Cashu
+   full imports in particular.
+4. **Keys and isolation.** Platform key and wallet password are
+   separate, but a malicious parent host can affect a web sandbox.
+   Wallet Nostr key, its derivation/custody, recovery UX and protection against
+   compromised Nappelin logins are not yet a continuously implemented
+   system proof. The wallet processes its secrets in its own JS process.
+5. **Blossom/Nostr and Android are missing as real integration proofs.**
+   Bearlett does not yet have a finished remote-backup client. No isolated
+   Blossom/Nostr round-trip was run for this state; TCG sync tests
+   use mocks. Android app, keystore, signer, NFC, camera and real
+   lifecycle/device tests remain open. The regtest does not need these services.
+6. **Further check breadth.** Expand external protocol vectors, further mint
+   implementations, the complete abort matrix in both transfer directions and
+   adversarial mint/host replies. Tests do not replace a cryptographic review.
 
-## Reproduzieren und lokal ansehen
+## Reproduce and inspect locally
 
-Aus `G:\Github\bearlett`, mit vorhandenen npm-Abhängigkeiten:
+From `G:\Github\bearlett`, with existing npm dependencies:
 
 ```powershell
 npm test
@@ -103,17 +104,17 @@ npm run build:napplet
 npm run build:notes
 ```
 
-Die lokale Vorschau ist unter `http://127.0.0.1:4190/wallet` verfügbar, solange
-der Preview-Prozess läuft. Sie verwendet In-Memory-Speicher und Mock-Mints;
-Neuladen verliert die Sitzung. Sie ist nicht an die realen Regtest-Mints gebunden.
-Zum erneuten Start in Terminal A:
+The local preview is available at `http://127.0.0.1:4190/wallet` while
+the preview process is running. It uses in-memory storage and mock mints;
+reload loses the session. It is not bound to the real regtest mints.
+To start again in terminal A:
 
 ```powershell
 $env:PORT='4190'
 node scripts/napplet-host.mjs
 ```
 
-In Terminal B, bei bereits laufendem eigenen Preview-Host:
+In terminal B, with an already running own preview host:
 
 ```powershell
 $env:BEARLETT_EXTERNAL_HOST='1'
@@ -121,23 +122,23 @@ $env:PLAYWRIGHT_JSON_OUTPUT_FILE='outputs/security-browser-results.json'
 node node_modules/@playwright/test/cli.js test --config playwright.napplet.config.ts --reporter=list,json
 ```
 
-Ohne externen Host die Variable entfernen und `npm run test:napplet:browser`
-verwenden. Regtest-Start, frischer Block bei alter Kette, Ports und Volume-
-Erhaltung stehen in [INFRASTRUCTURE](INFRASTRUCTURE-2026-09-09.md).
-Danach `npm run test:regtest`. Nur diesen Stack stoppen:
+Without an external host remove the variable and use `npm run test:napplet:browser`.
+Regtest start, fresh block on an old chain, ports and volume
+preservation are in [INFRASTRUCTURE](INFRASTRUCTURE-2026-09-09.md).
+Then `npm run test:regtest`. Stop only this stack:
 
 ```powershell
 wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml stop
 ```
 
-Die vorhandenen fünf Regtest-Dienste wurden wiederverwendet. Keine fremden
-Docker-Projekte geändert, keine Volumes gelöscht, nichts gekauft oder öffentlich
-bereitgestellt. Der fehlende Quellpfad für einen frischen LNURLmint-Imagebuild
-bleibt im Infrastrukturbericht ausgewiesen.
+The existing five regtest services were reused. No third-party
+Docker projects changed, no volumes deleted, nothing bought or publicly
+deployed. The missing source path for a fresh LNURLmint image build
+remains listed in the infrastructure report.
 
-Maschinenlesbare Ergebnisse liegen lokal unter `outputs/security-*-results.json`;
-weitere Logs unter `outputs/security-*.txt`. Entscheidungen stehen in der
-ignorierten SQLite-Datei `outputs/feasibility-2026-09-09/audit.sqlite` und werden
-mit Hashes der Testbelege in `docs/checks/security-evidence-2026-09-09.json`
-exportiert. Keine Wallet-Backups oder spendbaren Token werden eingecheckt.
-Die Übergabe enthält lokale Prüfungen; der unabhängige externe Audit steht aus.
+Machine-readable results live locally under `outputs/security-*-results.json`;
+further logs under `outputs/security-*.txt`. Decisions are in the
+ignored SQLite file `outputs/feasibility-2026-09-09/audit.sqlite` and are
+exported with hashes of the test evidence in `docs/checks/security-evidence-2026-09-09.json`.
+No wallet backups or spendable tokens are checked in.
+The handover contains local checks; the independent external audit is outstanding.
