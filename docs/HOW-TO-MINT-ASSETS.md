@@ -48,9 +48,12 @@ Werte, nichts darf auf die Edition-One-Standardwerte zurückfallen:
 - `NUTFT_CENSUS_PATH`: die Zensusdatei der Edition (`server/nutft-mint.js:70`).
 - `DB`: eigene SQLite-Datei (`server/table.js:2145`).
 
-Die Wallet prüft die Einheit mit `/^600B-(?:E1|G)$/` (`site/nutft-wallet.js:109`).
-Eine neue Einheit braucht diese Änderung in der Wallet, später ebenso in den
-Bearlett-Assets-Napplets.
+Auf `feature/g-mint-live` prüft die Wallet die Einheit noch mit
+`/^600B-(?:E1|G)$/` (`site/nutft-wallet.js:109`). Seit dem Branch
+`feature/nutft-catalog-blob` vom 10. September 2026 akzeptiert sie jedes
+NutFT-Keyset, also eine Einheit mit dem einzigen Betrag 1; eine Seite pinnt
+Editionen über `NUTFT_UNITS`, siehe
+[NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md), Abschnitt 8.
 
 Zwei Ausgabearten (`server/nutft-draw.js:60`, `:96`, Auswahl über
 `census.mint.issuance`, `:131`):
@@ -103,27 +106,28 @@ späterer Bildtausch ist eine neue Edition.
 Umgebungsvariablen aus `server/nutft-mint.js`, `server/funding.js`,
 `server/funding-cashu.js`, `server/beacon.js` und `server/table.js`:
 
-| Variable                                                            | Bedeutung                                                                  | Standard                                                                             |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `NUTFT_COLLECTION_ID`                                               | Sammlungs-ID und Einheit                                                   | `600B-E1`                                                                            |
-| `NUTFT_CATALOG_URI`                                                 | Absolute Katalogadresse, Pflicht vor der ersten Ausgabe                    | keiner                                                                               |
-| `NUTFT_CENSUS_PATH`                                                 | Zensusdatei                                                                | Edition-One-Zensus                                                                   |
-| `DB`                                                                | SQLite-Datei                                                               | `server/matches.db`                                                                  |
-| `PORT`                                                              | HTTP-Port                                                                  | `8777`                                                                               |
-| `TRUST_PROXY`                                                       | Proxy-Vertrauen                                                            | `loopback` empfohlen                                                                 |
-| `PUBLIC_URL`, `NUTFT_PUBLIC_BASE`                                   | Öffentliche Basisadresse                                                   | keiner                                                                               |
-| `NUTFT_FUNDING`                                                     | `lnd`, `phoenixd`, `cashu`, `mock`, `none`                                 | ohne Angabe: phoenixd bei `PHOENIXD_URL`, sonst lnd bei `LND_REST_URL`, sonst Gratis |
-| `PHOENIXD_URL` oder `LND_REST_URL` mit Macaroon                     | Backend-Zugang                                                             | keiner                                                                               |
-| `NUTFT_PRICE_MSAT`                                                  | Festpreis je Pack                                                          | `21000`                                                                              |
-| `NUTFT_PRICE_SCHEDULE`                                              | Preisleiter `"2100:21000,59775:420000,…"`, Preis wird beim Angebot fixiert | keine                                                                                |
-| `NUTFT_SALES`                                                       | `open`, `allowlist`, `signed`, `closed`                                    | `open`                                                                               |
-| `NUTFT_ALLOWLIST`, `NUTFT_ONE_PER_KEY`                              | Käuferbeschränkung                                                         | keine                                                                                |
-| `NUTFT_INVOICE_TTL_SECONDS`                                         | Rechnungsfrist, mindestens 60                                              | `900`                                                                                |
-| `NUTFT_CLAIM_GRACE_SECONDS`                                         | Abholfrist, mindestens TTL                                                 | `3600`                                                                               |
-| `NUTFT_RECONCILE_MS`                                                | Abgleichintervall                                                          | siehe `:372`                                                                         |
-| `NUTFT_BEACON`, `NUTFT_BEACON_SOURCE`, `NUTFT_BEACON_CONFIRMATIONS` | Ziehungs-Beacon                                                            | keiner                                                                               |
-| `NUTFT_ALLOW_VIRTUAL`                                               | erlaubt `mock`                                                             | aus                                                                                  |
-| `TCG_WALLET_BACKUP_ALLOWLIST`                                       | Backup-Relay-Allowlist                                                     | keine                                                                                |
+| Variable                                                            | Bedeutung                                                                           | Standard                                                                             |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `NUTFT_COLLECTION_ID`                                               | Sammlungs-ID und Einheit                                                            | `600B-E1`                                                                            |
+| `NUTFT_CATALOG_URI`                                                 | Absolute Katalogadresse, Pflicht vor der ersten Ausgabe                             | keiner                                                                               |
+| `NUTFT_CENSUS_PATH`                                                 | Zensusdatei                                                                         | Edition-One-Zensus                                                                   |
+| `NUTFT_CATALOG_MIRRORS`                                             | Blossom-Server mit dem Katalog-Blob, kommagetrennt; ab `feature/nutft-catalog-blob` | keine                                                                                |
+| `DB`                                                                | SQLite-Datei                                                                        | `server/matches.db`                                                                  |
+| `PORT`                                                              | HTTP-Port                                                                           | `8777`                                                                               |
+| `TRUST_PROXY`                                                       | Proxy-Vertrauen                                                                     | `loopback` empfohlen                                                                 |
+| `PUBLIC_URL`, `NUTFT_PUBLIC_BASE`                                   | Öffentliche Basisadresse                                                            | keiner                                                                               |
+| `NUTFT_FUNDING`                                                     | `lnd`, `phoenixd`, `cashu`, `mock`, `none`                                          | ohne Angabe: phoenixd bei `PHOENIXD_URL`, sonst lnd bei `LND_REST_URL`, sonst Gratis |
+| `PHOENIXD_URL` oder `LND_REST_URL` mit Macaroon                     | Backend-Zugang                                                                      | keiner                                                                               |
+| `NUTFT_PRICE_MSAT`                                                  | Festpreis je Pack                                                                   | `21000`                                                                              |
+| `NUTFT_PRICE_SCHEDULE`                                              | Preisleiter `"2100:21000,59775:420000,…"`, Preis wird beim Angebot fixiert          | keine                                                                                |
+| `NUTFT_SALES`                                                       | `open`, `allowlist`, `signed`, `closed`                                             | `open`                                                                               |
+| `NUTFT_ALLOWLIST`, `NUTFT_ONE_PER_KEY`                              | Käuferbeschränkung                                                                  | keine                                                                                |
+| `NUTFT_INVOICE_TTL_SECONDS`                                         | Rechnungsfrist, mindestens 60                                                       | `900`                                                                                |
+| `NUTFT_CLAIM_GRACE_SECONDS`                                         | Abholfrist, mindestens TTL                                                          | `3600`                                                                               |
+| `NUTFT_RECONCILE_MS`                                                | Abgleichintervall                                                                   | siehe `:372`                                                                         |
+| `NUTFT_BEACON`, `NUTFT_BEACON_SOURCE`, `NUTFT_BEACON_CONFIRMATIONS` | Ziehungs-Beacon                                                                     | keiner                                                                               |
+| `NUTFT_ALLOW_VIRTUAL`                                               | erlaubt `mock`                                                                      | aus                                                                                  |
+| `TCG_WALLET_BACKUP_ALLOWLIST`                                       | Backup-Relay-Allowlist                                                              | keine                                                                                |
 
 Eine zweite Instanz unter `/g` liest dieselben Namen mit Präfix `G_`
 (`server/table.js:2169-2191`); `G_NUTFT_DB` und `G_NUTFT_FUNDING` sind Pflicht.
@@ -147,6 +151,7 @@ curl https://<mint>/v1/info
 npm run test:js
 node server/nutft-draw.js
 uv run pytest
+node scripts/upload-catalog.mjs https://<mint> --go   # ab feature/nutft-catalog-blob: Katalog-Blob auf die Spiegel
 ```
 
 Der Katalog (`schema: 600b-nutft-catalog-v1`) enthält `collection_id`,

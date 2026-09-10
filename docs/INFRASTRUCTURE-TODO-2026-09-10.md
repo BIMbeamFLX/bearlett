@@ -151,9 +151,12 @@ Zu bauen oder zu betreiben:
 4. Backup-Relay mit Wallet-Allowlist (`TCG_WALLET_BACKUP_ALLOWLIST`,
    `server/relay-policy-patch.js`, `server/relay-wallet-allowlist.js`).
 5. Für die Bearlett-Assets-Napplets: Mint-URL und Spiegel über die
-   Resource-Policy, nicht im Code; die Einheiten-Prüfung
-   `/^600B-(?:E1|G)$/` in `site/nutft-wallet.js:109` muss für jede neue Edition
-   erweitert werden.
+   Resource-Policy, nicht im Code. Die feste Einheitenliste in
+   `site/nutft-wallet.js` ist auf `feature/nutft-catalog-blob` entfernt, und die
+   Mint liefert den Katalog dort als hashadressierten Blob mit
+   `NUTFT_CATALOG_MIRRORS`; siehe
+   [NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md), Abschnitt 8.
+   Offen: Katalog-Blob live veröffentlichen und Spiegel eintragen.
 6. Härtung: `NUTFT_REQUIRE_PRODUCTION_KEYS` ist nur dokumentiert, nicht
    implementiert; Verkaufsmodus `NUTFT_SALES`, Preisleiter
    `NUTFT_PRICE_SCHEDULE`, Rechnungs-TTL und Claim-Frist bewusst setzen.

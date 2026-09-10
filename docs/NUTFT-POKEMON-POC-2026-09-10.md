@@ -140,16 +140,75 @@ Blossom-Stand festgelegt (siehe Abschnitt 8).
 Nicht übernommen: unbegrenzte Auflage, CSPRNG ohne Beacon, Blobs nur auf der Mint,
 umgehostete Fremdrechte.
 
-## 8. Offene Prüfungen
+## 8. Umgesetzt am 10. September 2026
 
-1. Ob dnis LNURLcash-Wallet Assets trägt, die Karten statt Cashu-Proofs abbilden
-   könnten, und was dabei an Bindung, Auflage und Übergabe fehlt.
-2. Blossom nach hzrd149: Katalog und Bilder als Blobs mit Spiegelung, Serverliste
-   des Ausstellers, eigener Server.
-3. Erst danach die Reihenfolge der Übernahmen 1 bis 7 festlegen und in einem
-   Feature-Branch mit den vorhandenen 61 Mint-Tests umsetzen.
+Branch `feature/nutft-catalog-blob` in `TCG600nap`, aufgesetzt auf
+`feature/g-mint-live`; 434 Tests grün, 431 bestehende und 3 neue.
 
-## 9. Quellen
+- **Übernahme 1**, in der Form, die bestehende Editionen erlaubt: Die Mint
+  signiert den Katalog deterministisch (BIP-340 mit Null-Aux), friert die Bytes
+  beim Start ein, liefert sie unter `/nutft/catalog` und `/blossom/<sha256>` aus
+  und bewirbt in `/v1/info` die Felder `catalog_uri`, `catalog_blob_sha256` und
+  `catalog_blob_urls`; Spiegel kommen aus `NUTFT_CATALOG_MIRRORS`, für G aus
+  `G_NUTFT_CATALOG_MIRRORS`. Die Katalogadresse bleibt die Identität, der Blob ist
+  der Transport. Für neue Editionen darf `catalog_uri` selbst eine Blossom-Adresse
+  sein.
+- **Übernahme 2**: `site/nutft-wallet.js` akzeptiert jedes NutFT-Keyset, also eine
+  Einheit mit dem einzigen Betrag 1, wahlweise eingeschränkt über `NUTFT_UNITS`;
+  `NUTFT_STORE` ist wählbar. Die Wallet holt den Katalog zuerst per Hash von der
+  Mint, dann von den Spiegeln, prüft die Bytes gegen den Hash und fällt erst dann
+  auf die Katalogadresse zurück.
+- **Übernahme 3**: `encodeToken` für Token über 32 KiB. Der Fehler in cashu-ts
+  4.7.2 wurde am Paket verifiziert: Base64 in Blöcken zu 32.768 Bytes
+  (`lib/cashu-ts.es.js:184-192`); 4.10.1 hat die Blockbildung nicht mehr.
+- Neu: `scripts/blossom-auth.mjs` (BUD-11, base64url ohne Padding) und
+  `scripts/upload-catalog.mjs` (BUD-02-Upload des Katalog-Blobs, Prüfung je
+  Spiegel, verlangt mindestens zwei); README-Abschnitt "Content-addressed
+  publishing" erweitert.
+- Tests: `tests/js/nutft-catalog-blob.test.mjs` (Blob-Route, Determinismus über
+  einen Neustart, Wallet-Pfad mit manipuliertem Blob und Rückfall, fremde Einheit,
+  Allowlist, Token über 32 KiB) und `tests/js/helpers/browser-wallet.mjs`.
+
+Nicht umgesetzt: zweiphasiger Kauf und Decks (4, 5), Besitznachweis (6),
+Bündelung der Abhängigkeiten (7). PR 29 (NUT-09 und NUT-13) kollidiert in fünf
+Dateien mit dem Live-Branch und bleibt eine Merge-Entscheidung des Auftraggebers.
+
+## 9. Prüfungen: LNURLcash und Blossom
+
+### 9.1 Karten über LNURLcash statt Cashu
+
+Ergebnis: **nein**, nicht ohne eigene Protokollerweiterung. Befund vom 10. September 2026 gegen `lnurlcash/lnurl-wallet` (`6088135`, v0.10.7) und
+`lnurlcash/lnurl-mint` (`bd21f61`, v0.6.1):
+
+- "Asset" heißt bei dni der Bearer-Schein selbst, fungible Millisats; LUD-25 trägt
+  den Titel "Bearer assets". Kein Feld für Asset-ID, Einheit, Metadaten, Bild oder
+  Einmaligkeit im Datenmodell (`lnurl_mint/db.py:56-62`, `src/storage.ts:27-58`).
+- Die neuesten Funktionen sind Note-Tags (#116) und Addons (#117, Alpha): lokale
+  Labels und Manifeste, nichts davon auf der Leitung.
+- Unsere frühere Asset-Schicht (`lnurlcash/lnurl-mint#1`, NORD) wurde am 8. August 2026 ungemergt geschlossen; nichts davon liegt auf `main`.
+- LUD-25 (`lnurl/luds`, Branch `lnurlcash`, `ff65c09b` vom 10. September 2026,
+  Teil 2 neu geschrieben): `cs1` signiert Betrag und Schlüssel, keine Asset-Felder.
+- Gegenüber NutFT fehlen Bindungshash, Empfängersperre (P2BK), DLEQ und blinde
+  Signaturen; der Dienst sieht jede Rotation; Split und Merge sind immer erlaubt.
+
+Konsequenz: LNURLcash bleibt die Schiene für Sats in _Pay_; Karten bleiben
+Cashu-NutFT.
+
+### 9.2 Assets auf Blossom nach hzrd149
+
+Stand `hzrd149/blossom` `b5bd280` (15. Juni 2026), alle BUDs Entwurf: BUD-01
+GET und HEAD, BUD-02 Upload, BUD-03 Serverliste Kind 10063, BUD-04 `PUT /mirror`,
+BUD-10 `blossom:`-URI (seit November 2025), BUD-11 Auth Kind 24242 mit base64url,
+BUD-12 Liste und Löschen. Server `hzrd149/blossom-server` 6.3.0 (Deno 2, MIT,
+Regeln je Pubkey und MIME, Spiegelung, kein BUD-07); lokaler Klon
+`G:\Github\blossom-server` auf `1730b08`. `blossom.bimcvp.com` nimmt
+`application/json` an; ob `blossom.primal.net` und `nostr.download` JSON annehmen,
+ist nicht verifiziert. Umgesetzt siehe Abschnitt 8. Offen: Spiegelung per BUD-04
+statt Mehrfach-Upload in `upload-blobs.mjs`, Kind 10063 für den Aussteller,
+`check_blobs.py` mit mindestens zwei Servern je Hash, Katalog-Blob live
+veröffentlichen und die Spiegel in `NUTFT_CATALOG_MIRRORS` eintragen.
+
+## 10. Quellen
 
 Seite und Endpunkte: `/v1/info`, `/v1/keys`, `/nutft/catalog`, `/nutft/state`,
 `/nutft/quote`, `/nutft-wallet.js`, `/pokemon/app.js`, `/pokemon/host.js`,
@@ -160,3 +219,10 @@ Seite und Endpunkte: `/v1/info`, `/v1/keys`, `/nutft/catalog`, `/nutft/state`,
 <https://dev.pokemontcg.io/terms>. Lokal: `TCG600nap/server/nutft-mint.js`,
 `site/nutft-wallet.js`, `site/wallet.html`, `docs/adr/0001` bis `0004`,
 `docs/deploy-runbook-mint.md`.
+LNURLcash: <https://github.com/lnurlcash/lnurl-wallet>,
+<https://github.com/lnurlcash/lnurl-mint>, <https://github.com/lnurlcash/lnurl-mint/pull/1>,
+<https://github.com/lnurl/luds/blob/lnurlcash/25.md>. Blossom:
+<https://github.com/hzrd149/blossom>, <https://github.com/hzrd149/blossom-server>,
+<https://github.com/hzrd149/blossom-client-sdk>,
+<https://github.com/nostr-protocol/nips/blob/master/B7.md>. cashu-ts 4.7.2:
+`lib/cashu-ts.es.js` aus dem npm-Tarball.
