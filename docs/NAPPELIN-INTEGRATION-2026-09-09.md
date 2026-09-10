@@ -5,11 +5,28 @@ a rewrite or live release. Nappelin commit: `1b2f2c8ca84e779aa51c31ce2d274341aca
 
 ## Result
 
-The existing Nappelin identity is suitable as shared access. The wallet binding
-is not yet end-to-end: Hangar passes signatures through. The TCG backup
-additionally needs NIP-44. The same public key alone does not provide that
-capability. The ephemeral guest identity is not suitable as recoverable access
-to money.
+The existing Nappelin identity is suitable as shared access. The ephemeral
+guest identity is not suitable as recoverable access to money.
+
+**Correction of 10 September 2026.** This report said Hangar passed only
+signatures through and that NIP-44 was still missing. That is no longer true on
+branch `feat/hangar-marmot-spike`. Both signer paths now carry NIP-44, and the
+identity surface exposes it:
+
+- `apps/hangar/src/identity/extension.ts:14-15` reads `nip44.encrypt` and
+  `nip44.decrypt` off the NIP-07 provider and attaches them at `:40-42`, but only
+  when both are functions.
+- `apps/hangar/src/identity/bunker.ts:124-134` does the same for a NIP-46 signer
+  through `nip44Encrypt` and `nip44Decrypt`, attached at `:198-204`.
+- `apps/hangar/src/identity/types.ts:13` carries `readonly nip44?: Nip44Crypto`
+  with `encrypt` and `decrypt`.
+
+The field is optional on purpose, and that is what a wallet has to respect. A
+signer without those functions produces an identity with no `nip44` at all, and
+`apps/hangar/src/identity/worker.ts:16` builds the guest identity as
+`{pubkey, kind: 'guest'}` with none either. A guest therefore cannot decrypt, so
+it cannot open a wallet backup. That is the structural version of "guest is not
+access to money": it does not depend on Bearlett remembering the rule.
 
 ## What the code actually does
 
@@ -18,8 +35,8 @@ to money.
 | Hangar guest | `keyholder.ts` creates a random Nostr key in the worker. No secret export. No durable guest recovery path. |
 | Figure / stone | `object-code.ts` creates locator and password with 128 bits of randomness each. The code addresses a locker. It is not yet complete account provisioning. `keyholder.ts` loads the encrypted secret and decrypts locally. |
 | Locker | `locker-core.ts` implements the keys.justworks contract with NIP-49 and scrypt logN=16. It accepts this cost parameter explicitly. |
-| Browser signer | `extension.ts` delegates public key and signatures, controls account changes and signature replies. NIP-44 is not passed through so far. |
-| Public identity interface | `types.ts` contains `pubkey`, `kind`, `signEvent`, `dispose`; no backup encryption. |
+| Browser signer | `extension.ts` delegates public key and signatures, controls account changes and signature replies. On `feat/hangar-marmot-spike` it also passes NIP-44 through (`:14-15`, `:40-42`); the row's earlier claim to the contrary is corrected above. |
+| Public identity interface | `types.ts` contains `pubkey`, `kind`, `signEvent`, `dispose`, and since `feat/hangar-marmot-spike` an optional `nip44` with `encrypt` and `decrypt` (`types.ts:5-15`). |
 | Operator identities | `services/agent-api/scripts/mint-identity.mjs` creates platform/agent keys with NIP-49 logN=20. These are not player wallet keys and not directly compatible figure/stone locker blobs. Script not executed. |
 | TCG wallet | Separate P2BK spend key and existing wallet snapshot. `nostr-wallet-sync.js` encrypts via `identity.nip44`, uses Nostr and Blossom for large snapshots. |
 | Hangar network | `host.ts` currently runs a storage relay for napplets. It is not a persistent Nostr backup service. |
@@ -64,8 +81,11 @@ replacement wallet.
 
 ## Missing / still to prove
 
-- NIP-44 capability in the worker, worker protocol, identity adapter and
-  external signer path including account/session binding.
+- Account and session binding for NIP-44. The capability itself now exists on
+  both signer paths (see the correction above); what is unproven is that a
+  returning answer is bound to the request, the active wallet and the selected
+  signer account, and that a key or account change invalidates answers in
+  flight.
 - Compatibility adapter between existing TCG backup and current Hangar;
   persistent relay/Blossom service with permissions.
 - Complete figure/stone provisioning and recovery on a second device against the
