@@ -194,6 +194,10 @@ Plattformgebühr im Code.
   Settlement-, Marktplatz- oder Sicherheitsanspruch (`docs/nutft-demo.md`).
 - Zensus, Bilder und Katalog sind nach der ersten Ausgabe fest. Fehler danach
   bedeuten eine neue Edition mit eigener ID, Datenbank und Katalogadresse.
+- Brenos Pokémon-PoC zeigt zwei Verbesserungen, die hier noch fehlen: den Katalog
+  als hashadressierten Blob und eine Wallet-Bibliothek ohne feste Einheitenliste.
+  Befund und Übernahmeplan in
+  [NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md).
 
 ## 10. Quellen
 

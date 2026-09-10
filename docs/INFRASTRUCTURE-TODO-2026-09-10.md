@@ -113,7 +113,9 @@ Reihenfolge nach Abhängigkeit. Ohne A läuft kein Napplet außerhalb der Vorsch
 
 ### F. NutFT-Mint für Karten
 
-Befund aus `TCG600nap` `d753505`, Details in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md):
+Befund aus `TCG600nap` `d753505`, Details in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md);
+Vergleich mit Brenos Pokémon-Mint in
+[NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md):
 
 - Ein Node-Prozess `server/table.js` (`npm run table`), Port `PORT` mit Standard
   8777, reines HTTP. TLS kommt vom Reverse-Proxy: Caddy auf Loopback mit

@@ -203,6 +203,7 @@ docs/                architecture, audits, protocol notes, design brief, screens
 | [docs/NAPPELIN-INTEGRATION-2026-09-09.md](docs/NAPPELIN-INTEGRATION-2026-09-09.md)     | Shared identity and backup path with Nappelin (German)                         |
 | [docs/TCG-WALLET-2026-09-09.md](docs/TCG-WALLET-2026-09-09.md)                         | Existing trading-card wallet inventory (German)                                |
 | [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md)                           | UI design brief: composable napplets, assets, pay, animation stack (German)    |
+| [docs/NUTFT-POKEMON-POC-2026-09-10.md](docs/NUTFT-POKEMON-POC-2026-09-10.md)           | Review of a collaborator NutFT card mint and what to adopt (German)            |
 | [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources (German)                           |
 | [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                             |
 | [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, using existing mints (German)    |
