@@ -129,6 +129,13 @@ process restart, require a new unlock and journal check.
   active wallet and selected signer account.
 - On denial, account change, lost Activity answer or missing
   permission: do not create a new wallet. Do not repeat a transaction.
+- Later addition, 10 September 2026:
+  [Keycast](https://github.com/marmot-protocol/keycast) is a checked candidate
+  for the external-signer variant in the table above. It is MIT-licensed and
+  grants `sign_event`, `nip44_encrypt` and `nip44_decrypt` as separate scoped
+  capabilities, so it satisfies the requirement that a signer-only path without
+  decryption is not enough. Its caveats and what it does not provide are recorded
+  in the [infrastructure to-do list](INFRASTRUCTURE-TODO-2026-09-10.md).
 
 ### Recovery package without circular dependency
 
