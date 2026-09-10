@@ -15,6 +15,8 @@ import {
   verifySupplyPage
 } from './supply'
 import type {NostrEvent, SupplyExpectation, SupplyWitness} from './supply'
+import {createCollectionFetch} from './transport'
+import {nutftEndpoint} from '../../host/nutft-service'
 
 /* A mint in miniature: two printed cards and one free basic, fifteen packs
    of two counted cards each. The signer mirrors the mint's: BIP-340 with zero
@@ -673,5 +675,114 @@ describe('loadSupply', () => {
       ).latest.seq
     ).toBe(8)
     expect(foreign.witness().censusSha256).toBe(CENSUS)
+  })
+})
+
+/* Through the real door.
+ *
+ * Every test above injects `fetch`, which is the right shape for checking the
+ * verifier but blind to one thing: inside a napplet the request does not go
+ * out as a URL. It goes through the collection transport, which turns it into
+ * a named operation, and the host service, which turns that back into a URL
+ * from a fixed map. An operation missing its query key is invisible to an
+ * injected fetch and fatal in a shell, so the paged request is checked here
+ * across both.
+ */
+describe('loadSupply through the collection transport', () => {
+  const MINT = 'https://mint.example/e1'
+  const edition = {id: 'e1', mint: MINT}
+  const PAGE = 3
+
+  /* A shell that only ever sees an operation and a parameter. */
+  const shell = (events: NostrEvent[]) => {
+    const seen: string[] = []
+    const host = {
+      request: async (request: {
+        mint: string
+        operation: string
+        parameter?: string
+      }) => {
+        const {url} = nutftEndpoint(request as never)
+        const path = url.replace(MINT, '')
+        seen.push(path)
+        const from = new URL(url).searchParams.get('from')
+        const start = from
+          ? Number(from)
+          : Math.max(1, events.length - PAGE + 1)
+        const window = events.slice(start - 1, start - 1 + PAGE)
+        return {
+          status: 200,
+          body: JSON.stringify({
+            fault: null,
+            total: events.length,
+            page_size: PAGE,
+            first_seq: window.length ? start : 0,
+            last_seq: window.length ? start + window.length - 1 : 0,
+            events: window
+          })
+        }
+      }
+    }
+    return {seen, host}
+  }
+
+  const fetchThrough = (host: ReturnType<typeof shell>['host']) =>
+    createCollectionFetch({
+      mint: MINT,
+      nutft: host,
+      resource: {bytes: async () => new Blob()},
+      mirrors: []
+    })
+
+  const storage = (seed?: unknown) => {
+    const map = new Map<string, string>()
+    if (seed !== undefined)
+      map.set(supplyWitnessKeyFor(edition), JSON.stringify(seed))
+    return {
+      map,
+      getItem: async (k: string) => map.get(k) ?? null,
+      setItem: async (k: string, v: string) => {
+        map.set(k, v)
+      }
+    }
+  }
+
+  const witnessAt = (event: NostrEvent): SupplyWitness => {
+    const c = JSON.parse(event.content)
+    return {
+      seq: c.seq,
+      id: event.id,
+      censusSha256: CENSUS,
+      packs: c.packs,
+      issuedPerPack: c.issued_per_pack,
+      sold: c.sold,
+      remaining: c.remaining
+    }
+  }
+
+  it('asks for the newest page with no query', async () => {
+    const events = chainOf(8)
+    const s = shell(events)
+    const chain = await loadSupply({
+      fetch: fetchThrough(s.host),
+      storage: storage(),
+      edition,
+      expect: EXPECT
+    })
+    expect(chain.latest.seq).toBe(8)
+    expect(s.seen).toEqual(['/nutft/supply'])
+  })
+
+  it('reaches back with ?from=, which needs the operation to declare it', async () => {
+    const events = chainOf(8)
+    const s = shell(events)
+    const chain = await loadSupply({
+      fetch: fetchThrough(s.host),
+      storage: storage(witnessAt(events[1]!)),
+      edition,
+      expect: EXPECT
+    })
+    expect(chain.latest.seq).toBe(8)
+    expect(s.seen).toEqual(['/nutft/supply', '/nutft/supply?from=2'])
   })
 })

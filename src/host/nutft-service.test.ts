@@ -14,6 +14,18 @@ describe('nutftEndpoint', () => {
       url: 'https://tcg.example/g/nutft/catalog',
       method: 'GET'
     })
+    expect(nutftEndpoint({mint: MINT, operation: 'supply'})).toEqual({
+      url: 'https://tcg.example/g/nutft/supply',
+      method: 'GET'
+    })
+    /* The supply chain is served a page at a time; a wallet reaching back
+       to a snapshot it remembers has to be able to say where to start. */
+    expect(
+      nutftEndpoint({mint: MINT, operation: 'supply', parameter: '42'})
+    ).toEqual({
+      url: 'https://tcg.example/g/nutft/supply?from=42',
+      method: 'GET'
+    })
     expect(
       nutftEndpoint({mint: MINT, operation: 'blob', parameter: 'a'.repeat(64)})
     ).toEqual({
