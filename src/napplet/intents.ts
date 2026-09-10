@@ -9,11 +9,17 @@ import type {WalletHost} from './host'
 import {NOTE_DESIGN_CONVENTION, parseNoteDesignMessage} from './note-interface'
 import type {NoteDesign} from './design'
 import {decodeCashu} from './cashu/engine'
+import {
+  RECOVERY_CONVENTION,
+  parseRecoveryContext,
+  type RecoveryContext
+} from './recovery-interface'
 
 export const WALLET_CONVENTIONS = [
   'napplet:wallet/open',
   'napplet:wallet/receive',
   'napplet:wallet/pay',
+  RECOVERY_CONVENTION,
   NOTE_DESIGN_CONVENTION
 ] as const
 export type WalletRequest =
@@ -23,6 +29,7 @@ export type WalletRequest =
       sender: string
     }
   | {action: 'design'; design: NoteDesign; sender: string}
+  | {action: 'recovery'; context: RecoveryContext; sender: string}
 
 /** Validate opaque incoming data without fetching, persisting or spending anything. */
 export const parseWalletIntent = (
@@ -42,9 +49,16 @@ export const parseWalletIntent = (
     throw new Error('Invalid wallet request.')
   }
   const data = (payload ?? {}) as Record<string, unknown>
-  const action = topic.slice(
-    'napplet:wallet/'.length
-  ) as WalletRequest['action']
+  if (topic === RECOVERY_CONVENTION)
+    return {
+      action: 'recovery',
+      context: parseRecoveryContext(payload),
+      sender: sender.slice(0, 200)
+    }
+  const action = topic.slice('napplet:wallet/'.length) as Exclude<
+    WalletRequest['action'],
+    'recovery'
+  >
   if (action === 'open') return {action, value: '', sender}
   if (action === 'design')
     return {

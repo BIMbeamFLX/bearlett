@@ -345,6 +345,12 @@ function App() {
       })
   const accept = (): void => {
     const value = request()!
+    if (value.action === 'recovery') {
+      setTab('backup')
+      setMessage(
+        'Avatar recovery does not unlock this wallet. Use your existing wallet backup and password or its recovery phrase. No wallet data was changed.'
+      )
+    }
     if (value.action === 'receive') {
       setInput(value.value)
       setTab('receive')
@@ -412,6 +418,14 @@ function App() {
               fallback={
                 <section class="panel onboarding">
                   <p class="eyebrow">YOUR NOTES. YOUR CONTROL.</p>
+                  <Show when={request()?.action === 'recovery'}>
+                    <p class="notice" role="status">
+                      Avatar recovery does not unlock or restore this wallet.
+                      Use your existing wallet password, recovery phrase or
+                      backup. Creating a fresh wallet will not recover your
+                      funds. The guild request contains no wallet secrets.
+                    </p>
+                  </Show>
                   <h1>
                     {exists() ? 'Welcome back.' : 'A home for your sats.'}
                   </h1>
@@ -623,18 +637,22 @@ function App() {
                 >
                   <p class="eyebrow">REQUEST FROM ANOTHER NAPPLET</p>
                   <h2>
-                    {request()?.action === 'design'
-                      ? 'A new note design'
-                      : request()?.action === 'pay'
-                        ? 'Review a payment'
-                        : 'Review an incoming note'}
+                    {request()?.action === 'recovery'
+                      ? 'Restore your wallet separately'
+                      : request()?.action === 'design'
+                        ? 'A new note design'
+                        : request()?.action === 'pay'
+                          ? 'Review a payment'
+                          : 'Review an incoming note'}
                   </h2>
                   <p>Sender: {request()?.sender}</p>
                   <Show
                     when={receivedDesign()}
                     fallback={
                       <p>
-                        Review the details, then confirm the action yourself.
+                        {request()?.action === 'recovery'
+                          ? 'This is a navigation request, not proof of a completed guild recovery. Your wallet secrets and backups stay separate from your avatar login.'
+                          : 'Review the details, then confirm the action yourself.'}
                       </p>
                     }
                   >
@@ -657,9 +675,11 @@ function App() {
                     )}
                   </Show>
                   <button class="primary" disabled={busy()} onClick={accept}>
-                    {request()?.action === 'design'
-                      ? 'Apply received design'
-                      : 'Review details'}
+                    {request()?.action === 'recovery'
+                      ? 'Open backup and restore'
+                      : request()?.action === 'design'
+                        ? 'Apply received design'
+                        : 'Review details'}
                   </button>
                   <button disabled={busy()} onClick={() => setRequest(null)}>
                     Dismiss

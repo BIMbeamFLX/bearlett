@@ -283,3 +283,7 @@ constitute verification against a live mint or a deployed Kehto instance.
 
 The protocol is experimental. Recheck these contracts when upgrading the pinned
 Napplet packages.
+
+## Guild avatar recovery
+
+The wallet also accepts `napplet:wallet/recovery-v1` for separately reviewed Backup navigation. See [contract and boundaries](GUILD-RECOVERY.md).

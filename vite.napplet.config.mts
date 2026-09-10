@@ -38,7 +38,7 @@ export default defineConfig(({mode}) => {
                 convention: 'napplet:bearer-designer/open'
               }
             ]
-          : ['open', 'receive', 'pay', 'design'].map(action => ({
+          : ['open', 'receive', 'pay', 'design', 'recovery-v1'].map(action => ({
               slug: 'wallet',
               convention: `napplet:wallet/${action}`
             }))

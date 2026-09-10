@@ -235,3 +235,5 @@ and is used here for design review only.
 
 [MIT license](LICENSE). Protocols: [LUD-25](https://github.com/lnurl/luds/blob/lnurlcash/25.md)
 and [Cashu NUTs](https://github.com/cashubtc/nuts). Cashu uses `@cashu/cashu-ts` **4.10.1**.
+
+Avatar recovery integration: [Guild recovery contract](docs/GUILD-RECOVERY.md). Guild key changes only navigate to wallet restore; they never unlock or replace the vault.

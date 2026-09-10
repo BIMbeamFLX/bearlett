@@ -382,9 +382,9 @@ describe('untrusted intents and designs', () => {
       vi.fn(),
       vi.fn()
     )
-    expect(on).toHaveBeenCalledTimes(4)
+    expect(on).toHaveBeenCalledTimes(5)
     disconnect()
-    expect(close).toHaveBeenCalledTimes(4)
+    expect(close).toHaveBeenCalledTimes(5)
     expect(() =>
       listenWalletIntents(
         {storage, resource: {bytes: vi.fn()}},
