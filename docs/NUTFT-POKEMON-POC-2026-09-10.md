@@ -169,13 +169,21 @@ Branch `feature/nutft-catalog-blob` in `TCG600nap`, based on
   a restart, wallet path with a tampered blob and fallback, foreign unit,
   allowlist, tokens over 32 KiB) and `tests/js/helpers/browser-wallet.mjs`.
 
-Not implemented: two-phase purchase and decks (4, 5), proof of possession (6),
-bundling of dependencies (7); the specification for 4 and 6 is in
-`TCG600nap/docs/nutft-purchase-and-possession.md`. On GitHub: `main` is
-fast-forwarded to the live state, the catalogue blob is PR 30 against `main`, and
-Breno's PR 29 is rebased as PR 31 onto the catalogue blob, with two follow-up
-commits (restore in the keyset unit, catalogue check against the keyset); 436
-tests green.
+Adopted later the same day on branch `feature/nutft-purchase-possession`,
+specified in `TCG600nap/docs/nutft-purchase-and-possession.md`: the two-phase
+purchase (4) behind `NUTFT_PURCHASE_MODE`, where the quote withholds the cards
+and `POST /nutft/purchase` draws and reserves the pack under a buyer-chosen
+`purchase_id`, and the proof of possession (6) at `POST /nutft/possession`,
+which answers with a certificate signed by the catalogue key without spending
+anything. An unclaimed purchase is released after the claim grace. 440 tests
+green. Still not adopted: the fixed decks (5) and the bundling of dependencies
+(7).
+
+The trading-card repository carries this as three stacked pull requests:
+the catalogue blob as PR 30 against its `main`, Breno's PR 29 rebased onto it
+as PR 31 with two follow-up commits (restore in the keyset unit, catalogue
+check against the keyset, 436 tests green), and the purchase and possession
+work as PR 32. Its `main` is fast-forwarded to the live state.
 
 ## 9. Checks: LNURLcash and Blossom
 
