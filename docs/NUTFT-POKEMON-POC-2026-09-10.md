@@ -170,8 +170,11 @@ Branch `feature/nutft-catalog-blob` in `TCG600nap`, aufgesetzt auf
   Allowlist, Token über 32 KiB) und `tests/js/helpers/browser-wallet.mjs`.
 
 Nicht umgesetzt: zweiphasiger Kauf und Decks (4, 5), Besitznachweis (6),
-Bündelung der Abhängigkeiten (7). PR 29 (NUT-09 und NUT-13) kollidiert in fünf
-Dateien mit dem Live-Branch und bleibt eine Merge-Entscheidung des Auftraggebers.
+Bündelung der Abhängigkeiten (7); die Spezifikation für 4 und 6 liegt in
+`TCG600nap/docs/nutft-purchase-and-possession.md`. Auf GitHub: `main` steht per
+Fast-Forward auf dem Live-Stand, der Katalog-Blob ist PR 30 gegen `main`, und
+Brenos PR 29 ist als PR 31 auf den Katalog-Blob rebased, mit zwei Folge-Commits
+(Restore in der Keyset-Einheit, Katalogprüfung gegen das Keyset); 436 Tests grün.
 
 ## 9. Prüfungen: LNURLcash und Blossom
 

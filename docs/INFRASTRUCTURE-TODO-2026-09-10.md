@@ -62,6 +62,33 @@ Reihenfolge nach Abhängigkeit. Ohne A läuft kein Napplet außerhalb der Vorsch
    UI-DESIGN Abschnitt 6 beschrieben.
 5. Persistenter Host-Store mit Quota- und I/O-Fehlerinjektion für Tests.
 
+Befund Kehto vom 10. September 2026 (Entscheidung: Shell zuerst über den
+Kehto-Vertrag):
+
+- Korrektur zum Inventar: `14a14155` ist der lokale Patch-Commit auf Branch
+  `feature/cashu-capability`, Basis `a7e0d12f`. Das ist zugleich der heutige
+  Upstream-Stand von `kehto/web` (7. September 2026); seither ist nichts
+  gelandet, und `contributions/kehto-cashu.patch` wendet sich sauber auf Upstream
+  an. Der gepatchte Checkout liegt noch unter dem alten Codex-Pfad mit
+  `node_modules`, aber ohne gebautes Paja; `G:\Github\kehto-web` ist ein alter
+  Stand ohne Patch.
+- Der Patch liefert `cashu:request` als eigene, nie implizit gewährte
+  Fähigkeit, den Dienst mit festem `/v1`-Endpunktplan, nur Einheit `sat`, und
+  eine Writer-Lease je Speicherbereich im Speicher des Hosts. In Paja ist der
+  Dienst noch nicht registriert; `createDevServices` und die Schalterliste
+  brauchen den Eintrag.
+- Betrieb mit Intents: `pnpm paja` im gepatchten Checkout, ein `naddr` je
+  Napplet. Vorher signierte Manifeste (Kind 35129), ein erreichbarer Relay und
+  ein Blossom-Server für das Artefakt; Paja kennt keine lokale Dateiinstallation.
+  Kaltstart liefert genau ein `inc.event` mit der Konvention nach `shell.ready`.
+- Lücken gegenüber dem Design: kein persistenter Standard-Handler je Archetyp
+  und kein Chooser (Ambiguität wird abgelehnt); kein Fenster-je-Speicherbereich
+  außer der Cashu-Lease; Resource-Policy erlaubt jedes HTTPS bis 10 MB ohne
+  Allowlist; Host-Store nur localStorage mit 512 KiB Quote, kein IndexedDB.
+- Reihenfolge: frischen Upstream-Checkout patchen und Paja bauen, Cashu-Dienst
+  registrieren, beide Napplets signiert installieren, dann Standard-Handler,
+  Fenster-Sperre und Resource-Allowlist über die Origin-Grant-Hooks ergänzen.
+
 ### B. Identität und Signer
 
 1. Wiederherstellbare Nappelin-Identität als Zugang; Gast nur temporär.
