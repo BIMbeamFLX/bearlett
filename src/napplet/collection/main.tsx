@@ -5,8 +5,11 @@ import {installNutftShim} from '../../host/nutft-shim'
 import {startCollectionWallet} from './bootstrap'
 import type {NutFTWalletApi} from './bootstrap'
 import {buildCollectionView, filterStacks, scarcityRatio} from './cards'
-import type {CardStack, CollectionView, Snapshot} from './cards'
+import type {CardAsset, CardStack, CollectionView, Snapshot} from './cards'
+import {issuedCounts, loadSupply} from './supply'
+import type {SupplyChain} from './supply'
 import {createFaceCache} from './faces'
+import type {AsyncStore} from './bootstrap'
 import {EDITIONS} from './editions'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
 import './collection.css'
@@ -30,6 +33,12 @@ const TITLE = EDITIONS[EDITION.id]?.title ?? EDITION.id
 
 /** A card is foil when the catalogue prints few of it. */
 const FOIL_BELOW = 60
+
+const when = (unixSeconds: number): string =>
+  new Date(unixSeconds * 1000).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  })
 
 const truncate = (value: string, keep = 10): string =>
   value.length <= keep * 2 + 1
@@ -104,8 +113,11 @@ function App() {
   const [recipient, setRecipient] = createSignal('')
   const [handedOver, setHandedOver] = createSignal('')
   const [mine, setMine] = createSignal('')
+  const [supply, setSupply] = createSignal<SupplyChain | null>(null)
+  const [supplyFault, setSupplyFault] = createSignal('')
 
   let wallet: NutFTWalletApi | null = null
+  let storage: AsyncStore | null = null
   let faces: ReturnType<typeof createFaceCache> | null = null
   let shim: ReturnType<typeof installNutftShim> | null = null
 
@@ -118,6 +130,58 @@ function App() {
     })
   )
 
+  /* Issued so far per card, from the verified ledger. Null until verified. */
+  const issued = createMemo(() => {
+    const chain = supply()
+    return chain ? issuedCounts(chain.latest, catalog()) : null
+  })
+
+  const printedLine = (asset: CardAsset): string => {
+    const count = issued()?.get(asset.asset_id)
+    if (count) return `${count.issued} of ${count.copies} issued`
+    return asset.copies ? `${asset.copies} printed` : 'uncapped'
+  }
+
+  /* The scarcity claim is checked separately from the cards. A chain that
+     fails shows its reason and no issued counts; the cards stay, because
+     they are proofs and the ledger is a claim. */
+  const checkSupply = async (snapshot: Snapshot) => {
+    const found = snapshot.catalog
+    if (
+      !storage ||
+      !found?.issuer_pubkey ||
+      !found.census_sha256 ||
+      !found.collection_id ||
+      !found.assets
+    ) {
+      setSupply(null)
+      setSupplyFault(
+        'The catalogue does not name its issuer, so supply cannot be checked.'
+      )
+      return
+    }
+    try {
+      setSupply(
+        await loadSupply({
+          fetch: globalThis.fetch,
+          storage,
+          edition: EDITION,
+          expect: {
+            issuer: found.issuer_pubkey,
+            collectionId: found.collection_id,
+            censusSha256: found.census_sha256,
+            catalogUri: found.catalog_uri,
+            assets: found.assets
+          }
+        })
+      )
+      setSupplyFault('')
+    } catch (error) {
+      setSupply(null)
+      setSupplyFault(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const refresh = async () => {
     if (!wallet) return
     setBusy('Reading the mint')
@@ -126,6 +190,7 @@ function App() {
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
+      await checkSupply(snapshot)
     } catch (error) {
       setFailure(readable(error))
     } finally {
@@ -136,6 +201,7 @@ function App() {
   onMount(async () => {
     try {
       const host = getWalletHost()
+      storage = host.storage
       shim = installNutftShim()
       /* One collection is open in one window. The lease is taken before any
          card is read, so a second window is told plainly instead of racing. */
@@ -241,10 +307,38 @@ function App() {
                   <dt>Duplicates</dt>
                   <dd>{v().counters.duplicates}</dd>
                 </div>
+                <Show when={supply()}>
+                  {chain => (
+                    <div>
+                      <dt>Packs issued</dt>
+                      <dd>
+                        {chain().latest.sold}
+                        <span class="counters__of">
+                          {' '}
+                          of {chain().latest.packs}
+                        </span>
+                      </dd>
+                    </div>
+                  )}
+                </Show>
               </dl>
             )}
           </Show>
         </header>
+
+        <Show when={supply()}>
+          {chain => (
+            <p class="supply">
+              Supply attested {when(chain().latest.at)}, snapshot{' '}
+              {chain().latest.seq}, signed by the issuer and checked here.
+            </p>
+          )}
+        </Show>
+        <Show when={supplyFault()}>
+          <p class="supply supply--bad" role="status">
+            Supply unverified. {supplyFault()}
+          </p>
+        </Show>
 
         <Show when={failure()}>
           <div class="notice notice--bad" role="alert">
@@ -357,7 +451,7 @@ function App() {
                           <div class="card__meta">
                             <p class="card__name">{stack.asset.name}</p>
                             <p class="card__tier">
-                              {stack.asset.tier} · {stack.asset.copies} printed
+                              {stack.asset.tier} · {printedLine(stack.asset)}
                             </p>
                           </div>
                         </button>
@@ -434,6 +528,16 @@ function App() {
                           {ratio => <> · one in {ratio()}</>}
                         </Show>
                       </dd>
+                      <Show when={issued()?.get(stack().asset.asset_id)}>
+                        {count => (
+                          <>
+                            <dt>Issued</dt>
+                            <dd>
+                              {count().issued} of {count().copies}
+                            </dd>
+                          </>
+                        )}
+                      </Show>
                       <dt>Held</dt>
                       <dd>{stack().count}</dd>
                       <dt>Binding</dt>

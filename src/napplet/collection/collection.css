@@ -530,3 +530,25 @@
     transform: none;
   }
 }
+
+/* ---------------------------------------------------------------- supply -- */
+
+.counters__of {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--ink-quiet);
+}
+
+.supply {
+  margin: 12px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--checked);
+}
+
+.supply--bad {
+  color: var(--ember);
+}

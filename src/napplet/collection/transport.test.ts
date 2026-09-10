@@ -33,6 +33,10 @@ describe('routeRequest', () => {
       kind: 'operation',
       operation: 'quote'
     })
+    expect(routeRequest(`${MINT}/nutft/supply`, 'GET', where)).toEqual({
+      kind: 'operation',
+      operation: 'supply'
+    })
     expect(
       routeRequest(`${MINT}/nutft/quote?deck=blackout`, 'GET', where)
     ).toEqual({kind: 'operation', operation: 'quote', parameter: 'blackout'})

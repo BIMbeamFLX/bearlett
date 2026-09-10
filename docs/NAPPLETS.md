@@ -81,6 +81,30 @@ The recipient Wallet tab must be open for this local simulation. Production
 shells own handler discovery and any background startup. There is no route
 switcher or app selection by URL hash. `build:designer` remains a build alias.
 
+### The collection checks the mint's supply ledger
+
+Scarcity is a claim about the mint's books, so the napplet does not take
+`/nutft/state` at its word. The mint signs its figures on a timer: one Nostr
+event per snapshot, kind 7610, with the catalogue key the wallet already
+trusts, each snapshot naming the one before it. The napplet fetches the whole
+chain through the `supply` operation and verifies it in
+`src/napplet/collection/supply.ts`: signatures, sequence, that no count ever
+grows, that packs sold never shrink, and that printed − remaining equals sold
+× issued per pack.
+
+The figures are cards **issued**, not cards allocated. A mint that takes
+committed purchases reserves a pack before anyone claims it and puts it back
+if nobody does, so its own counts rise and fall; the mint gives those
+reservations back before signing, which is what makes "no count ever grows" a
+sound thing to insist on here. Its draw commitment follows allocation and is
+not part of a snapshot, so nothing in this file checks it. The last snapshot seen is remembered in the shell's
+storage, so a mint that rewrites a snapshot a holder has already seen is
+caught on the next open.
+
+A chain that fails any check shows its reason and no issued counts. The cards
+themselves are unaffected: they are proofs, the ledger is a claim. The event
+format is specified in the mint repository, `docs/nutft-supply-ledger.md`.
+
 ## Wallet use
 
 1. Save the generated BIP39 recovery phrase and create a wallet with a password
