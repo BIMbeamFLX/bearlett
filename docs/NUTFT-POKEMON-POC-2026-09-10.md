@@ -207,8 +207,8 @@ Status `hzrd149/blossom` `b5bd280` (15 June 2026), all BUDs draft: BUD-01
 GET and HEAD, BUD-02 upload, BUD-03 server list kind 10063, BUD-04 `PUT /mirror`,
 BUD-10 `blossom:` URI (since November 2025), BUD-11 auth kind 24242 with
 base64url, BUD-12 list and delete. Server `hzrd149/blossom-server` 6.3.0 (Deno 2,
-MIT, rules per pubkey and MIME, mirroring, no BUD-07); local clone
-`G:\Github\blossom-server` at `1730b08`. `blossom.bimcvp.com` accepts
+MIT, rules per pubkey and MIME, mirroring, no BUD-07); checked clone of
+`hzrd149/blossom-server` at `1730b08`. `blossom.bimcvp.com` accepts
 `application/json`; whether `blossom.primal.net` and `nostr.download` accept JSON
 is not verified. Implemented: see section 8. Open: mirroring via BUD-04 instead
 of multi-upload in `upload-blobs.mjs`, kind 10063 for the issuer,

@@ -1,6 +1,6 @@
 # Minting your own assets: what it takes
 
-As of 10 September 2026. Basis: `G:\Github\TCG600nap` `d753505`
+As of 10 September 2026. Basis: the TCG wallet at `d753505`
 (`feature/g-mint-live`), read only. All paths and line numbers refer to
 that repository unless stated otherwise. Nothing here is a
 security proof. The limits are in section 9.

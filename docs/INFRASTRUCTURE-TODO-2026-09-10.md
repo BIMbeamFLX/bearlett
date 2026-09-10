@@ -30,18 +30,17 @@ From the inventory of 9 September, unchanged:
   Bob `v0.19.3-beta` with a funded channel, Nutshell, LNURLmint;
   `tests/integration/compose.yaml`, `scripts/regtest.mjs`, `npm run test:regtest`.
   Idle about 341 MiB RAM, images about 2.2 GB together.
-- Real Kehto as a patched old checkout `14a14155`; package tests passed.
-- Local foreign services from `terrcvm-corpus`: strfry on 7777, Blossom on 3000 and
-  8787, one of them unhealthy; not part of Bearlett.
+- Real Kehto as a patched checkout of `kehto/web` (`14a14155` on
+  `a7e0d12`); package tests passed.
 - Blossom mirrors for card images: `blossom.primal.net`, `blossom.bimcvp.com`,
   `nostr.download`. Encrypted TCG backups currently run through
   `blossom.bimcvp.com` and `wss://relay.bimcvp.com` (kind 37378).
 - Development host `scripts/napplet-host.mjs` with an in-memory test mint; not a
   production host.
 
-Missing after the copy to `G:`: the `work/lnurl-mint` checkout and the
-Docker volumes of the previous location. Restore them before every regtest, as
-described in INFRASTRUCTURE-2026-09-09.
+`work/lnurl-mint` is gitignored. Restore that checkout or reuse an existing
+LNURLmint image before every fresh regtest, as described in
+INFRASTRUCTURE-2026-09-09.
 
 ## What has to be built
 
@@ -69,9 +68,6 @@ Kehto contract):
   `feature/cashu-capability`, base `a7e0d12f`. That is also today's
   upstream state of `kehto/web` (7 September 2026). Nothing has landed since.
   `contributions/kehto-cashu.patch` applies cleanly to upstream.
-  The patched checkout still lives under the old Codex path with
-  `node_modules`, but without a built Paja. `G:\Github\kehto-web` is an old
-  tree without the patch.
 - The patch supplies `cashu:request` as its own capability, never granted
   implicitly, the service with a fixed `/v1` endpoint plan, unit `sat` only, and
   a writer lease per storage scope in the host's memory. In Paja the
