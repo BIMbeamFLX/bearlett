@@ -84,8 +84,9 @@ procedure. Granola/Monero/USDT remains V2.
 
 ## Reproduced tests and limits
 
-```powershell
-node --test G:/Github/nappelin.com/apps/hangar/test/identity.test.mjs G:/Github/nappelin.com/apps/hangar/test/locker.test.mjs G:/Github/nappelin.com/apps/hangar/test/login-lifecycle.test.mjs
+```sh
+# From the Nappelin Hangar checkout
+node --test apps/hangar/test/identity.test.mjs apps/hangar/test/locker.test.mjs apps/hangar/test/login-lifecycle.test.mjs
 ```
 
 Result: **27 passed, 0 failed**. Contains real local cryptography and locker
@@ -93,16 +94,17 @@ test vectors. Locker requests and browser lifecycle are simulated. Additionally
 **6 TCG wallet sync tests passed**, with simulated signer/relay/Blossom. That is
 not a live end-to-end proof of the connection.
 
-Logs: `outputs/feasibility-2026-09-09/nappelin-identity-tests.log` and
-`tcg-wallet-sync.log` in the Bearlett repository. Decisions recorded in
-`audit.sqlite` before this report was written.
-
 ## Primary code evidence
 
-- `G:/Github/nappelin.com/apps/hangar/src/identity/{types,keyholder,object-code,locker-core,extension,worker,worker-client,slot}.ts`
-- `G:/Github/nappelin.com/apps/hangar/src/{host,login}.ts`
-- `G:/Github/nappelin.com/services/agent-api/scripts/mint-identity.mjs`
-- `G:/Github/TCG600nap/site/{napplet,nostr-wallet-sync,nutft-wallet}.js`
+In the Nappelin repository:
+
+- `apps/hangar/src/identity/{types,keyholder,object-code,locker-core,extension,worker,worker-client,slot}.ts`
+- `apps/hangar/src/{host,login}.ts`
+- `services/agent-api/scripts/mint-identity.mjs`
+
+In the TCG wallet repository:
+
+- `site/{napplet,nostr-wallet-sync,nutft-wallet}.js`
 
 Infographic: `nappelin-wallet-v1-infographic-2026-09-09.png`, produced with the
 built-in ImageGen tool. Prompt: `nappelin-wallet-v1-infographic-prompt.txt`. The

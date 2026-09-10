@@ -94,9 +94,9 @@ Bearlett-in-Nappelin proof.
 
 ## Reproduce and inspect locally
 
-From `G:\Github\bearlett`, with existing npm dependencies:
+From the repository root, with existing npm dependencies:
 
-```powershell
+```sh
 npm test
 npm run tsc
 npm run build
@@ -127,8 +127,8 @@ Regtest start, fresh block on an old chain, ports and volume
 preservation are in [INFRASTRUCTURE](INFRASTRUCTURE-2026-09-09.md).
 Then `npm run test:regtest`. Stop only this stack:
 
-```powershell
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml stop
+```sh
+docker compose -f tests/integration/compose.yaml stop
 ```
 
 The existing five regtest services were reused. No third-party
@@ -136,9 +136,6 @@ Docker projects changed, no volumes deleted, nothing bought or publicly
 deployed. The missing source path for a fresh LNURLmint image build
 remains listed in the infrastructure report.
 
-Machine-readable results live locally under `outputs/security-*-results.json`;
-further logs under `outputs/security-*.txt`. Decisions are in the
-ignored SQLite file `outputs/feasibility-2026-09-09/audit.sqlite` and are
-exported with hashes of the test evidence in `docs/checks/security-evidence-2026-09-09.json`.
-No wallet backups or spendable tokens are checked in.
+Machine-readable results and logs from this check stay local and are
+gitignored. No wallet backups or spendable tokens are checked in.
 The handover contains local checks; the independent external audit is outstanding.

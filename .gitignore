@@ -15,3 +15,6 @@ dist-designer/
 dist-notes/
 work/
 outputs/
+docs/checks/*.json
+STARTPROMPT.md
+docs/*-infographic-prompt.txt

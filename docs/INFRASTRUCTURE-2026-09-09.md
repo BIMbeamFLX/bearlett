@@ -2,69 +2,60 @@
 
 As of 9 September 2026. Results and their limits are in the
 [feasibility report](FEASIBILITY-2026-09-09.md). Source versions are in
-[SOURCES](SOURCES-2026-09-09.md). All Windows commands below are PowerShell
-unless stated otherwise. Working directory: `G:\Github\bearlett`.
+[SOURCES](SOURCES-2026-09-09.md). Commands run from the repository root.
 The test configuration contains only public regtest credentials.
+On Windows, Docker runs inside WSL Ubuntu; pass the WSL path of this repo
+to `docker compose` when the engine is not on the Windows PATH. See also
+[the regtest README](../tests/integration/README.md).
 
-## Actual inventory
+## Tested stack
 
-| Component                         | Present state / purpose                                                                                                     | Port / persistent data                                                                                  |
+| Component                         | Purpose                                                                                                                     | Port / persistent data                                                                                  |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Node/npm/Git                      | 24.15.0 / 11.12.1 / 2.53.0.windows.1; builds and tests run                                                                  | No service; node_modules, lockfile, Git                                                                 |
-| pnpm                              | Present and used for the workshop; the project declares 10.8.0                                                              | Package cache; the pnpm patch version actually run was not logged separately                            |
-| WSL Ubuntu 2                      | Present; stopped at the start of the session                                                                                | Docker lives inside WSL; no Windows docker on PATH                                                      |
-| Docker/Compose                    | Engine 29.3.0 / Compose 5.1.0                                                                                               | Local WSL daemon, existing images/volumes                                                               |
-| Bitcoin                           | `bitcoin/bitcoin:29.0`, regtest                                                                                             | Internal only: RPC 18443, P2P 18444, ZMQ 28332/28333; **anonymous image volume** under `/home/bitcoin/.bitcoin` |
-| LND Alice/Bob                     | `lightninglabs/lnd:v0.19.3-beta`; connected funded regtest channel                                                          | Each internal REST 8080, gRPC 10009, peer 9735; `bearlett-regtest_alice`, `_bob`                        |
-| Nutshell                          | `cashubtc/nutshell:0.20.3`, LND Bob, input fee 100 PPK                                                                      | `127.0.0.1:43338` → 3338; `bearlett-regtest_cashu`; Bob access is read-only                             |
-| LNURLmint                         | Existing image `bearlett-regtest-lnurl:latest`, source `bd21f6119ee70297c127531e139d517453c26587`, LND Alice, 1 sat base fee | `127.0.0.1:48111` → 8111; `bearlett-regtest_lnurl`; Alice access is read-only                           |
-| Playwright/Chromium               | Package 1.63.0, browser build 1243 present; 12 tests run                                                                    | Short-lived local preview server; screenshots/test results                                              |
-| Real Kehto                        | Patched old checkout `14a14155`; package tests run                                                                          | Take the host port from the Paja output at later start; host data/signer profile are separate           |
-| Ordinary dedicated backup relay   | **Missing as an isolated, verified Bearlett service**                                                                       | Intended: loopback 47777, dedicated relay database                                                      |
-| Cashu-sync CAS relay              | Source present, Go tests passed; not started as a service                                                                   | Not required for V1; dedicated process/SQLite only for a later experiment                               |
-| Android                           | `java`, `adb` and usual SDK directories not found; no emulator/device evidence                                              | SDK/JDK, AVD, debug APK, keystore and app DB are missing                                                |
-| Go                                | No host Go found; tests with `golang:1.26-alpine`                                                                           | Temporary test container, no relay database                                                             |
+| Node/npm                          | Builds and tests. Check run used Node 24.15.0 / npm 11.12.1. package.json names npm 12.0.2                                  | node_modules, lockfile                                                                                  |
+| Docker/Compose                    | Check run used Engine 29.3.0 / Compose 5.1.0                                                                                | Local daemon, named `bearlett-regtest_*` volumes                                                        |
+| Bitcoin                           | `bitcoin/bitcoin:29.0`, regtest                                                                                             | Internal only: RPC 18443, P2P 18444, ZMQ 28332/28333                                                    |
+| LND Alice/Bob                     | `lightninglabs/lnd:v0.19.3-beta`; connected funded regtest channel                                                          | Each internal REST 8080, gRPC 10009, peer 9735                                                          |
+| Nutshell                          | `cashubtc/nutshell:0.20.3`, LND Bob, input fee 100 PPK                                                                      | `127.0.0.1:43338` → 3338; Bob access is read-only                                                       |
+| LNURLmint                         | Image `bearlett-regtest-lnurl:latest`, source `bd21f6119ee70297c127531e139d517453c26587`, LND Alice, 1 sat base fee         | `127.0.0.1:48111` → 8111; Alice access is read-only                                                     |
+| Playwright/Chromium               | Package 1.63.0; 12 browser tests                                                                                            | Short-lived local preview server                                                                        |
+| Kehto                             | Optional host. Patch `contributions/kehto-cashu.patch` on `kehto/web` `a7e0d12`; local patch commit was `14a14155`          | Host port from Paja output; host data/signer profile are separate                                       |
+| Dedicated backup relay            | **Missing as an isolated, verified Bearlett service**                                                                       | Intended: loopback 47777, dedicated relay database                                                      |
+| Cashu-sync CAS relay              | Not required for V1                                                                                                         | Dedicated process/SQLite only for a later experiment                                                    |
+| Android                           | Not part of this check                                                                                                      | SDK/JDK, AVD, debug APK, keystore and app DB remain to be set up                                        |
+| Go                                | Relay tests in `golang:1.26-alpine`; no host Go required                                                                    | Temporary test container                                                                                |
 
-Full image IDs are in `outputs/feasibility-2026-09-09/regtest-images.txt`.
-These are local image IDs, not claimed pullable registry digests. The
-running combination was tested. A fresh build was not reproduced.
-After completion **only the five Bearlett regtest containers were stopped**.
-All data volumes were kept.
-
-Starting WSL also started foreign `terrcvm-corpus` services because of
-existing restart policies: strfry on 7777, Blossom on 3000/8787. One Blossom
-service reported unhealthy. These services were neither changed nor stopped
-and do not count as Bearlett test infrastructure.
+Local image IDs are not pullable registry digests. The running combination
+was tested. A fresh build from a clean machine was not reproduced.
+After the check **only the five Bearlett regtest containers were stopped**.
+Named volumes were kept. Unrelated Docker projects are not part of this stack.
 
 ## Minimal environment: restart the existing regtest
 
-The copy on G: does not contain `work/lnurl-mint`. The existing image and the
-containers are enough to restart. First check the inventory:
+`work/lnurl-mint` is gitignored. An existing image is enough to restart.
+From the repository root:
 
-```powershell
-Set-Location G:\Github\bearlett
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml ps -a
-wsl -d Ubuntu -- docker image inspect bearlett-regtest-lnurl:latest --format '{{.Id}}'
-wsl -d Ubuntu -- docker volume ls --filter name=bearlett-regtest
-wsl -d Ubuntu -- docker inspect bearlett-regtest-bitcoin-1 --format '{{json .Mounts}}'
+```sh
+docker compose -f tests/integration/compose.yaml ps -a
+docker image inspect bearlett-regtest-lnurl:latest --format '{{.Id}}'
+docker volume ls --filter name=bearlett-regtest
 ```
 
-Leave this running in the foreground in terminal A so WSL is not stopped as idle.
+Leave this running in the foreground in terminal A.
 `--no-recreate` keeps the Bitcoin volume mapping in particular:
 
-```powershell
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml up --no-recreate --no-build
+```sh
+docker compose -f tests/integration/compose.yaml up --no-recreate --no-build
 ```
 
 In terminal B, mine a fresh block if the chain is already present and older.
 A wallet that is already loaded reports a corresponding error on `loadwallet`.
 Fix any other error before continuing:
 
-```powershell
-Set-Location G:\Github\bearlett
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only loadwallet bearlett
-$bearlettMiningAddress = wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only getnewaddress
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only generatetoaddress 1 $bearlettMiningAddress
+```sh
+docker compose -f tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only loadwallet bearlett
+bearlettMiningAddress=$(docker compose -f tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only getnewaddress)
+docker compose -f tests/integration/compose.yaml exec -T bitcoin bitcoin-cli -regtest -rpcuser=bearlett -rpcpassword=regtest-only generatetoaddress 1 "$bearlettMiningAddress"
 node scripts/regtest.mjs
 npm run test:regtest
 ```
@@ -77,10 +68,10 @@ and channel open. The special path above is for the existing inventory.
 
 Check status explicitly, then stop only this project:
 
-```powershell
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T alice lncli --network=regtest getinfo
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T alice lncli --network=regtest listchannels
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml stop
+```sh
+docker compose -f tests/integration/compose.yaml exec -T alice lncli --network=regtest getinfo
+docker compose -f tests/integration/compose.yaml exec -T alice lncli --network=regtest listchannels
+docker compose -f tests/integration/compose.yaml stop
 ```
 
 No `down -v`. No global prune. Bitcoin and LND data must be kept together
@@ -93,10 +84,10 @@ For a fresh checkout with no existing image, first put the missing source at
 the path referenced in Compose. Run this only if the destination path does not
 yet exist:
 
-```powershell
+```sh
 git clone https://github.com/lnurlcash/lnurl-mint.git work/lnurl-mint
 git -C work/lnurl-mint checkout --detach bd21f6119ee70297c127531e139d517453c26587
-wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml build lnurl
+docker compose -f tests/integration/compose.yaml build lnurl
 ```
 
 This is a build path derived from the existing Compose configuration. It is
@@ -110,56 +101,55 @@ Compose path: parallel stacks need an explicit configuration choice first.
 
 Bearlett, each from the project root:
 
-```powershell
+```sh
 npm test
 npm run tsc
 npm run build
 npm run build:napplet
 npm run build:notes
 npm run test:napplet:browser
-node node_modules/vitest/vitest.mjs run --config docs/checks/feasibility.config.ts
+npx vitest run --config docs/checks/feasibility.config.ts
 npm run format:check
-node node_modules/prettier/bin/prettier.cjs --check . --end-of-line auto
 ```
 
 The five isolated reproductions currently confirm faults F00–F04.
 They sit outside the normal test suite on purpose. They are not passing wallet
-acceptance tests. Format check is known not to be green. `--end-of-line
-auto` is for isolating the cause. It does not replace the project rule.
+acceptance tests.
 
-The Kehto package tests ran in the kept old checkout. Neither that
-checkout nor the patch was changed:
+Kehto package tests: apply `contributions/kehto-cashu.patch` to a clone of
+[kehto/web](https://github.com/kehto/web) at `a7e0d12`, then:
 
-```powershell
-Set-Location C:\Users\FLX\Documents\Codex\2026-09-08\https-github-com-lnurlcash-lnurl-wallet\work\bearlett\work\kehto
-node node_modules/vitest/vitest.mjs run packages/acl packages/firewall packages/runtime packages/services packages/shell packages/paja/src/browser-devtools.test.ts --cache=false
-node node_modules/vitest/vitest.mjs run --cache=false
+```sh
+npx vitest run packages/acl packages/firewall packages/runtime packages/services packages/shell packages/paja/src/browser-devtools.test.ts --cache=false
 ```
 
-Breno snapshots are pinned in the sources directory. Installs used the
-lockfile and skipped lifecycle scripts. Tests and builds were run afterwards,
-explicitly:
+Third-party snapshots used in the check are listed in
+[SOURCES](SOURCES-2026-09-09.md). Clone those repositories separately.
+Installs used the lockfile and skipped lifecycle scripts:
 
-```powershell
-Set-Location G:\Github\bearlett\work\spec-check\brenorb--cashu-sync\wallet
+```sh
+# cashu-sync wallet
 npm ci --ignore-scripts
 npm run test:ci -- src/sync src/v0
-Set-Location G:\Github\bearlett\work\spec-check\brenorb--granola
+
+# granola
 npm ci --ignore-scripts
 npm test
-Set-Location G:\Github\bearlett\work\spec-check\brenorb--envelope
+
+# envelope
 npm ci --ignore-scripts
 npm test
-Set-Location G:\Github\bearlett\work\spec-check\brenorb--napplets-workshop
+
+# napplets-workshop
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm verify
 pnpm test:conformance
 ```
 
-Go relay tests without installing host Go. Source mount is read-only:
+Go relay tests without installing host Go, from the cashu-sync `relay/` directory:
 
-```powershell
-wsl -d Ubuntu -- docker run --rm --name bearlett-spec-cas-test -v /mnt/g/Github/bearlett/work/spec-check/brenorb--cashu-sync/relay:/src:ro -w /src golang:1.26-alpine go test ./...
+```sh
+docker run --rm --name bearlett-spec-cas-test -v "$PWD":/src:ro -w /src golang:1.26-alpine go test ./...
 ```
 
 Network access is required for dependencies. No public
@@ -176,20 +166,21 @@ for the confirmed one-writer approach. The strfry setup below is a
 The official Docker build files currently use Alpine 3.18.3. Recheck the
 base image and build dependencies before lasting operation.
 
-```powershell
-Set-Location G:\Github\bearlett
-git clone https://github.com/hoytech/strfry.git work/spec-check/hoytech--strfry
-git -C work/spec-check/hoytech--strfry checkout --detach 4cd3cf64850caf47dda46c2a2abbbf3525a64d10
-git -C work/spec-check/hoytech--strfry submodule update --init --recursive
-$bearlettRelayConfig = Get-Content work/spec-check/hoytech--strfry/strfry.conf -Raw
-$bearlettRelayConfig.Replace('bind = "127.0.0.1"', 'bind = "0.0.0.0"') | Set-Content outputs/feasibility-2026-09-09/backup-relay.conf
-wsl -d Ubuntu -- docker build -t bearlett-spec-strfry:4cd3cf6 /mnt/g/Github/bearlett/work/spec-check/hoytech--strfry
-wsl -d Ubuntu -- docker run -d --name bearlett-backup-relay -p 127.0.0.1:47777:7777 -v bearlett-backup-relay-db:/app/strfry-db -v /mnt/g/Github/bearlett/outputs/feasibility-2026-09-09/backup-relay.conf:/app/strfry.conf:ro bearlett-spec-strfry:4cd3cf6
-wsl -d Ubuntu -- docker logs bearlett-backup-relay
+```sh
+git clone https://github.com/hoytech/strfry.git
+git -C strfry checkout --detach 4cd3cf64850caf47dda46c2a2abbbf3525a64d10
+git -C strfry submodule update --init --recursive
+# bind = "0.0.0.0" inside the container; publish only 127.0.0.1:47777 on the host
+docker build -t bearlett-spec-strfry:4cd3cf6 strfry
+docker run -d --name bearlett-backup-relay -p 127.0.0.1:47777:7777 \
+  -v bearlett-backup-relay-db:/app/strfry-db \
+  -v "$PWD/strfry.conf":/app/strfry.conf:ro \
+  bearlett-spec-strfry:4cd3cf6
+docker logs bearlett-backup-relay
 ```
 
-Stop / start again: `wsl -d Ubuntu -- docker stop bearlett-backup-relay` and
-`wsl -d Ubuntu -- docker start bearlett-backup-relay`. The host port stays
+Stop / start again: `docker stop bearlett-backup-relay` and
+`docker start bearlett-backup-relay`. The host port stays
 loopback. Container-internal `0.0.0.0` is not a public exposure here.
 Keep the dedicated database. Acceptance: publish a signed NIP-78 event,
 check the ACK, read it again by event ID, check signature/decryption/restore,
@@ -213,7 +204,7 @@ Provide an API-36 emulator plus a real NFC-capable Android device for NIP-55/Amb
 camera, NFC and hardware-backed keystore. This install and the device tests
 were not run. After setup, first:
 
-```powershell
+```sh
 adb version
 adb devices -l
 adb reverse tcp:43338 tcp:43338
@@ -240,8 +231,7 @@ again through the adapters actually used later.
 Measured idle of the five regtest services: about **341 MiB RAM** together,
 each under 0.2 % CPU at the snapshot. Image sizes: Bitcoin about 212 MB, LND
 224 MB, Nutshell 1.53 GB, LNURLmint 236 MB; about 2.2 GB together, without caches.
-This is not a load or Android benchmark. WSL reported about 15.6 GiB RAM and
-16 GiB swap. Enough free space was present.
+This is not a load or Android benchmark.
 
 Planning budget, explicitly an estimate: 4 GB RAM for builds/mints; 8–16 GB
 with Android emulator; 10–30 GB extra disk for SDK/AVD/images.

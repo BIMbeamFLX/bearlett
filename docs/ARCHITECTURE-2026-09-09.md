@@ -5,7 +5,7 @@ Status: Recommendation, not a rewrite. Based on
 [checked sources](SOURCES-2026-09-09.md). Confirmed on 9 September 2026:
 **V1 has one actively writing device with an explicit device handover.**
 
-Later inventory correction: `G:\Github\TCG600nap` already contains a
+Later inventory correction: the TCG wallet already contains a
 NutFT wallet with encrypted Blossom/Nostr storage. Check the existing
 adapter and reuse it; see [TCG wallet comparison](TCG-WALLET-2026-09-09.md).
 **Granola and the XMR/USDT swaps planned on top of it are expressly V2.**

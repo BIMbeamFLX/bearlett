@@ -1,6 +1,6 @@
 # Existing TCG wallet: inventory correction
 
-Additionally checked after the user's note: `G:\Github\TCG600nap`, branch
+Additionally checked after the user's note: the TCG wallet, branch
 `feature/g-mint-live`, commit `d7535057480d3a16fcb6878eba78d70c66951fc5`.
 The repository was read only. Existing changes remain.
 
@@ -36,12 +36,11 @@ a differing non-empty target wallet. Signer/crypto, relay, Blossom and parts of
 the wallet adapter are simulated. That is evidence of the tested
 coordination logic. It is not a new live/Android/NIP-44 interop proof.
 
-```powershell
-node --test G:/Github/TCG600nap/tests/js/wallet-sync.test.mjs
+```sh
+node --test tests/js/wallet-sync.test.mjs
 ```
 
-Raw log in the Bearlett working directory:
-`outputs/feasibility-2026-09-09/tcg-wallet-sync.log`.
+from the TCG wallet repository.
 
 ## Consequence for V1
 

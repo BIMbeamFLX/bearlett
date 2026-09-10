@@ -1,11 +1,9 @@
 # Bearlett: feasibility and spec check
 
-Check date: 9 September 2026. Starting point: `87fd4f0` on
-`feature/bearlett`. STARTPROMPT.md and the project documents named in it
-were read in full. The existing changes to README.md and
-package.json, and STARTPROMPT.md, remain. No wallet reimplementation,
-no push, no publication, no change to Actions or third-party
-Docker projects. Test coins and synthetic test keys only.
+Check date: 9 September 2026. Starting point: `87fd4f0`.
+The project documents named in README.md were read in full.
+No wallet reimplementation, no push, no publication, no change to Actions
+or third-party Docker projects. Test coins and synthetic test keys only.
 
 ## Verdict
 
@@ -26,7 +24,7 @@ designer. Details and acceptance criteria are in
 
 **Confirmed product decision:** One actively writing device with an explicit
 device change is enough for V1. A dedicated CAS relay is therefore not a V1
-prerequisite. The decision was first recorded in the local SQLite audit file.
+prerequisite.
 
 Direction additionally requested during the check: XMR/USDT swaps through
 mints with Granola. That is captured in the architecture as a separate, still
@@ -57,11 +55,10 @@ existing implementation with open integration or security questions;
 
 ## Reproduced checks
 
-Run with Node **24.15.0**, npm **11.12.1**, Git **2.53.0.windows.1**.
-package.json names npm 12.0.2; that is not a version actually used here.
-Existing Bearlett node_modules were used; no fresh `npm ci` for the
-main checkout. Third-party projects were installed separately from their
-lockfiles.
+Run with Node **24**, npm **11**. package.json names npm 12.0.2; that is
+not the version used for this check. Existing Bearlett node_modules were
+used; no fresh `npm ci` for the main checkout. Third-party projects were
+installed separately from their lockfiles.
 
 | Check                                               | Result this session                                                                                         | Local raw log                                          |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -70,7 +67,7 @@ lockfiles.
 | Original webwallet, Wallet, Notes build             | All passed; final HTMLs 418,712 / 34,631 bytes for Wallet/Notes                                             | `build-web.log`, `build-wallet.log`, `build-notes.log` |
 | `npm run test:napplet:browser`                      | 12 passed; Windows preview process had to be killed after the tests ended, total run 8.3 minutes            | `browser.log`                                          |
 | `npm run format:check`                              | Failed: 139 files                                                                                           | `format.log`                                           |
-| Prettier with `--end-of-line auto`                  | Only STARTPROMPT.md remains; mostly CRLF/LF, no blanket reformat done                                       | `format-auto-eol.log`                                  |
+| Prettier with `--end-of-line auto`                  | Mostly CRLF/LF mix; no blanket reformat done                                                                | `format-auto-eol.log`                                  |
 | `npm audit --json`                                  | 0 reported vulnerabilities; not a security proof                                                            | `npm-audit.json`                                       |
 | Real bidirectional regtest                          | 1 test passed, 5.58 s; lost melt reply, restore, change, only one melt                                      | `regtest.log`                                          |
 | Additional isolated fault reproductions             | 5 observed misbehaviours confirmed; **no** green security acceptance tests                                  | `reproductions.log`                                    |
@@ -82,13 +79,10 @@ lockfiles.
 | Envelope                                            | 36 local tests passed                                                                                       | `envelope-tests.log`                                   |
 | Napplets Workshop                                   | Typecheck/build passed; conformance: 8 passed, 1 warning failure, 2 skipped, CLI judges "CONFORMANT"        | `workshop-verify.log`, `workshop-conformance.log`      |
 
-Raw logs, source snapshots and SQLite live under
-`outputs/feasibility-2026-09-09/` and are not versioned, per .gitignore.
-The [evidence index](checks/evidence-2026-09-09.json) contains SHA-256 checksums
-of the local artifacts and an export of the decisions previously recorded in
-SQLite. The reproductions under [checks/](checks/) are versionable and runnable
-without Docker or network. They deliberately assert the observed misbehaviour;
-after a fix they must become tests of the desired invariants.
+Raw logs and source snapshots from this check stay local and are not
+versioned. The reproductions under [checks/](checks/) are versionable and
+runnable without Docker or network. They deliberately assert the observed
+misbehaviour; after a fix they must become tests of the desired invariants.
 
 The regtest uses real Bitcoin/LND/mint implementations, but an
 in-memory wallet store and a direct Node transport with two fixed
