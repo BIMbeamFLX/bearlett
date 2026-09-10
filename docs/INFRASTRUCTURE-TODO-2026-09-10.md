@@ -94,6 +94,34 @@ Kehto contract):
    Hangar contract; prove figure/stone provisioning and restore on a
    second device.
 
+Candidate for item 2, read on 10 September 2026:
+[marmot-protocol/keycast](https://github.com/marmot-protocol/keycast), MIT, Rust,
+a self-hosted NIP-46 remote signer. It is the first candidate that meets the
+condition the architecture sets for the external-signer path, which is signing
+**and** NIP-44 encryption and decryption. `core/src/v2/policy.rs` defines
+`sign_event` with an explicit list of allowed kinds, and `nip04_encrypt`,
+`nip04_decrypt`, `nip44_encrypt` and `nip44_decrypt` as separate capabilities,
+each scoped by recipient, for example `self_only`. A capability that is not
+granted is denied, and a client can only narrow the server policy, never widen
+it. The stack is a SvelteKit web UI, an Axum API and the signer; only the signer
+opens the database and the root credential.
+
+It holds no money. Cashu proofs and LNURLcash secrets stay bearer secrets in the
+vault, so the separation of login key and money key is unaffected. It is also not
+the backup client: the NIP-44 round trip and the Blossom side remain ours to
+write.
+
+Four points to weigh before adopting it:
+
+- The project states in its own README that it has had no independent security
+  audit.
+- Host and signer are trusted with the hosted key. A browser import exposes that
+  key to the web stack, so importing belongs on the host command line.
+- It is another service to operate: a Linux host, Docker Compose, a hostname and
+  an HTTPS reverse proxy, on top of what this list already names.
+- Management needs a second, external signer. Keycast deliberately refuses to
+  sign its own management approvals.
+
 ### C. Backup transport
 
 1. Persistent Nostr relay for signed backup references. An isolated,
