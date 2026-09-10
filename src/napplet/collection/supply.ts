@@ -19,10 +19,17 @@ import {nutftMintUrl} from '../../host/nutft-contract'
  * to its own id; it names this collection and census; the sequence is
  * complete from 1 with each event naming its predecessor; remaining counts
  * cover exactly the printed cards and never grow; packs sold never shrink;
- * the books balance, printed − remaining = sold × issued_per_pack; and the
- * commitment moves exactly when the pack count does. A witness remembered
- * from an earlier session must still be in the chain at its sequence number,
- * or the mint has rewritten its history.
+ * and the books balance, printed − remaining = sold × issued_per_pack. A
+ * witness remembered from an earlier session must still be in the chain at
+ * its sequence number, or the mint has rewritten its history.
+ *
+ * The figures are ISSUED cards, not allocated ones. A mint that takes
+ * committed purchases reserves a pack before anyone claims it and puts it
+ * back if nobody does, so its own counts rise and fall; the ledger gives
+ * those reservations back before signing, which is what makes "no count ever
+ * grows" a sound thing to insist on. The mint's draw commitment follows
+ * allocation and is deliberately not in a snapshot, so there is nothing here
+ * that checks it.
  */
 
 export const SUPPLY_KIND = 7610
@@ -44,8 +51,6 @@ export type SupplySnapshot = {
   prev: string | null
   /** Unix seconds, the event's `created_at`. */
   at: number
-  /** The mint's commitment when the snapshot was taken. */
-  state: string
   packs: number
   issuedPerPack: number
   sold: number
@@ -199,9 +204,6 @@ export function parseSupplyEvent(
       : links.length === 1 && links[0]?.[1] === prev && links[0]?.[3] === 'prev'
   if (!linked) fail("The supply record's chain tag disagrees with its figures.")
 
-  const state = content.state
-  if (typeof state !== 'string' || !HEX64.test(state))
-    fail("The supply record's commitment is malformed.")
   for (const key of ['packs', 'issued_per_pack', 'sold'] as const)
     if (!Number.isInteger(content[key]) || (content[key] as number) < 0)
       fail(`The supply record's ${key.replace('_', ' ')} is not a count.`)
@@ -239,7 +241,6 @@ export function parseSupplyEvent(
     seq: seq as number,
     prev: prev as string | null,
     at: event.created_at,
-    state,
     packs,
     issuedPerPack,
     sold,
@@ -283,8 +284,6 @@ export function verifySupplyChain(
     for (const id of Object.keys(before.remaining))
       if (here.remaining[id]! > before.remaining[id]!)
         fail(`The supply record grows the stock of ${id}.`)
-    if ((here.sold === before.sold) !== (here.state === before.state))
-      fail('The supply record moves its commitment apart from its pack count.')
   }
   if (witness) {
     const seen = snapshots[witness.seq - 1]

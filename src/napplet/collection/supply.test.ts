@@ -34,7 +34,6 @@ const EXPECT: SupplyExpectation = {
     {asset_id: 'T-BASIC', copies: null}
   ]
 }
-const state = (n: number) => n.toString(16).padStart(64, '0')
 
 /* The mint's canonical(): keys sorted, no whitespace. */
 const canonical = (value: unknown): string => {
@@ -55,7 +54,6 @@ type Figures = {
   prev: string | null
   sold: number
   remaining: Record<string, number>
-  state?: string
   at?: number
   packs?: number
   issuedPerPack?: number
@@ -74,7 +72,6 @@ function snapshotEvent(figures: Figures): NostrEvent {
     census_sha256: CENSUS,
     seq: figures.seq,
     prev: figures.prev,
-    state: figures.state ?? state(figures.sold + 1),
     packs: figures.packs ?? 3,
     issued_per_pack: figures.issuedPerPack ?? 2,
     sold: figures.sold,
@@ -100,7 +97,7 @@ function snapshotEvent(figures: Figures): NostrEvent {
   }
 }
 
-/* Three snapshots: nothing sold, one pack, two packs. */
+/* Three snapshots: nothing issued, one pack, two packs. */
 function chain(): NostrEvent[] {
   const one = snapshotEvent({
     seq: 1,
@@ -132,10 +129,10 @@ const rejects = (
 describe('parseSupplyEvent', () => {
   it('accepts a snapshot the issuer signed and reads its figures', () => {
     const [one] = chain()
-    expect(verifyEvent(one)).toBe(true)
+    expect(verifyEvent(one!)).toBe(true)
     const snapshot = parseSupplyEvent(one, EXPECT)
     expect(snapshot).toMatchObject({
-      id: one.id,
+      id: one!.id,
       seq: 1,
       prev: null,
       sold: 0,
@@ -153,8 +150,8 @@ describe('parseSupplyEvent', () => {
   it('refuses a snapshot whose figures were edited after signing', () => {
     const [one] = chain()
     const edited = {
-      ...one,
-      content: one.content.replace('"sold":0', '"sold":1')
+      ...one!,
+      content: one!.content.replace('"sold":0', '"sold":1')
     }
     expect(verifyEvent(edited)).toBe(false)
     expect(() => parseSupplyEvent(edited, EXPECT)).toThrow(/signature/)
@@ -179,62 +176,37 @@ describe('parseSupplyEvent', () => {
       sold: 0,
       remaining: {'T-001': 4, 'T-002': 2}
     } as const
-    expect(() =>
-      parseSupplyEvent(snapshotEvent({...base, kind: 7600}), EXPECT)
-    ).toThrow(/not a supply snapshot/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({...base, content: {collection_id: '600B-X'}}),
-        EXPECT
-      )
-    ).toThrow(/another collection/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({...base, content: {census_sha256: 'd'.repeat(64)}}),
-        EXPECT
-      )
-    ).toThrow(/different census/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          ...base,
-          content: {catalog_uri: 'https://elsewhere.example/c'}
-        }),
-        EXPECT
-      )
+    const bad = (over: Partial<Figures>) => () =>
+      parseSupplyEvent(snapshotEvent({...base, ...over}), EXPECT)
+    expect(bad({kind: 7600})).toThrow(/not a supply snapshot/)
+    expect(bad({content: {collection_id: '600B-X'}})).toThrow(
+      /another collection/
+    )
+    expect(bad({content: {census_sha256: 'd'.repeat(64)}})).toThrow(
+      /different census/
+    )
+    expect(
+      bad({content: {catalog_uri: 'https://elsewhere.example/c'}})
     ).toThrow(/another catalogue/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({...base, content: {schema: 'v2'}}),
-        EXPECT
-      )
-    ).toThrow(/format/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({...base, tags: [['x', 'd'.repeat(64)]]}),
-        EXPECT
-      )
-    ).toThrow(/tagged/)
-    expect(() =>
-      parseSupplyEvent(snapshotEvent({...base, tags: []}), EXPECT)
-    ).toThrow(/tagged/)
+    expect(bad({content: {schema: 'v2'}})).toThrow(/format/)
+    expect(bad({tags: [['x', 'd'.repeat(64)]]})).toThrow(/tagged/)
+    expect(bad({tags: []})).toThrow(/tagged/)
   })
 
   it('refuses a chain tag that disagrees with the figures', () => {
     const [one] = chain()
+    const linked = {sold: 1, remaining: {'T-001': 3, 'T-002': 1}} as const
     const detached = snapshotEvent({
       seq: 2,
-      prev: one.id,
-      sold: 1,
-      remaining: {'T-001': 3, 'T-002': 1},
+      prev: one!.id,
+      ...linked,
       tags: [['x', CENSUS]]
     })
     expect(() => parseSupplyEvent(detached, EXPECT)).toThrow(/chain tag/)
     const misdirected = snapshotEvent({
       seq: 2,
-      prev: one.id,
-      sold: 1,
-      remaining: {'T-001': 3, 'T-002': 1},
+      prev: one!.id,
+      ...linked,
       tags: [
         ['x', CENSUS],
         ['e', 'e'.repeat(64), '', 'prev']
@@ -248,99 +220,46 @@ describe('parseSupplyEvent', () => {
       remaining: {'T-001': 4, 'T-002': 2},
       tags: [
         ['x', CENSUS],
-        ['e', one.id, '', 'prev']
+        ['e', one!.id, '', 'prev']
       ]
     })
     expect(() => parseSupplyEvent(genesisWithLink, EXPECT)).toThrow(/chain tag/)
   })
 
   it('refuses counts that do not cover exactly the printed cards', () => {
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({seq: 1, prev: null, sold: 0, remaining: {'T-001': 4}}),
-        EXPECT
-      )
-    ).toThrow(/exactly the printed cards/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 0,
-          remaining: {'T-001': 4, 'T-003': 2}
-        }),
-        EXPECT
-      )
-    ).toThrow(/T-002/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 0,
-          remaining: {'T-001': 4, 'T-002': 2, 'T-BASIC': 0}
-        }),
-        EXPECT
-      )
-    ).toThrow(/exactly the printed cards/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 0,
-          remaining: {'T-001': 5, 'T-002': 1}
-        }),
-        EXPECT
-      )
-    ).toThrow(/T-001/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 0,
-          remaining: {'T-001': 4, 'T-002': -0.5}
-        }),
-        EXPECT
-      )
-    ).toThrow(/T-002/)
+    const bad =
+      (remaining: Record<string, number>, sold = 0) =>
+      () =>
+        parseSupplyEvent(
+          snapshotEvent({seq: 1, prev: null, sold, remaining}),
+          EXPECT
+        )
+    expect(bad({'T-001': 4})).toThrow(/exactly the printed cards/)
+    expect(bad({'T-001': 4, 'T-003': 2})).toThrow(/T-002/)
+    expect(bad({'T-001': 4, 'T-002': 2, 'T-BASIC': 0})).toThrow(
+      /exactly the printed cards/
+    )
+    expect(bad({'T-001': 5, 'T-002': 1})).toThrow(/T-001/)
+    expect(bad({'T-001': 4, 'T-002': -0.5})).toThrow(/T-002/)
   })
 
   it('refuses books that do not balance', () => {
-    expect(() =>
+    const bad = (sold: number, remaining: Record<string, number>) => () =>
       parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 1,
-          remaining: {'T-001': 4, 'T-002': 2}
-        }),
+        snapshotEvent({seq: 1, prev: null, sold, remaining}),
         EXPECT
       )
-    ).toThrow(/balance/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 0,
-          remaining: {'T-001': 3, 'T-002': 2}
-        }),
-        EXPECT
-      )
-    ).toThrow(/balance/)
-    expect(() =>
-      parseSupplyEvent(
-        snapshotEvent({
-          seq: 1,
-          prev: null,
-          sold: 4,
-          remaining: {'T-001': 0, 'T-002': 0}
-        }),
-        EXPECT
-      )
-    ).toThrow(/more packs than the edition has/)
+    expect(bad(1, {'T-001': 4, 'T-002': 2})).toThrow(/balance/)
+    expect(bad(0, {'T-001': 3, 'T-002': 2})).toThrow(/balance/)
+    expect(bad(4, {'T-001': 0, 'T-002': 0})).toThrow(
+      /more packs than the edition has/
+    )
+  })
+
+  it('does not look for a draw commitment, which the mint no longer signs', () => {
+    const [one] = chain()
+    expect('state' in JSON.parse(one!.content)).toBe(false)
+    expect(parseSupplyEvent(one, EXPECT).seq).toBe(1)
   })
 })
 
@@ -365,76 +284,73 @@ describe('verifySupplyChain', () => {
 
   it('refuses a gap, a repeat, a broken link and a backwards date', () => {
     const [one, two, three] = chain()
+    const later = {sold: 2, remaining: {'T-001': 1, 'T-002': 1}} as const
     rejects([one, three], /skips/)
     rejects([one, two, two], /same number/)
-    const stray = snapshotEvent({
-      seq: 3,
-      prev: one.id,
-      sold: 2,
-      remaining: {'T-001': 1, 'T-002': 1}
-    })
-    rejects([one, two, stray], /name the one before/)
-    const early = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 2,
-      remaining: {'T-001': 1, 'T-002': 1},
-      at: 1
-    })
-    rejects([one, two, early], /dated before/)
+    rejects(
+      [one, two, snapshotEvent({seq: 3, prev: one!.id, ...later})],
+      /name the one before/
+    )
+    rejects(
+      [one, two, snapshotEvent({seq: 3, prev: two!.id, ...later, at: 1})],
+      /dated before/
+    )
   })
 
   it('refuses stock that grows, packs that un-sell, and a resized edition', () => {
     const [one, two] = chain()
-    const restock = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 1,
-      remaining: {'T-001': 4, 'T-002': 0},
-      state: state(2)
-    })
-    rejects([one, two, restock], /grows the stock of T-001/)
-    const unsold = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 0,
-      remaining: {'T-001': 4, 'T-002': 2}
-    })
-    rejects([one, two, unsold], /un-sells/)
-    const bigger = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 2,
-      remaining: {'T-001': 1, 'T-002': 1},
-      packs: 4
-    })
-    rejects([one, two, bigger], /size of the edition/)
+    rejects(
+      [
+        one,
+        two,
+        snapshotEvent({
+          seq: 3,
+          prev: two!.id,
+          sold: 1,
+          remaining: {'T-001': 4, 'T-002': 0}
+        })
+      ],
+      /grows the stock of T-001/
+    )
+    rejects(
+      [
+        one,
+        two,
+        snapshotEvent({
+          seq: 3,
+          prev: two!.id,
+          sold: 0,
+          remaining: {'T-001': 4, 'T-002': 2}
+        })
+      ],
+      /un-sells/
+    )
+    rejects(
+      [
+        one,
+        two,
+        snapshotEvent({
+          seq: 3,
+          prev: two!.id,
+          sold: 2,
+          remaining: {'T-001': 1, 'T-002': 1},
+          packs: 4
+        })
+      ],
+      /size of the edition/
+    )
   })
 
-  it('refuses a commitment that moves without a sale, or stays still through one', () => {
+  /* A quiet interval is normal: a reservation that opened and lapsed moves
+     the mint's own counts but issues nothing, so a snapshot that repeats the
+     figures verbatim must be accepted rather than read as a stalled chain. */
+  it('accepts a snapshot that repeats the figures of the one before it', () => {
     const [one, two] = chain()
-    const drift = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 1,
-      remaining: {'T-001': 3, 'T-002': 1},
-      state: state(9)
-    })
-    rejects([one, two, drift], /commitment apart/)
-    const stuck = snapshotEvent({
-      seq: 3,
-      prev: two.id,
-      sold: 2,
-      remaining: {'T-001': 1, 'T-002': 1},
-      state: state(2)
-    })
-    rejects([one, two, stuck], /commitment apart/)
     const idle = snapshotEvent({
       seq: 3,
-      prev: two.id,
+      prev: two!.id,
       sold: 1,
-      remaining: {'T-001': 3, 'T-002': 1},
-      state: state(2)
+      remaining: {'T-001': 3, 'T-002': 1}
     })
     expect(verifySupplyChain([one, two, idle], EXPECT).latest.seq).toBe(3)
   })
@@ -505,11 +421,10 @@ describe('loadSupply', () => {
   })
 
   it('catches a rewritten history and keeps its own record', async () => {
-    const events = chain()
     const storage = memory()
     const before = JSON.stringify({seq: 2, id: 'a'.repeat(64)})
     storage.store.set(supplyWitnessKeyFor(edition), before)
-    const {fetcher} = answering({fault: null, events})
+    const {fetcher} = answering({fault: null, events: chain()})
     await expect(
       loadSupply({fetch: fetcher, storage, edition, expect: EXPECT})
     ).rejects.toThrow(/rewritten/)
@@ -518,39 +433,25 @@ describe('loadSupply', () => {
 
   it('passes on a fault the mint reports about its own books', async () => {
     const {fetcher} = answering({
-      fault: '2 cards left the mint but 0 packs x 2 is 0',
+      fault: 'packs sold went from 1 to 0',
       events: chain()
     })
     await expect(
       loadSupply({fetch: fetcher, storage: memory(), edition, expect: EXPECT})
-    ).rejects.toThrow(/own books do not balance: 2 cards left/)
+    ).rejects.toThrow(/own books do not balance: packs sold went from 1 to 0/)
   })
 
   it('treats a bad answer as no answer', async () => {
-    await expect(
+    const bad = (body: unknown, ok = true) =>
       loadSupply({
-        fetch: answering({}, false).fetcher,
+        fetch: answering(body, ok).fetcher,
         storage: memory(),
         edition,
         expect: EXPECT
       })
-    ).rejects.toThrow(/did not answer/)
-    await expect(
-      loadSupply({
-        fetch: answering([]).fetcher,
-        storage: memory(),
-        edition,
-        expect: EXPECT
-      })
-    ).rejects.toThrow(/not readable/)
-    await expect(
-      loadSupply({
-        fetch: answering({events: 'no'}).fetcher,
-        storage: memory(),
-        edition,
-        expect: EXPECT
-      })
-    ).rejects.toThrow(/no supply record/)
+    await expect(bad({}, false)).rejects.toThrow(/did not answer/)
+    await expect(bad([])).rejects.toThrow(/not readable/)
+    await expect(bad({events: 'no'})).rejects.toThrow(/no supply record/)
   })
 
   it('ignores a witness it cannot read rather than trusting it', async () => {

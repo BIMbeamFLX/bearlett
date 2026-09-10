@@ -90,7 +90,14 @@ trusts, each snapshot naming the one before it. The napplet fetches the whole
 chain through the `supply` operation and verifies it in
 `src/napplet/collection/supply.ts`: signatures, sequence, that no count ever
 grows, that packs sold never shrink, and that printed − remaining equals sold
-× issued per pack. The last snapshot seen is remembered in the shell's
+× issued per pack.
+
+The figures are cards **issued**, not cards allocated. A mint that takes
+committed purchases reserves a pack before anyone claims it and puts it back
+if nobody does, so its own counts rise and fall; the mint gives those
+reservations back before signing, which is what makes "no count ever grows" a
+sound thing to insist on here. Its draw commitment follows allocation and is
+not part of a snapshot, so nothing in this file checks it. The last snapshot seen is remembered in the shell's
 storage, so a mint that rewrites a snapshot a holder has already seen is
 caught on the next open.
 
