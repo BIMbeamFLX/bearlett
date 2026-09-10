@@ -122,6 +122,26 @@ Four points to weigh before adopting it:
 - Management needs a second, external signer. Keycast deliberately refuses to
   sign its own management approvals.
 
+If Bearlett ever shares an instance with another application, it takes **its own
+grant**, never the one issued to Hangar or to a messenger. Confirmed on
+10 September 2026, and the policy is narrow by construction:
+
+| Capability | Bearlett's grant |
+| --- | --- |
+| `nip44_encrypt`, `nip44_decrypt` | `recipient: self_only`, for the wallet backup and nothing else |
+| `sign_event` | only what a backup reference needs; no Marmot kinds (30443, 450, 13, 10050, 445) |
+| Keycast management kinds 27236 and 27237 | never granted to a wallet |
+
+Keycast holds no money. The canonical key, the vault and any Lightning backend
+stay outside it, and Cashu proofs and LNURLcash secrets never leave the vault,
+so a signer compromise costs a backup key and not a balance.
+
+The wallet backup needs `identity.nip44` from the host. Where the host cannot
+provide it, the wallet fails closed: it does not create a fresh wallet, and it
+does not repeat a mutation. A Hangar guest is exactly that case, because its
+identity carries no `nip44` at all; see
+[NAPPELIN-INTEGRATION-2026-09-09.md](NAPPELIN-INTEGRATION-2026-09-09.md).
+
 ### C. Backup transport
 
 1. Persistent Nostr relay for signed backup references. An isolated,
