@@ -22,3 +22,4 @@ README.md
 
 # Vendored upstream, kept byte-identical so the provenance hash verifies.
 src/napplet/collection/vendor/
+dist-collection-*/

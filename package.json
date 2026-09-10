@@ -21,7 +21,8 @@
     "preview:wallet": "node scripts/napplet-host.mjs --app wallet",
     "preview:notes": "node scripts/napplet-host.mjs --app notes",
     "test:regtest": "vitest run --config vitest.regtest.config.ts",
-    "regtest:start": "node scripts/regtest.mjs"
+    "regtest:start": "node scripts/regtest.mjs",
+    "build:collection": "vite build --config vite.napplet.config.mts"
   },
   "dependencies": {
     "@cashu/cashu-ts": "4.10.1",
