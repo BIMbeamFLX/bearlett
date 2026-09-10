@@ -134,6 +134,14 @@ A second instance under `/g` reads the same names with prefix `G_`
 The G beacon options are not wired to environment variables. G draws without a
 beacon.
 
+`NUTFT_SALES` also decides who can buy from a wallet napplet. Under `open` the
+sale is anonymous and a napplet buys like any other client. Under `allowlist` or
+`signed` the mint demands a NIP-98 signature, and a napplet will not produce
+one: it seals its own access to a Nostr signer on purpose, because a napplet
+uses the shell's signer or none at all. Gated sales therefore belong on the shop
+page, and the cards are received in the napplet afterwards. See
+[NAPPLETS.md](NAPPLETS.md).
+
 Keys: on first start the mint creates `mint_seed` and
 `catalog_private_key` and stores both in `nutft_meta`
 (`server/nutft-mint.js:446-447`). No key file, no KMS. Back up the database
@@ -169,14 +177,19 @@ census empties exactly, Edition One untouched), plus `mint-errors`,
 
 ## 8. Step 6: issuance and handover
 
-- **Booster**: the buyer fetches an offer with a NIP-98 signature (kind 27235,
-  `server/nip98.js`). The mint issues a BOLT11 invoice bound to
-  the `pack_id`. The paid invoice is the claim. The buyer sends
-  `POST /nutft/booster` with `idempotency_key`, `pack_id`, state and one
-  P2BK output per card. The mint checks each output against the expected binding,
-  signs with DLEQ and books the invoice in the same transaction
-  (`server/nutft-mint.js:890-993`). Idempotency hashes only the body, never the
-  NIP-98 header (`:893-899`).
+- **Booster**: the buyer fetches an offer and the mint issues a BOLT11 invoice
+  bound to the `pack_id`. Whether a signature is needed depends on the sales
+  mode alone: `requireMayBuy` returns immediately when `NUTFT_SALES=open`
+  (`server/nutft-mint.js:602-603`), so an open sale is anonymous. Under
+  `allowlist` or `signed` the mint refuses with `early access` and the buyer
+  retries with a NIP-98 signature (kind 27235, `server/nip98.js`). Signing every
+  purchase would hand an open mint an identity it does not need.
+
+  The paid invoice is the claim. The buyer sends `POST /nutft/booster` with
+  `idempotency_key`, `pack_id`, state and one P2BK output per card. The mint
+  checks each output against the expected binding, signs with DLEQ and books the
+  invoice in the same transaction (`server/nutft-mint.js:890-993`). Idempotency
+  hashes only the body, never the NIP-98 header (`:893-899`).
 - **Manifest**: `openManifestPack` issues the named cards of a set
   (`server/nutft-draw.js:96`).
 - **Trade**: `POST /nutft/trade` takes exactly one proof and returns one with
