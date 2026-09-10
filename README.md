@@ -38,7 +38,7 @@ paid twice.
 The next step splits every function into its own napplet and adds a gaming-asset
 family for bearer trading cards. The clickable prototype uses real card art from
 the 600B Edition One catalogue and demo balances; nothing in it is spendable.
-Design brief: [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md) (German).
+Design brief: [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md).
 Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-hangar.html).
 
 | Collection with pointer tilt                                       | Card detail with provenance on the back                           |
@@ -195,19 +195,19 @@ docs/                architecture, audits, protocol notes, design brief, screens
 | [docs/KEHTO.md](docs/KEHTO.md)                                                         | Kehto shell integration and the `cashu` capability                             |
 | [docs/VALIDATION.md](docs/VALIDATION.md)                                               | Validation record                                                              |
 | [docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md](docs/HOW-TO-WALLET-OWNERSHIP-PROOFS.md)       | Wallet-side ownership proofs for LNURLcash                                     |
-| [docs/SECURITY-FIXES-2026-09-09.md](docs/SECURITY-FIXES-2026-09-09.md)                 | Security fixes and audit handover (German)                                     |
-| [docs/ARCHITECTURE-2026-09-09.md](docs/ARCHITECTURE-2026-09-09.md)                     | Architecture decision after the spec check (German)                            |
-| [docs/FEASIBILITY-2026-09-09.md](docs/FEASIBILITY-2026-09-09.md)                       | Feasibility report (German)                                                    |
-| [docs/INFRASTRUCTURE-2026-09-09.md](docs/INFRASTRUCTURE-2026-09-09.md)                 | Test infrastructure (German)                                                   |
-| [docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md](docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md) | Encrypted bearer storage on Blossom (German)                                   |
-| [docs/NAPPELIN-INTEGRATION-2026-09-09.md](docs/NAPPELIN-INTEGRATION-2026-09-09.md)     | Shared identity and backup path with Nappelin (German)                         |
-| [docs/TCG-WALLET-2026-09-09.md](docs/TCG-WALLET-2026-09-09.md)                         | Existing trading-card wallet inventory (German)                                |
-| [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md)                           | UI design brief: composable napplets, assets, pay, animation stack (German)    |
-| [docs/NUTFT-POKEMON-POC-2026-09-10.md](docs/NUTFT-POKEMON-POC-2026-09-10.md)           | Review of a collaborator NutFT card mint and what to adopt (German)            |
-| [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources (German)                           |
+| [docs/SECURITY-FIXES-2026-09-09.md](docs/SECURITY-FIXES-2026-09-09.md)                 | Security fixes and audit handover                                              |
+| [docs/ARCHITECTURE-2026-09-09.md](docs/ARCHITECTURE-2026-09-09.md)                     | Architecture decision after the spec check                                     |
+| [docs/FEASIBILITY-2026-09-09.md](docs/FEASIBILITY-2026-09-09.md)                       | Feasibility report                                                             |
+| [docs/INFRASTRUCTURE-2026-09-09.md](docs/INFRASTRUCTURE-2026-09-09.md)                 | Test infrastructure                                                            |
+| [docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md](docs/BLOSSOM-BEARER-STORAGE-2026-09-09.md) | Encrypted bearer storage on Blossom                                            |
+| [docs/NAPPELIN-INTEGRATION-2026-09-09.md](docs/NAPPELIN-INTEGRATION-2026-09-09.md)     | Shared identity and backup path with Nappelin                                  |
+| [docs/TCG-WALLET-2026-09-09.md](docs/TCG-WALLET-2026-09-09.md)                         | Existing trading-card wallet inventory                                         |
+| [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md)                           | UI design brief: composable napplets, assets, pay, animation stack             |
+| [docs/NUTFT-POKEMON-POC-2026-09-10.md](docs/NUTFT-POKEMON-POC-2026-09-10.md)           | Review of a collaborator NutFT card mint and what to adopt                     |
+| [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources                                    |
 | [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                             |
-| [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, using existing mints (German)    |
-| [docs/HOW-TO-MINT-ASSETS.md](docs/HOW-TO-MINT-ASSETS.md)                               | What it takes to mint your own bearer game assets with the NutFT mint (German) |
+| [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, using existing mints             |
+| [docs/HOW-TO-MINT-ASSETS.md](docs/HOW-TO-MINT-ASSETS.md)                               | What it takes to mint your own bearer game assets with the NutFT mint          |
 | [tests/integration/README.md](tests/integration/README.md)                             | Regtest environment with LNURLmint, Nutshell and two LND nodes                 |
 
 ### Contributing

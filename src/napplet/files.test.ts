@@ -5,7 +5,7 @@ import {readShellFile, saveShellFile} from './files'
 afterEach(() => vi.unstubAllGlobals())
 
 it('reads and writes backup bytes within the shell chunk limits', async () => {
-  const source = new TextEncoder().encode('{"label":"Grüße"}')
+  const source = new TextEncoder().encode('{"label":"café"}')
   let saved = new Uint8Array()
   const fs = {
     info: async () => ({limits: {maxReadBytes: 3, maxWriteBytes: 4}}),
@@ -31,8 +31,8 @@ it('reads and writes backup bytes within the shell chunk limits', async () => {
     })
   }
   vi.stubGlobal('window', {napplet: {fs}})
-  expect(await readShellFile()).toBe('{"label":"Grüße"}')
-  await saveShellFile('backup.json', '{"label":"Grüße"}')
+  expect(await readShellFile()).toBe('{"label":"café"}')
+  await saveShellFile('backup.json', '{"label":"café"}')
   expect(saved).toEqual(source)
   expect(fs.write.mock.calls[0][2].mode).toBe('replace')
   expect(fs.write.mock.calls[1][2].mode).toBe('append')

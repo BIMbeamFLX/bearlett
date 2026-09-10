@@ -1,126 +1,126 @@
-# Bearer-Token auf Blossom mit Hashtree und Envelope
+# Bearer tokens on Blossom with Hashtree and Envelope
 
-Ergänzung zur [Architektur](ARCHITECTURE-2026-09-09.md), 9. September 2026.
-Anlass: ausdrücklich gewünschte Speicherung der Bearer-Token selbst in
-verschlüsselten Blossom-Blobs, mit Envelope als Zugang. Empfehlung und
-Quellenprüfung, noch keine implementierte oder getestete Storage-Anbindung.
-Die Entscheidung wurde vor diesem Dokument in der SQLite-Prüfakte erfasst.
+Addendum to the [architecture](ARCHITECTURE-2026-09-09.md), 9 September 2026.
+Requested: store the bearer tokens themselves in
+encrypted Blossom blobs, with Envelope as access. Recommendation and
+source check. Not yet an implemented or tested storage binding.
+The decision was recorded in the SQLite audit file before this document.
 
-**Bestandskorrektur:** Die später vom Nutzer genannte TCG-Wallet besitzt bereits
-eine verschlüsselte Blossom-Anbindung. Die folgenden neuen Arbeiten betreffen
-Hashtree/Envelope und die Bearlett-Integration; den Speicheradapter nicht neu
-erfinden. Siehe [geprüfter vorhandener Stand](TCG-WALLET-2026-09-09.md).
+**Inventory correction:** The TCG wallet named later by the user already has
+an encrypted Blossom binding. The following new work concerns
+Hashtree/Envelope and the Bearlett integration. Do not reinvent the storage
+adapter. See [checked existing state](TCG-WALLET-2026-09-09.md).
 
-## Einschätzung
+## Assessment
 
-**Ja, verschlüsselte Token lassen sich so speichern.** Blossom ist dafür ein
-plausibler Speicher für unveränderliche verschlüsselte Objekte. Hashtree kann
-mehrere Token, Metadaten und Artwork unter einem prüfbaren Root organisieren.
-Envelope kann die passende Wallet mit einem Import-/Restore-Verweis öffnen.
-Keine dieser Komponenten ersetzt den lokalen Transaktionsspeicher, das
-Wallet-Journal oder die Prüfung und Rotation beim Mint.
+**Yes, encrypted tokens can be stored this way.** Blossom is a
+plausible store for immutable encrypted objects. Hashtree can
+organise several tokens, metadata and artwork under a verifiable root.
+Envelope can open the matching wallet with an import/restore pointer.
+None of these components replaces the local transaction store, the
+wallet journal, or check and rotation at the mint.
 
-Blossom speichert beliebige Bytes unter deren SHA-256-Hash. Es verschlüsselt
-sie nicht zwangsläufig selbst. Der konkret verlinkte Hashtree-Entwurf ist
-standardmäßig unverschlüsselt und bietet zwei optionale Verschlüsselungssuiten.
-Für Bearer-Token würden wir Verschlüsselung verbindlich verlangen.
+Blossom stores arbitrary bytes under their SHA-256 hash. It does not
+necessarily encrypt them itself. The specifically linked Hashtree draft is
+unencrypted by default and offers two optional encryption suites.
+For bearer tokens we would require encryption as mandatory.
 
-## Tatsächlich gelesene Quellen
+## Sources actually read
 
-Die Gitworkshop-Seiten wurden im Browser vollständig gelesen, nachdem der
-HTTP-Abruf lediglich die leere SPA-Hülle geliefert hatte. Angezeigter Commit:
-`ad5c1af0dd84749c97a6dd95332527dc586806bc`, Branch `hashtree`.
+The Gitworkshop pages were read in full in the browser after the
+HTTP fetch returned only the empty SPA shell. Displayed commit:
+`ad5c1af0dd84749c97a6dd95332527dc586806bc`, branch `hashtree`.
 
 - [README](https://gitworkshop.dev/hzrd149.com/git.shakespeare.diy/blossom/tree/hashtree/implementations/hashtree/README.md):
-  experimentelles clientseitiges Protokoll, ausdrücklich kein offizieller BUD;
-  Manifestbäume, optionale Verschlüsselung, experimentelle `htree`-/`nhash`-
-  Kennungen und Nostr-Kind 30064.
-- [Verschlüsselung](https://gitworkshop.dev/hzrd149.com/git.shakespeare.diy/blossom/tree/hashtree/implementations/hashtree/hashtree-encryption.md):
-  `chk-v1` leitet den Schlüssel aus dem Klartext ab und ermöglicht Deduplizierung;
-  `rnd-v1` verwendet zufälligen Schlüssel und Nonce. Beide verwenden AES-GCM.
-  Die 33-Byte-Schlüssel enthalten ein Versions-/Suite-Byte. Ein solcher Schlüssel
-  ist selbst ein Bearer-Secret und darf nicht an Blossom gesendet werden.
-- [Referenzen](https://gitworkshop.dev/hzrd149.com/git.shakespeare.diy/blossom/tree/hashtree/implementations/hashtree/hashtree-references.md):
-  unveränderliche Roots über `nhash`, veränderliche Roots über Kind 30064.
-  `owner-private` verschlüsselt den Root-Key mit NIP-44 an den eigenen Nostr-Key.
-  `link-private` verteilt Zugang über einen geheimen Link. Ein verschlüsselter
-  `public`-Root veröffentlicht dagegen den Schlüssel: für Wallet-Privatsphäre
-  ungeeignet. Ereignisse verraten weiterhin Autor, Baumname, Zeit und Root-Hash.
+  experimental client-side protocol, expressly not an official BUD;
+  manifest trees, optional encryption, experimental `htree`/`nhash`
+  identifiers and Nostr kind 30064.
+- [Encryption](https://gitworkshop.dev/hzrd149.com/git.shakespeare.diy/blossom/tree/hashtree/implementations/hashtree/hashtree-encryption.md):
+  `chk-v1` derives the key from plaintext and enables deduplication;
+  `rnd-v1` uses a random key and nonce. Both use AES-GCM.
+  The 33-byte keys contain a version/suite byte. Such a key
+  is itself a bearer secret and must not be sent to Blossom.
+- [References](https://gitworkshop.dev/hzrd149.com/git.shakespeare.diy/blossom/tree/hashtree/implementations/hashtree/hashtree-references.md):
+  immutable roots via `nhash`, mutable roots via kind 30064.
+  `owner-private` encrypts the root key with NIP-44 to the own Nostr key.
+  `link-private` distributes access via a secret link. An encrypted
+  `public` root, by contrast, publishes the key: unsuitable for wallet privacy.
+  Events still reveal author, tree name, time and root hash.
 - [Envelope](https://github.com/brenorb/envelope/tree/7d7ff1cf509f39ffe159c1cee7c93ba8ba042fd5):
-  Remote-HEAD erneut geprüft, unverändert. `src/fragment.js` unterstützt offene
-  und passwortverschlüsselte Launch-Fragmente; Zustand maximal 4.096 Bytes,
-  gesamtes Fragment maximal 8.192 Zeichen. `scripts/build-paja-runtime.mjs`
-  löst `blossom:sha256:<hash>` über einen Blossom-Server auf. Das ist kein
-  Hashtree-Resolver, Upload-/Vault-Dienst oder Wallet-Restore-Protokoll.
+  Remote HEAD rechecked, unchanged. `src/fragment.js` supports open
+  and password-encrypted launch fragments; state at most 4,096 bytes,
+  entire fragment at most 8,192 characters. `scripts/build-paja-runtime.mjs`
+  resolves `blossom:sha256:<hash>` via a Blossom server. That is not a
+  Hashtree resolver, upload/vault service, or wallet restore protocol.
 
-Die Hashtree-Texte definieren bewusst überarbeitete Formate gegenüber den
-ursprünglichen PRs 104–107. Kompatibilität mit einer beliebigen vorhandenen
-Hashtree-Bibliothek oder mmalmis aktuellem Client ist damit nicht belegt.
-Die dort verlinkte Implementierung wurde in diesem Nachtrag nicht getestet.
+The Hashtree texts deliberately define revised formats relative to the
+original PRs 104–107. Compatibility with an arbitrary existing
+Hashtree library or mmalmi's current client is therefore not demonstrated.
+The implementation linked there was not tested in this addendum.
 
-## Vorgeschlagene Aufteilung
+## Proposed split
 
-| Zweck                        | Ausgestaltung                                                                                                                                              |
+| Purpose                      | Shape                                                                                                                                                      |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Privates Wallet-Backup       | Verschlüsselte Token **plus** vollständige Counter, vorbereitete Outputs und Journale; privater Root, Zugriff über eigenen Wallet-Nostr-Key                |
-| Einzelnen Schein weitergeben | Separates verschlüsseltes Paket nur für diesen Transfer; eigener Schlüssel und unveränderlicher Root; niemals Zugriff auf das gesamte Wallet-Backup teilen |
-| Envelope-Link/QR             | Startet verifiziertes Wallet mit definiertem Receive-/Restore-Verweis. Wallet prüft den Auftrag und fordert Entsperrung/Bestätigung an.                    |
-| Lokaler aktiver Zustand      | Weiterhin atomarer Store und genau ein Writer; Blossom dient der entfernten Speicherung und Übertragung                                                    |
+| Private wallet backup        | Encrypted tokens **plus** complete counters, prepared outputs and journals; private root, access via own wallet Nostr key                                  |
+| Hand over a single note      | Separate encrypted package for this transfer only; own key and immutable root; never share access to the entire wallet backup                              |
+| Envelope link/QR             | Starts a verified wallet with a defined receive/restore pointer. The wallet checks the job and requests unlock/confirmation.                               |
+| Local active state           | Still an atomic store and exactly one writer; Blossom serves remote storage and transfer                                                                   |
 
-Für geheime Walletdaten ist `rnd-v1` der bevorzugte Prüfkandidat: keine
-inhaltlich deterministischen Ciphertexts und weniger Gleichheitsinformation
-als bei CHK. Metadaten und Schlüssel tragende Elternmanifeste müssen ebenfalls
-verschlüsselt sein. Ein verschlüsseltes Kind mit offenem Schlüssel im öffentlichen
-Elternmanifest ist nicht privat. Hash, Suite und Schlüsselzuordnung müssen durch
-den authentifizierten Root/Backup-Commit gebunden werden.
+For secret wallet data, `rnd-v1` is the preferred candidate: no
+content-deterministic ciphertexts and less equality information
+than CHK. Metadata and parent manifests that carry keys must also be
+encrypted. An encrypted child with an open key in the public
+parent manifest is not private. Hash, suite and key mapping must be bound by
+the authenticated root/backup commit.
 
-Der Speicherablauf lautet: lokal konsistent committen, verschlüsselte Objekte
-hochladen, alle benötigten Objekte vom Speicher zurücklesen und prüfen, dann
-den vollständigen Root veröffentlichen. Ein Root darf nicht als erfolgreiches
-Backup gelten, solange erforderliche Kinder fehlen. Zwei unabhängige Speicher
-und ein Dateibackup erhöhen Verfügbarkeit; Aufbewahrung/Quoten müssen geprüft
-werden. Für kleine Backups kann ein einzelner verschlüsselter Blossom-Blob
-zunächst einfacher sein als ein kompletter Baum.
+The storage flow is: commit locally consistently, upload encrypted objects,
+read all required objects back from storage and check them, then
+publish the complete root. A root must not count as a successful
+backup while required children are missing. Two independent stores
+and a file backup raise availability. Retention/quotas must be checked.
+For small backups a single encrypted Blossom blob
+can first be simpler than a complete tree.
 
-Kind 30064 mit `owner-private` ist eine konkrete Alternative zum zuvor
-vorgeschlagenen NIP-78-Backup-Container. Die endgültige Auswahl bleibt vom
-Interop-Spike abhängig. Es soll nicht zwei konkurrierende Quellen für den
-neuesten Walletstand geben. Auch ein gültig signierter Hashtree-Root liefert
-keinen verteilten Writer-Lock und garantiert auf einem neuen Gerät nicht, dass
-ein Relay keine neueren Roots unterschlägt. Expliziter Gerätewechsel bleibt.
+Kind 30064 with `owner-private` is a concrete alternative to the previously
+proposed NIP-78 backup container. Final choice remains dependent on the
+interop spike. There must not be two competing sources for the
+latest wallet state. Even a validly signed Hashtree root provides
+no distributed writer lock. On a new device it does not guarantee that
+a relay is not withholding newer roots. Explicit device handover remains.
 
-## Bearer-Übergabe und Verwahrung unterscheiden
+## Distinguish bearer handover from custody
 
-Ein Empfänger mit Blobzugang und Schlüssel kann den enthaltenen ungebundenen
-Token ausgeben. Wenn der Schlüssel im weitergegebenen Link steckt, ist **der
-Link selbst** ein Geldschein. Wer eine Kopie hat, kann um die Einlösung konkurrieren.
-Speichern, Kopieren und Löschen auf Blossom beweisen keinen Eigentumswechsel.
+A recipient with blob access and key can spend the contained unbound
+token. If the key sits in the handed-over link, **the
+link itself** is a banknote. Whoever has a copy can race for redemption.
+Store, copy and delete on Blossom do not prove a change of ownership.
 
-Empfang daher mit Mint-Prüfung und Rotation in neue, nur dem Empfänger bekannte
-Secrets. Cashu über den entsprechenden Swap, LNURLcash über Rotation. Eine
-unverändert gelesene Kopie ist noch kein sicher übernommenes Guthaben. Einmalige
-Einlösung wird beim Mint durchgesetzt, nicht durch Einmal-Download oder Blob-Löschung.
+Receive therefore with mint check and rotation into new secrets known only to
+the recipient. Cashu via the corresponding swap, LNURLcash via rotation. An
+unchanged read copy is not yet securely accepted funds. One-time
+redemption is enforced at the mint. Not by one-time download or blob deletion.
 
-Envelope entschlüsselt sein optionales `nwe1`-Fragment derzeit im Opener und
-gibt den Zustand per Intent weiter. Für unsere Host-Vertrauensgrenze sollte es
-nur einen nicht spendbaren Verweis tragen; Entschlüsselung im vertrauenswürdigen
-Wallet-Kontext. Ein absichtlich als Bearer-Link gestalteter Transfer braucht
-eine gesonderte, explizite Behandlung dieses Secrets. Keine Vault-Schlüssel
-oder Token in Analyse-Logs, öffentliche Root-Tags oder HTTP-Gateway-URLs kopieren.
+Envelope currently decrypts its optional `nwe1` fragment in the opener and
+forwards the state by intent. For our host trust boundary it should
+carry only a non-spendable pointer. Decryption in the trusted
+wallet context. A transfer intentionally designed as a bearer link needs
+separate, explicit handling of that secret. Do not copy vault keys
+or tokens into analysis logs, public root tags or HTTP gateway URLs.
 
-## Begrenzter nächster Nachweis
+## Limited next proof
 
-1. Gewählte Clientversion gegen genau diese Hashtree-Fassung und ihre Vektoren
-   prüfen, insbesondere `rnd-v1`, private Roots und `nhash`-Format.
-2. Ein synthetisches Tokenpaket lokal verschlüsseln, auf zwei isolierten
-   Blossom-Testservern speichern und mit einer frischen Wallet wieder lesen.
-3. Falscher Schlüssel, manipuliertes Kind, fehlender Blob, alter Root,
-   Serverausfall und Upload-Abbruch müssen erkannt werden.
-4. Envelope startet den geprüften Receive-Vertrag mit einem Verweis; Testmint
-   rotiert den Token. Zweite Einlösung derselben Übergabe scheitert am Mint.
-5. Backup enthält auch Pending-Journal/Counter; Prozesskill, Restore und
-   Gerätewechsel bestehen ohne doppelte Zahlung.
+1. Check the chosen client version against exactly this Hashtree edition and its
+   vectors, especially `rnd-v1`, private roots and `nhash` format.
+2. Encrypt a synthetic token package locally, store it on two isolated
+   Blossom test servers, and read it back with a fresh wallet.
+3. Wrong key, tampered child, missing blob, old root,
+   server failure and upload abort must be detected.
+4. Envelope starts the checked receive contract with a pointer. Test mint
+   rotates the token. Second redemption of the same handover fails at the mint.
+5. Backup also contains pending journal/counters. Process kill, restore and
+   device handover pass without a double payment.
 
-Dieser Nachtrag enthält keine Uploads, keine echten Token und keine Änderung
-am Wallet-Kern. Die zuvor reproduzierten F00–F04 bleiben zu beheben; ein neuer
-entfernter Speicher beseitigt diese lokalen Fehler nicht.
+This addendum contains no uploads, no real tokens and no change
+to the wallet core. The previously reproduced F00–F04 remain to be fixed. A new
+remote store does not remove these local faults.

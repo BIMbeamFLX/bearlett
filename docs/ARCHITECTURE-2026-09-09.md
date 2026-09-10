@@ -1,300 +1,299 @@
-# Bearlett: Architekturentscheidung nach dem Spec-Check
+# Bearlett: architecture decision after the spec check
 
-Status: Empfehlung, keine Neuimplementierung. Grundlage:
-[Machbarkeitsbericht](FEASIBILITY-2026-09-09.md) und
-[geprüfte Quellen](SOURCES-2026-09-09.md). Am 9. September 2026 bestätigt:
-**V1 hat ein aktiv schreibendes Gerät mit ausdrücklichem Gerätewechsel.**
+Status: Recommendation, not a rewrite. Based on
+[feasibility report](FEASIBILITY-2026-09-09.md) and
+[checked sources](SOURCES-2026-09-09.md). Confirmed on 9 September 2026:
+**V1 has one actively writing device with an explicit device handover.**
 
-Nachträgliche Bestandskorrektur: In `G:\Github\TCG600nap` existiert bereits eine
-NutFT-Wallet mit verschlüsselter Blossom-/Nostr-Speicherung. Den vorhandenen
-Adapter prüfen und wiederverwenden; siehe [TCG-Wallet-Abgleich](TCG-WALLET-2026-09-09.md).
-**Granola und die darüber geplanten XMR-/USDT-Swaps sind ausdrücklich V2.**
+Later inventory correction: `G:\Github\TCG600nap` already contains a
+NutFT wallet with encrypted Blossom/Nostr storage. Check the existing
+adapter and reuse it; see [TCG wallet comparison](TCG-WALLET-2026-09-09.md).
+**Granola and the XMR/USDT swaps planned on top of it are expressly V2.**
 
-## Gemeinsamer Kern und Vertrauensgrenzen
+## Shared core and trust boundaries
 
-`Bearlett`, `Wallet`, `CashuEngine`, `Transfers`, Vault und die Protokollhelfer
-sind die Ausgangsbasis. Nicht drei neue Wallets schreiben. Zuerst die
-reproduzierten Fehler beheben und danach den Kern aus dem Ordner `napplet`
-herauslösen. `window`, Solid, globale Offline-Einstellungen und
-`import.meta.env.MODE` dürfen nicht die Kernlogik bestimmen. Sie gehören in
-Adapter. `serviceTransport.ts` ist heute noch eine solche Plattformkopplung.
+`Bearlett`, `Wallet`, `CashuEngine`, `Transfers`, Vault and the protocol helpers
+are the starting point. Do not write three new wallets. First fix the
+reproduced faults. Then extract the core from the `napplet` folder.
+`window`, Solid, global offline settings and
+`import.meta.env.MODE` must not drive core logic. They belong in
+adapters. `serviceTransport.ts` is still such a platform coupling today.
 
 ```mermaid
 flowchart TB
-  Notes[Notes: eigener Designer] -->|Darstellung, Review| UI[Wallet-Oberfläche]
-  UI --> API[Versionierte Wallet-Befehle und öffentliche Ansichten]
-  API --> Core[Gemeinsamer TypeScript-Kern]
-  Core --> LN[LNURLcash-Adapter]
-  Core --> Cashu[Cashu-Adapter: gepinntes cashu-ts]
-  Core --> Store[Transaktionaler Store und Journal]
-  Core --> Backup[Backup und Recovery]
-  Backup --> Signer[Wallet-Nostr-Signer]
-  LN --> Transport[Host- oder Plattform-Transport]
+  Notes[Notes: own designer] -->|Display, review| UI[Wallet UI]
+  UI --> API[Versioned wallet commands and public views]
+  API --> Core[Shared TypeScript core]
+  Core --> LN[LNURLcash adapter]
+  Core --> Cashu[Cashu adapter: pinned cashu-ts]
+  Core --> Store[Transactional store and journal]
+  Core --> Backup[Backup and recovery]
+  Backup --> Signer[Wallet Nostr signer]
+  LN --> Transport[Host or platform transport]
   Cashu --> Transport
 ```
 
-Das Diagramm beschreibt Quellcode-Wiederverwendung. **Ausführungsort und
-Vertrauen unterscheiden sich je Plattform:**
+The diagram describes source-code reuse. **Where it runs and
+whom you trust differ by platform:**
 
-| Oberfläche        | Kern / Speicher                                                                                                                                                    | Reale Grenze                                                                                                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Napplet Wallet    | Vertrauenswürdiger Host führt den gemeinsamen Kern aus; transaktionaler Host-Store. Napplet erhält Ansichten, Reviews und explizit bestätigte Handover-Ergebnisse. | Passt zur NIP-5D-Richtung: Schlüssel/Signieren/Vault im Host. Erfordert neue, als Bearlett-spezifisch bezeichnete Wallet-Capability. Bestehende Cashu-POST-Capability allein reicht nicht. |
-| Web/PWA           | Derselbe Kern im First-Party-Webkontext, optional Worker; verschlüsselte IndexedDB-Datensätze und atomare Transaktionen.                                           | Browser-/Origin-/Update-Vertrauen bleibt. Worker erleichtert Serialisierung, ist keine Hardware-Sicherheitsgrenze gegen kompromittierten First-Party-Code.                                 |
-| Android/Capacitor | Derselbe TS-Kern in der gebündelten First-Party-App; Kotlin-Adapter für Datenbank, Key-Wrapping, Signer und Lifecycle.                                             | JS verarbeitet Wallet-Secrets im entsperrten Zustand. Keystore schützt den Wrapping-Key, nicht automatisch den laufenden JS-Prozess.                                                       |
+| Surface           | Core / storage                                                                                                                                                 | Real boundary                                                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Napplet Wallet    | Trusted host runs the shared core; transactional host store. The napplet receives views, reviews and explicitly confirmed handover results.                    | Fits the NIP-5D direction: keys/signing/vault in the host. Requires a new wallet capability labelled as Bearlett-specific. The existing Cashu POST capability alone is not enough.         |
+| Web/PWA           | Same core in the first-party web context, optional worker; encrypted IndexedDB records and atomic transactions.                                                | Browser/origin/update trust remains. A worker eases serialisation. It is not a hardware security boundary against compromised first-party code.                                            |
+| Android/Capacitor | Same TS core in the bundled first-party app; Kotlin adapters for database, key wrapping, signer and lifecycle.                                                 | JS handles wallet secrets in the unlocked state. Keystore protects the wrapping key. It does not automatically protect the running JS process.                                             |
 
-Der aktuelle Napplet-Vault darf als Test-/Migrationsquelle erhalten bleiben.
-Er verarbeitet Seed und Proofs selbst und ist deshalb nicht als strikt
-hostverwahrte Wallet zu bewerben. Eine standardnahe Version benötigt den Host-
-Dienst. Dieser soll Wallet-Befehle statt beliebiger URLs/POST-Bodys freigeben,
-z.B. vorbereiten, bestätigen, Zustand abgleichen, Backup exportieren. Der Host
-bindet jeden Auftrag an Artefakt, Wallet-ID, Benutzerfreigabe und Revision.
-Ein Design-Intent erhält niemals eine Spend-Freigabe.
+The current napplet vault may remain as a test/migration source.
+It processes seed and proofs itself. It is therefore not to be advertised as a
+strictly host-custodied wallet. A version aligned with the standard needs the host
+service. That service should grant wallet commands instead of arbitrary
+URLs/POST bodies: prepare, confirm, reconcile state, export backup. The host
+binds every job to artifact, wallet ID, user grant and revision.
+A design intent never receives a spend grant.
 
-### Speicher- und Transaktionsvertrag
+### Storage and transaction contract
 
-Ein Wallet-Writer serialisiert **alle** Protokolle, Transfers, Annotationen,
-Importe und Backups. UI-`busy`, zwei getrennte Klassen-Mutexe oder eine
-Service-Map pro Shell-Tab sind dafür nicht ausreichend.
+One wallet writer serialises **all** protocols, transfers, annotations,
+imports and backups. UI `busy`, two separate class mutexes or a
+service map per shell tab are not sufficient for this.
 
-Ein Store-Commit muss Inputs, vorbereitete Outputs, Counter, Operation,
-Transferreferenzen und neue Eigentumsstände atomar bzw. in nachweisbar
-wiederaufnehmbaren Journal-Schritten speichern. Eine persistente Operation
-enthält mindestens ID, Typ, Phase, Wallet-/Writer-Revision, Mint/Keyset/Einheit,
-Inputs, exakte Outputs und Blinding-Daten, Quote, Invoice-Hash, Fee-Limit und
-gegebenenfalls NUT-20-Key. Niemals Secrets in Diagnose-Logs.
+A store commit must persist inputs, prepared outputs, counters, operation,
+transfer references and new ownership states atomically, or in demonstrably
+resumable journal steps. A persistent operation
+contains at least ID, type, phase, wallet/writer revision, mint/keyset/unit,
+inputs, exact outputs and blinding data, quote, invoice hash, fee limit and
+NUT-20 key when applicable. Never put secrets in diagnostic logs.
 
-Web: IndexedDB-Transaktion mit Revision und einem lokalen exklusiven Writer
-(Web Locks, soweit verfügbar; sonst konkurrierende Writer verweigern).
-Android: SQLite-Transaktionen mit geprüftem Commit-/Sync-Verhalten hinter
-Kotlin-Adapter; verschlüsselte Records oder eine separat lizenzgeprüfte
-Datenbankverschlüsselung. NAP-STORAGE bleibt für unkritische Napplet-Einstellungen.
-Kehtos `ok:false`-Fehler muss vorher Ende-zu-Ende korrigiert werden.
+Web: IndexedDB transaction with revision and one local exclusive writer
+(Web Locks where available; otherwise refuse competing writers).
+Android: SQLite transactions with checked commit/sync behaviour behind a
+Kotlin adapter; encrypted records or separately licence-checked
+database encryption. NAP-STORAGE remains for non-critical napplet settings.
+Kehto's `ok:false` fault must be corrected end-to-end first.
 
-Die Bitcoin-/Lightning-/Mint-Seite und der lokale Store können keine gemeinsame
-ACID-Transaktion bilden. Deshalb bleibt die Brücke ein persistierter Ablauf mit
-Wiederaufnahme. Vor jedem möglichen Wertverbrauch speichern; nach Abbruch anhand
-der bestehenden Operation prüfen. Niemals aus Timeout eine neue Zahlung ableiten.
-Erfolg erst nach gesicherten Ziel-Assets **und** gebuchtem/abgeklärtem Wechselgeld.
+The Bitcoin/Lightning/mint side and the local store cannot form a shared
+ACID transaction. The bridge therefore remains a persisted flow with
+resume. Persist before every possible spend of value. After abort, check against
+the existing operation. Never derive a new payment from a timeout.
+Success only after secured destination assets **and** booked/reconciled change.
 
-## Schlüssel und Recovery
+## Keys and recovery
 
-### Empfehlung für V1
+### Recommendation for V1
 
-Die bestehende BIP39-Phrase für LNURLcash und Cashu erhalten. Die beiden
-Protokolle behalten ihre dokumentierten Ableitungen: LNURLcash `m/139'` mit
-Dienstableitung, Cashu gemäß NUT-13 einschließlich Keyset-Versionen; NUT-20
-separat `m/129373'/20'/0'/0'/{counter}`. Der vorhandene Storage-Root-Kontext ist
-eine projektinterne Ableitung, kein generischer Wallet-Standard.
+Keep the existing BIP39 phrase for LNURLcash and Cashu. The two
+protocols keep their documented derivations: LNURLcash `m/139'` with
+service derivation; Cashu per NUT-13 including keyset versions; NUT-20
+separately `m/129373'/20'/0'/0'/{counter}`. The existing storage-root context is
+a project-internal derivation. It is not a generic wallet standard.
 
-Zusätzlich einen **zufälligen, nur für Bearlett verwendeten Nostr-Schlüssel**
-im vertrauenswürdigen Host oder externen Signer anlegen. Keine Ableitung aus
-npub, keine Verwendung des Social-Keys. NIP-07 stellt nur APIs bereit und
-erzeugt keinen standardisierten Wallet-Key. Der Onboardingflow muss Erstellung,
-Auswahl des richtigen Kontos und Sicherung ausdrücklich unterstützen.
+Additionally create a **random Nostr key used only for Bearlett**
+in the trusted host or external signer. No derivation from
+npub. No use of the social key. NIP-07 only provides APIs. It does not
+produce a standardised wallet key. The onboarding flow must explicitly support
+creation, selection of the correct account, and backup.
 
-| Variante                                                   | Bewertung                                                                                                                                                                                                                                                                  |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ein Master-Mnemonic für beide Protokolle und Nostr         | Technisch möglich, aber neue dokumentierte Ableitung und unabhängige Vektoren nötig. NIP-06 beschreibt `m/44'/1237'/account'/0/0`, ist aktuell ausdrücklich `unrecommended`. Nicht als unproblematischen Standard verkaufen. Seedverlust/Diebstahl betrifft alle Bereiche. |
-| Bestehende Wallet-Phrase plus eigener zufälliger Nostr-Key | Empfehlung: keine neue Schlüsselkonstruktion, Trennung vom Social-Key und unabhängiger Keywechsel. Nutzer braucht beide Recovery-Komponenten.                                                                                                                              |
-| Externer Signer mit eigenem Wallet-Konto                   | Gute Alternative, wenn Signieren **und NIP-44 Encrypt/Decrypt** verfügbar sind und dessen Backup beherrscht wird. Ein reiner Signer ohne Entschlüsselung reicht nicht.                                                                                                     |
+| Variant                                                    | Assessment                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One master mnemonic for both protocols and Nostr           | Technically possible. A new documented derivation and independent vectors are required. NIP-06 describes `m/44'/1237'/account'/0/0`. It is currently explicitly `unrecommended`. Do not sell it as an unproblematic standard. Seed loss/theft affects every domain. |
+| Existing wallet phrase plus a dedicated random Nostr key   | Recommendation: no new key construction, separation from the social key, and independent key rotation. The user needs both recovery components.                                                                                                                |
+| External signer with its own wallet account                | A good alternative when signing **and NIP-44 encrypt/decrypt** are available and its backup is mastered. A signer-only path without decryption is not enough.                                                                                                  |
 
-NUT-27 bietet bereits eine deterministische Nostr-Ableitung für **Mintlisten-
-Backups**. Sie ist für genau dieses interoperable Format geeignet, nicht
-automatisch die Wallet-Nostr-Identität oder ein vollständiges Vault-Backup.
+NUT-27 already offers a deterministic Nostr derivation for **mint-list
+backups**. It is suitable for exactly that interoperable format. It is not
+automatically the wallet Nostr identity or a complete vault backup.
 
-Web: Schlüssel nur im vertrauenswürdigen Kontext erzeugen, mit CSPRNG und
-erprobter Bibliothek. Lokalen Key verschlüsselt speichern, Passwort-KDF und
-Entsperrung explizit testen; keine Klartext-Keys in localStorage. Der aktuelle
-PBKDF2-/AES-GCM-Code ist vorhandene Mechanik, kein abgeschlossener Sicherheitsreview.
+Web: Create keys only in the trusted context, with CSPRNG and a
+proven library. Store the local key encrypted. Explicitly test password KDF and
+unlock. No plaintext keys in localStorage. The current
+PBKDF2/AES-GCM code is existing machinery. It is not a completed security review.
 
-Android: Keystore-AES-Wrapping-Key mit Authentifizierung, soweit Gerät/OS dies
-unterstützen; Security-Level/StrongBox-Verfügbarkeit prüfen, nicht voraussetzen.
-Nostr/secp256k1-Signieren ist keine generell zugesicherte Keystore-Funktion.
-Mit externem Signer bleibt dessen privater Nostr-Key dort. Der Wallet-Kern
-erhält weiterhin entschlüsselte Walletdaten. Nach Lock, App-Hintergrund und
-Prozessneustart erneute Entsperrung und Journalprüfung verlangen.
+Android: Keystore AES wrapping key with authentication, where device/OS
+support it. Check Security Level/StrongBox availability. Do not assume it.
+Nostr/secp256k1 signing is not a generally guaranteed Keystore function.
+With an external signer, its private Nostr key stays there. The wallet core
+still receives decrypted wallet data. After lock, app background and
+process restart, require a new unlock and journal check.
 
-### Signer-Adapter und Kontrollnachweis
+### Signer adapter and proof of control
 
-- Web: NIP-07 mit Featureprüfung, alternativ NIP-46; Paja kann diese beiden
-  Backends bereits. Kein `window.nostr` im Napplet.
-- Android: NIP-55 über explizit gebundene Package-Intents/ActivityResult und
-  nach erteilter Berechtigung ContentResolver, z.B. mit Amber. NIP-46 ist eine
-  zusätzliche, netzabhängige Alternative. NIP-55-Callbacks im Browser haben
-  URL-/Clipboard-/Lifecycle-Grenzen und sind für große Vaults kein guter Kanal.
-- `getPublicKey` oder npub ist nur Identifikation. Mit zufälliger Challenge,
-  Ablauf und Anwendungskontext lokal eine Signatur prüfen; keine öffentliche
-  Veröffentlichung des Nachweises nötig. Zusätzlich einen bekannten NIP-44-
-  Testciphertext entschlüsseln lassen. Wiederkehrende Antworten an Request-ID,
-  aktive Wallet und ausgewähltes Signer-Konto binden.
-- Bei Ablehnung, Accountwechsel, verlorener Activity-Antwort oder fehlender
-  Berechtigung kein neues Wallet erstellen und keine Transaktion wiederholen.
+- Web: NIP-07 with feature check, alternatively NIP-46. Paja already has these two
+  backends. No `window.nostr` in the napplet.
+- Android: NIP-55 via explicitly bound package intents/ActivityResult and,
+  after granted permission, ContentResolver; Amber is one such signer. NIP-46 is an
+  additional, network-dependent alternative. NIP-55 callbacks in the browser have
+  URL/clipboard/lifecycle limits. They are not a good channel for large vaults.
+- `getPublicKey` or npub is identification only. Check a signature locally with a
+  random challenge, expiry and application context. No public
+  publication of the proof is required. Additionally have a known NIP-44
+  test ciphertext decrypted. Bind returning answers to request ID,
+  active wallet and selected signer account.
+- On denial, account change, lost Activity answer or missing
+  permission: do not create a new wallet. Do not repeat a transaction.
 
-### Recovery-Paket ohne Zirkelschluss
+### Recovery package without circular dependency
 
-Ein Relay-Backup kann nicht seinen einzigen Entschlüsselungsschlüssel nur in
-sich selbst enthalten. Separat sichern: Wallet-Phrase, Wallet-Nostr-Key bzw.
-Signer-Recovery, Relay-/Snapshot-Locator und ein passwortverschlüsseltes
-Vollbackup. Bei externem Signer muss dessen Recovery separat beschrieben werden;
-ein nicht exportierbarer Android-Wrapping-Key ist kein geräteübertragbares Backup.
+A relay backup cannot contain its only decryption key only
+inside itself. Back up separately: wallet phrase, wallet Nostr key or
+signer recovery, relay/snapshot locator, and a password-encrypted
+full backup. With an external signer, its recovery must be described separately.
+A non-exportable Android wrapping key is not a device-portable backup.
 
-Frische Installation: Walletidentität beweisen, Container vollständig
-authentifizieren, importierte Bestände sperren, Pending-Journale zuerst
-abgleichen, alle bekannten Mints/Keysets mit NUT-07/09 prüfen, Counter nur
-vorwärts bewegen. Phrase allein findet weder unbekannte Mints noch Artwork,
-Ziel-Quotes oder unbegrenzt große Counter-Lücken. Veraltete Backups ausdrücklich
-anzeigen und vor neuer Ausgabe vollständig abgleichen.
+Fresh install: prove wallet identity, fully
+authenticate the container, lock imported holdings, first
+reconcile pending journals, check all known mints/keysets with NUT-07/09, move
+counters only forward. A phrase alone finds neither unknown mints nor artwork,
+destination quotes, or unbounded counter gaps. Display stale backups explicitly
+and fully reconcile them before new issuance.
 
-## Relay-Backup ist weder Synchronisierung noch Lock
+## Relay backup is neither synchronisation nor a lock
 
-NIP-60 eignet sich zum interoperablen Speichern von Cashu-Proofs (7375), Wallet-
-Metadaten (17375) und optionaler Historie (7376). Es enthält nicht unseren
-LNURLcash-Zustand, vorbereitete Blinding-Daten, Counter, alle Transferjournale
-oder eine atomare Mehrgeräte-Transaktion. Die private P2PK-Wallet-ID in NIP-60
-ist außerdem nicht der Nostr-Signierschlüssel. NIP-61 sind P2PK-Nutzaps und
-bleiben außerhalb V1.
+NIP-60 is suitable for interoperable storage of Cashu proofs (7375), wallet
+metadata (17375) and optional history (7376). It does not contain our
+LNURLcash state, prepared blinding data, counters, all transfer journals,
+or an atomic multi-device transaction. The private P2PK wallet ID in NIP-60
+is also not the Nostr signing key. NIP-61 is P2PK Nutzaps. They
+remain outside V1.
 
-Empfehlung: **NIP-78 als Transportcontainer für Bearlett-spezifische vollständige
-verschlüsselte Recovery-Daten**, nicht als angeblich universelles Cashuformat.
-NIP-44 an den eigenen Wallet-Pubkey und Eventsignatur; App-Schema explizit
-versionieren. NIP-60 später als geprüften Import-/Exportadapter anbieten, ohne
-ihn mit dem Recovery-Journal gleichzusetzen. NUT-27 optional für die Mintliste.
+Recommendation: **NIP-78 as a transport container for Bearlett-specific complete
+encrypted recovery data**. It is not a supposedly universal Cashu format.
+NIP-44 to the own wallet pubkey and event signature. Version the app schema
+explicitly. Offer NIP-60 later as a checked import/export adapter. Do not
+equate it with the recovery journal. NUT-27 optional for the mint list.
 
-Noch kein endgültiges neues Event-/Chunkformat festlegen: zuerst Roundtrip mit
-den tatsächlich gewählten Signern und Relays prüfen. Die aktuelle NIP-44 kennt
-erweiterte Nachrichtenlängen oberhalb 65.535 Bytes; ältere Implementierungen
-und Relay-Limits können diese trotzdem ablehnen. Wallet-Artwork nicht ungeprüft
-in jedes Journal-Backup duplizieren. Bei notwendigen Chunks muss ein signierter
-Commit sämtliche Hashes/Anzahl/Revision binden und unvollständige Sets ablehnen.
+Do not yet fix a final new event/chunk format. First check a round-trip with
+the actually chosen signers and relays. Current NIP-44 specifies
+extended message lengths above 65,535 bytes. Older implementations
+and relay limits can still reject them. Do not blindly
+duplicate wallet artwork into every journal backup. When chunks are required, a
+signed commit must bind all hashes/count/revision and reject incomplete sets.
 
-Backup-Status getrennt führen: lokal committed, zum Relay gesendet, Relay-ACK,
-verifizierter Read-back und letzter erfolgreich geprüfter Restore. Für
-Resilienz unabhängige Relays plus Dateibackup empfehlen. Zwei ACKs ersetzen
-keinen Restore-Test und keinen garantierten Aufbewahrungsvertrag.
+Keep backup status separate: locally committed, sent to the relay, relay ACK,
+verified read-back, and last successfully checked restore. For
+resilience recommend independent relays plus a file backup. Two ACKs replace
+neither a restore test nor a guaranteed retention contract.
 
-| Störung                                            | Erforderliches Verhalten                                                                                                                                                                                        |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Relay nicht erreichbar / ACK verloren              | Lokale Journalwahrheit erhalten, denselben Event erneut senden/abfragen; nie eine Zahlung neu auslösen. Backup-Verzug sichtbar machen.                                                                          |
-| Alte gültige Events / unterschiedliche Relay-Heads | Revision, Parent, lokale High-Water-Marks und erwartete Wallet-ID vergleichen; Konflikt sperren. Auf völlig neuem Gerät ist eine vollständige Rollback-Erkennung ohne unabhängigen Checkpoint nicht garantiert. |
-| Manipulierter oder unvollständiger Snapshot        | Signatur, NIP-44-Authentifizierung, vollständiges Schema und Commit-Verzeichnis prüfen; Import vor jeder Mutation ablehnen.                                                                                     |
-| Key kompromittiert                                 | Alte Ciphertexts gelten als lesbar. Signer-Key wechseln schützt alte Backups nicht rückwirkend; vorhandene spendbare Assets in neue Wallet/Seed rotieren und neue Backup-Identität anlegen.                     |
-| Relay löscht Events / NIP-09 ignoriert             | Löschung nicht als sichere Vernichtung voraussetzen. Historische Proofs nur verschlüsselt; Offlinekopie behalten.                                                                                               |
-| Metadaten                                          | Pubkey, Zeit, Größe, Relay-IP und Zugriffsmuster bleiben sichtbar. Keine Mintnamen, Beträge oder Proofs in öffentlichen Tags.                                                                                   |
+| Fault                                              | Required behaviour                                                                                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Relay unreachable / ACK lost                       | Keep local journal truth. Resend/query the same event. Never trigger a new payment. Make backup delay visible.                                                                                  |
+| Old valid events / different relay heads           | Compare revision, parent, local high-water marks and expected wallet ID. Lock on conflict. On a completely new device, complete rollback detection is not guaranteed without an independent checkpoint. |
+| Tampered or incomplete snapshot                    | Check signature, NIP-44 authentication, complete schema and commit directory. Reject import before any mutation.                                                                                |
+| Key compromised                                    | Old ciphertexts count as readable. Changing the signer key does not protect old backups retroactively. Rotate existing spendable assets into a new wallet/seed and create a new backup identity. |
+| Relay deletes events / NIP-09 ignored              | Do not assume deletion is secure destruction. Historical proofs only encrypted. Keep an offline copy.                                                                                           |
+| Metadata                                           | Pubkey, time, size, relay IP and access patterns remain visible. No mint names, amounts or proofs in public tags.                                                                               |
 
-## Gerätewechsel mit einem Schreiber
+## Device handover with one writer
 
-Gewöhnliche Relays liefern keine atomare Wahl eines Writers. Für V1 ist daher
-ein **kooperativer, ausdrücklich ausgeführter Gerätewechsel** vorgesehen:
+Ordinary relays do not provide atomic election of a writer. V1 therefore
+plans a **cooperative, explicitly executed device handover**:
 
-1. Quellgerät nimmt keine neuen Wallet-Befehle an. Laufende Operationen werden
-   beendet oder vollständig als pending journalisiert; keine unklare Zahlung
-   „freigeben“.
-2. Quelle speichert einen dauerhaften Handover-Zustand, finale Revision,
-   Counter und Zielgerätbindung. Daraus einen vollständig authentifizierten
-   Transfer-/Recovery-Checkpoint erzeugen. Quelle bleibt schreibgesperrt.
-3. Ziel importiert, prüft Wallet-/Signeridentität, Vollständigkeit und
-   Zielbindung. Es übernimmt sämtliche Pending-Operationen. Wiederaufnahme
-   benutzt dieselben vorbereiteten Requests und keine neuen Zahlungen.
-4. Ziel aktiviert die neue Writer-Epoche erst nach erfolgreichem Commit und
-   Abgleich. Quelle speichert den abgeschlossenen Wechsel; bei Crash bleibt
-   sie gesperrt. Nach verlorenem ACK nur diesen Wechsel fortsetzen.
-5. Rückwechsel ist ein neuer expliziter Handover. Eine alte Datei zu importieren
-   darf nicht automatisch Schreibrechte wiederherstellen.
+1. The source device accepts no new wallet commands. Running operations are
+   finished or fully journalled as pending. Do not "release" an unclear payment.
+2. The source persists a durable handover state, final revision,
+   counters and target-device binding. From that, produce a fully authenticated
+   transfer/recovery checkpoint. The source remains write-locked.
+3. The target imports. It checks wallet/signer identity, completeness and
+   target binding. It takes over all pending operations. Resume
+   uses the same prepared requests. It uses no new payments.
+4. The target activates the new writer epoch only after successful commit and
+   reconciliation. The source records the completed handover. On crash it remains
+   locked. After a lost ACK, continue only this handover.
+5. A reverse handover is a new explicit handover. Importing an old file
+   must not automatically restore write rights.
 
-Das ist kein kryptografisches Fencing gegen einen bösartigen oder aus altem
-Backup wiederbelebten Client, der dieselben Seeds/Proofs besitzt. Bei verlorenem
-oder kompromittiertem Quellgerät deshalb Recovery in eine neue Wallet/Seed mit
-Rotation der erreichbaren Guthaben; bei offline gebliebenen Mints deren Assets
-gesperrt lassen. Nicht behaupten, ein Nostr-Event könne bestehende ungebundene
-Bearer-Secrets ungültig machen.
+This is not cryptographic fencing against a malicious client, or a client
+revived from an old backup, that holds the same seeds/proofs. On a lost
+or compromised source device, therefore recover into a new wallet/seed with
+rotation of reachable balances. For mints that stayed offline, leave their assets
+locked. Do not claim that a Nostr event can invalidate existing unbound
+bearer secrets.
 
-## Android-Alternativen
+## Android alternatives
 
-| Ansatz                                       | Signer / sichere Ablage / Gerätefunktionen                                                                                                                  | Wiederverwendung und Urteil                                                                                                                                                                    |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web/PWA + Capacitor + kleine Kotlin-Adapter  | NIP-55-Bridge, Keystore-Wrapping, transaktionale SQLite-Bridge, Kamera/NFC und Activity-Restore explizit implementieren/testen. Preferences ist kein Vault. | Höchste Wiederverwendung des bestehenden TS-Kerns und Solid-UI. **Bevorzugter Validierungspfad**, Freigabe erst nach echtem Gerätetest.                                                        |
-| Native Kotlin/Compose                        | Sehr direkte Android-Lifecycle-, NFC-, Keystore- und Signer-Anbindung.                                                                                      | Eine zweite Implementierung der Walletlogik oder zusätzliche JS-Engine-/FFI-Grenze wäre nötig. Höherer Prüf-/Wartungsaufwand. Nur wählen, wenn der Adapter-Spike konkrete harte Grenzen zeigt. |
-| React Native                                 | TS-Kern gut wiederverwendbar, native Module für Signer/Speicher/Lifecycle nötig; Solid-UI nicht direkt wiederverwendbar.                                    | Sinnvolle Alternative bei längerfristigem Bedarf an nativer UI; derzeit zusätzlicher UI-Neubau ohne belegten Nutzen.                                                                           |
-| Kotlin Multiplatform / gemeinsamer Rust-Kern | Kann langfristig Walletkern nativ teilen; Web verlangt passende Bindings.                                                                                   | Jetzt weitgehender Ersatz des getesteten TS-Kerns und neues Kryptobibliotheks-/Interop-Risiko. Für V1 nicht gerechtfertigt.                                                                    |
+| Approach                                     | Signer / secure storage / device functions                                                                                                          | Reuse and judgement                                                                                                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Web/PWA + Capacitor + small Kotlin adapters  | Implement/test NIP-55 bridge, Keystore wrapping, transactional SQLite bridge, camera/NFC and Activity restore explicitly. Preferences is not a vault. | Highest reuse of the existing TS core and Solid UI. **Preferred validation path**. Release only after a real device test.                                                          |
+| Native Kotlin/Compose                        | Very direct Android lifecycle, NFC, Keystore and signer binding.                                                                                    | A second implementation of the wallet logic, or an extra JS-engine/FFI boundary, would be required. Higher review/maintenance cost. Choose only if the adapter spike shows concrete hard limits. |
+| React Native                                 | TS core is readily reusable. Native modules for signer/storage/lifecycle are required. Solid UI is not directly reusable.                           | A reasonable alternative if native UI is needed longer term. Currently extra UI rebuild without demonstrated benefit.                                                              |
+| Kotlin Multiplatform / shared Rust core      | Can share the wallet core natively long term. Web requires matching bindings.                                                                       | Now a far-reaching replacement of the tested TS core and new crypto-library/interop risk. Not justified for V1.                                                                    |
 
-Capacitor selbst ist ein FOSS-Kandidat; keine proprietären Cloud-,
-Secure-Storage- oder Live-Update-Dienste voraussetzen. AndroidX und Android-
-Werkzeuge haben eigene Lizenzen: MIT für Bearlett heißt nicht, dass sämtliche
-Werkzeuge ebenfalls MIT sind. Einen APK-Sideload kann man ohne Storekosten
-testen. WebView darf nur gebündelte vertrauenswürdige App-Dateien laden;
-Navigation, externe Inhalte und JS-Bridge-Zugriffe begrenzen. Tests müssen
-echte Kill-/Neustartfälle abdecken, nicht nur `pause`/`resume`-Events.
+Capacitor itself is a FOSS candidate. Do not assume proprietary cloud,
+secure-storage or live-update services. AndroidX and Android
+tools have their own licences. MIT License for Bearlett does not mean that all
+tools are also MIT. An APK sideload can be tested without store fees.
+WebView may load only bundled trusted app files.
+Limit navigation, external content and JS-bridge access. Tests must
+cover real kill/restart cases. Not only `pause`/`resume` events.
 
-## Ergänzung: gewünschte XMR-/USDT-Swaps über Granola
+## Addendum: requested XMR/USDT swaps via Granola
 
-Während der Prüfung ausdrücklich gewünschte Richtung: **möglichst über Mints
-mit Brenos Granola tauschen**. Diese Präferenz ersetzt die zunächst erwogene
-allgemeine Swap-Anbieter-Anbindung. Sie ist eine zusätzliche Ausbaustufe und
-kein Nachweis heutiger XMR-/USDT-Funktionalität.
+Direction explicitly requested during the check: **swap via mints
+with Breno's Granola where possible**. This preference replaces the initially
+considered generic swap-provider integration. It is an additional expansion
+stage. It is not evidence of today's XMR/USDT functionality.
 
-Vorgesehener Ablauf:
+Intended flow:
 
 ```text
-LNURLcash --Lightning--> Cashu-Sats
+LNURLcash --Lightning--> Cashu sats
                            |
-                     Granola-HTLC-Swap
+                     Granola HTLC swap
                            |
-                 XMR-/USDT-gedecktes Ecash
+                 XMR-/USDT-backed ecash
                            |
-                 Einlösung beim Asset-Mint
+                 Redemption at the asset mint
                            |
-                 natives XMR / USDT-Netzwerk
+                 native XMR / USDT network
 ```
 
-[Granolas Settlement-ADR](https://github.com/brenorb/granola/blob/e25a4ec651512045e13bc2d7d8fcee00cb9d5658/docs/adr/0004-cashu-htlc-settlement.md)
-belegt Cashu-HTLCs über einen oder zwei Mints, unter Annahmen über ehrliche
-Durchsetzung, Erreichbarkeit, Zeit und verfügbare Spend-Witnesses. Granola
-emittiert selbst kein XMR/USDT und garantiert keine anschließende Auszahlung
-auf einer Blockchain. Ein USD-Cashu-Token ist nicht allein wegen seiner
-Einheit durch USDT gedeckt. Eine mintbasierte Asset-Forderung muss in der
-Oberfläche als solche erkennbar bleiben.
+[Granola's settlement ADR](https://github.com/brenorb/granola/blob/e25a4ec651512045e13bc2d7d8fcee00cb9d5658/docs/adr/0004-cashu-htlc-settlement.md)
+documents Cashu HTLCs across one or two mints, under assumptions about honest
+enforcement, reachability, time and available spend witnesses. Granola
+itself emits no XMR/USDT. It does not guarantee a subsequent payout
+on a blockchain. A USD Cashu token is not USDT-backed merely because of its
+unit. A mint-based asset claim must remain recognisable as such in the
+UI.
 
-Im geprüften Code verwenden Quick-Mint und Dashboard sat/usd;
-`src/api/order-api.ts` wählt einen SAT/USD-Markt. Unterliegende Settlement-
-Funktionen transportieren Einheiten, aber daraus folgt keine getestete
-universelle Asset-Unterstützung. Es wurde kein funktionierender XMR-/USDT-Mint
-mit passenden Ein-/Auszahlungen nachgewiesen.
+In the checked code, Quick Mint and Dashboard use sat/usd.
+`src/api/order-api.ts` selects a SAT/USD market. Underlying settlement
+functions transport units. That does not imply tested
+universal asset support. No working XMR/USDT mint
+with matching deposits/withdrawals was demonstrated.
 
-Erforderliche Erweiterungen:
+Required extensions:
 
-- Explizite Asset-Identität einschließlich Mint, Einheit, atomarer Stückelung,
-  Deckung und Einlösungsbedingungen. USDT-Netzwerk und gegebenenfalls Contract
-  gehören zum Auszahlungsvertrag; frei benannte `usd`-/`xmr`-Strings genügen nicht.
-- Mints mit den von Granola verlangten NUT-07/11/12/14-Fähigkeiten, korrekten
-  Witnesses, Uhren und Refund-Pfaden; Asset-Backend für XMR bzw. USDT separat
-  prüfen. Der heutige LND/Nutshell-Sats-Aufbau stellt diese Backends nicht bereit.
-- Handelspartner/Liquidität und exakte Preis-/Gebührenrechnung pro Einheit.
-  Granola vermittelt Angebote, erzeugt aber keine garantierte Liquidität.
-- Eigener persistenter Swap-Ablauf im gemeinsamen Wallet-Writer: Session-,
-  Claim- und Refund-Schlüssel, Preimage, Fristen und beide Legs vollständig
-  sichern. Kein zweites Wallet mit unkoordinierten Proof-Reservierungen.
-- Erst isolierter Testnut-SAT/USD-Flow samt Abbruch/Refund; danach belegte
-  Asset-Mints und Testnet-Einlösung. Eine vollständig atomare Kette von
-  LNURLcash bis zur Blockchain-Auszahlung wird nicht behauptet.
-- Vor Codeübernahme Granolas fehlende Lizenzfreigabe klären. Öffentliches
-  Repository und bestandene Tests allein erlauben keine MIT-Umlizenzierung.
+- Explicit asset identity including mint, unit, atomic denomination,
+  backing and redemption conditions. USDT network and contract where applicable
+  belong to the payout contract. Freely named `usd`/`xmr` strings are not enough.
+- Mints with the NUT-07/11/12/14 capabilities Granola requires, correct
+  witnesses, clocks and refund paths. Check the asset backend for XMR and USDT
+  separately. Today's LND/Nutshell sats setup does not provide these backends.
+- Counterparties/liquidity and exact price/fee calculation per unit.
+  Granola relays offers. It does not produce guaranteed liquidity.
+- Own persistent swap flow in the shared wallet writer: persist session,
+  claim and refund keys, preimage, deadlines and both legs
+  completely. No second wallet with uncoordinated proof reservations.
+- First an isolated Testnut SAT/USD flow including abort/refund. Then demonstrated
+  asset mints and testnet redemption. A fully atomic chain from
+  LNURLcash to blockchain payout is not claimed.
+- Before taking code, clarify Granola's missing licence grant. A public
+  repository and passing tests alone do not allow MIT relicensing.
 
-Direktes XMR-Ecash ↔ USDT-Ecash wäre dieselbe Kategorie eines Cashu-Marktes,
-sofern Assets, Mints und Liquidität nachgewiesen sind. Native Cross-chain-
-Atomic-Swaps sind dafür keine Voraussetzung; das Mint-Vertrauen bleibt bestehen.
+Direct XMR ecash ↔ USDT ecash would be the same category of Cashu market,
+if assets, mints and liquidity are demonstrated. Native cross-chain
+atomic swaps are not a prerequisite for that. Mint trust remains.
 
-## Gestufter Umsetzungsplan
+## Staged implementation plan
 
-| Stufe                  | Arbeit                                                                                                                                                    | Abnahme                                                                                                                                                                                                                                  |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0: Fehlergrenzen       | F00–F04 korrigieren; vollständige Wertbilanz und atomare Import-Identität; Testreproduktionen in Invariantentests umwandeln.                              | Negative Storage-ACK/Readfehler blockieren jede Mint-Mutation; fehlendes Change bleibt pending; manipulierte/fremde Backups werden vor Writes abgelehnt; Counter-Lücke 100 wird gefunden. Bestehende 353 Tests und Regtest bleiben grün. |
-| 1: Gemeinsamer Kern    | Plattformabhängigkeiten extrahieren, Store-/Transport-/Signer-Ports, ein Writer für alle APIs, konsistente Backups; LNURLcash-Funktionen erhalten.        | Dieselben Fault-Fixtures laufen über Web- und Host-Adapter; parallele Aufrufe verlieren keine Updates; keine import.meta/window-Abhängigkeit in der Domainlogik.                                                                         |
-| 2: Napplets/Host       | Hostverwahrter Wallet-Dienst, echte Cashu-/LNURLcash-Freigaben, durable Storage, App-Upgrade, Intent-Cold-start; Notes separat.                           | Verifizierte Artefakte im echten Paja, denied/granted, zwei Host-Tabs, Storage-Ausfall, Reload und Update getestet; Design enthält keine automatisch eingefügten Secrets.                                                                |
-| 3: Web/PWA             | Bearlett-Oberfläche mit beiden Protokollen, IndexedDB, Offlineansicht, NIP-07/NIP-46, Kameraoption; keine Offline-Ausgaben ohne persistente Reservierung. | Installation/Reload, verlorene Antwort, Browserkill, Offline-Reconnect, Quota und Datenmigration getestet; Service Worker wiederholt keine Mutationsrequests.                                                                            |
-| 4: Backup/Handover     | NIP-44/NIP-78-Roundtrip, getrennte Signer-Recovery, vollständiger Snapshot, expliziter Writerwechsel.                                                     | Neue Browserinstallation aus Backup; zwei getrennte Profile; Quelle nach Handover gesperrt; Abbruch vor/nach jedem Checkpoint; veralteter Snapshot/Relay-Ausfall erkennbar; kein zweiter Melt.                                           |
-| 5: Android-Spike       | Minimaler gebündelter Client mit gleichem Kern; Kotlin-Bridges für Keystore/SQLite/NIP-55; ein Regtest-Flow, Kamera/NFC.                                  | Echtes Android-Gerät + Emulator; Signerablehnung/-wechsel, Activityverlust, force-stop/Neustart, Geräte-Lock, Speicherfehler, Backup und Handover bestanden. Erst danach Capacitor endgültig bestätigen.                                 |
-| 6: Freigabe            | Fehler-Matrix vervollständigen, offizielle Vektoren, unabhängiger Review, zusätzliche Mintimplementierung, Lizenz-/Upgradeprüfung.                        | Dokumentierte Invarianten und Artefakte, keine offenen P1-Befunde, reproduzierbare Builds. PR/Review vor Merge; öffentliche Veröffentlichung separat entscheiden.                                                                        |
-| 7: Granola-Erweiterung | Gewünschter mintbasierter Asset-Tausch; zunächst Testnut, danach XMR-/USDT-Mints nur bei belegter Einlösung.                                              | Lizenz geklärt, Cashu-HTLC-Claim/Refund nach Prozesskill bestanden, Asset/Netzwerk eindeutig, Liquidität und Testnet-Ein-/Auszahlung nachgewiesen.                                                                                       |
+| Stage                  | Work                                                                                                                                                  | Acceptance                                                                                                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0: Fault boundaries    | Correct F00–F04. Full value balance and atomic import identity. Convert test reproductions into invariant tests.                                      | Negative storage ACK/read errors block every mint mutation. Missing change stays pending. Tampered/foreign backups are rejected before writes. Counter gap 100 is found. Existing 353 tests and regtest stay green.                  |
+| 1: Shared core         | Extract platform dependencies, store/transport/signer ports, one writer for all APIs, consistent backups. Keep LNURLcash functions.                   | The same fault fixtures run over web and host adapters. Parallel calls lose no updates. No import.meta/window dependency in domain logic.                                                                                            |
+| 2: Napplets/host       | Host-custodied wallet service, real Cashu/LNURLcash grants, durable storage, app upgrade, intent cold start. Notes separate.                          | Verified artifacts in real Paja, denied/granted, two host tabs, storage failure, reload and update tested. Design contains no automatically inserted secrets.                                                                        |
+| 3: Web/PWA             | Bearlett UI with both protocols, IndexedDB, offline view, NIP-07/NIP-46, camera option. No offline spends without a persistent reservation.           | Installation/reload, lost reply, browser kill, offline reconnect, quota and data migration tested. Service worker repeats no mutation requests.                                                                                      |
+| 4: Backup/handover     | NIP-44/NIP-78 round-trip, separate signer recovery, complete snapshot, explicit writer change.                                                        | New browser install from backup. Two separate profiles. Source locked after handover. Abort before/after every checkpoint. Stale snapshot/relay failure detectable. No second melt.                                                  |
+| 5: Android spike       | Minimal bundled client with the same core. Kotlin bridges for Keystore/SQLite/NIP-55. One regtest flow, camera/NFC.                                   | Real Android device + emulator. Signer denial/change, Activity loss, force-stop/restart, device lock, storage error, backup and handover passed. Only then confirm Capacitor finally.                                                |
+| 6: Release             | Complete the fault matrix, official vectors, independent review, additional mint implementation, licence/upgrade check.                               | Documented invariants and artifacts. No open P1 findings. Reproducible builds. PR/review before merge. Decide public publication separately.                                                                                         |
+| 7: Granola extension   | Requested mint-based asset exchange. First Testnut, then XMR/USDT mints only with demonstrated redemption.                                            | Licence clarified. Cashu HTLC claim/refund after process kill passed. Asset/network unambiguous. Liquidity and testnet deposit/withdrawal demonstrated.                                                                              |
 
-Die Größen- und Netzwerkgrenzen, genauen Prüfkommandos sowie noch fehlenden
-Geräte stehen im [Infrastrukturplan](INFRASTRUCTURE-2026-09-09.md).
+Size and network limits, exact check commands, and still-missing
+devices are in the [infrastructure plan](INFRASTRUCTURE-2026-09-09.md).

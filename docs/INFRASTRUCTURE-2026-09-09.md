@@ -1,45 +1,45 @@
-# Infrastruktur und reproduzierbarer Testplan
+# Infrastructure and reproducible test plan
 
-Stand: 9. September 2026. Die Ergebnisse und ihre Grenzen stehen im
-[Machbarkeitsbericht](FEASIBILITY-2026-09-09.md), Versionen der Quellen in
-[SOURCES](SOURCES-2026-09-09.md). Alle folgenden Windows-Befehle sind PowerShell,
-sofern nicht ausdrücklich anders angegeben. Arbeitsverzeichnis: `G:\Github\bearlett`.
-Die Testkonfiguration enthält ausschließlich öffentliche Regtest-Zugangsdaten.
+As of 9 September 2026. Results and their limits are in the
+[feasibility report](FEASIBILITY-2026-09-09.md). Source versions are in
+[SOURCES](SOURCES-2026-09-09.md). All Windows commands below are PowerShell
+unless stated otherwise. Working directory: `G:\Github\bearlett`.
+The test configuration contains only public regtest credentials.
 
-## Tatsächliches Inventar
+## Actual inventory
 
-| Komponente                        | Vorhandener Stand / Zweck                                                                                                       | Port / persistente Daten                                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Node/npm/Git                      | 24.15.0 / 11.12.1 / 2.53.0.windows.1; Builds und Tests ausgeführt                                                               | Kein Dienst; node_modules, Lockfile, Git                                                                    |
-| pnpm                              | Vorhanden und für Workshop verwendet; Projekt deklariert 10.8.0                                                                 | Paketcache; ausgeführte pnpm-Patchversion nicht separat protokolliert                                       |
-| WSL Ubuntu 2                      | Vorhanden; beim Start zunächst gestoppt                                                                                         | Docker liegt innerhalb WSL, kein Windows-docker im PATH                                                     |
-| Docker/Compose                    | Engine 29.3.0 / Compose 5.1.0                                                                                                   | Lokaler WSL-Daemon, vorhandene Images/Volumes                                                               |
-| Bitcoin                           | `bitcoin/bitcoin:29.0`, Regtest                                                                                                 | Nur intern: RPC 18443, P2P 18444, ZMQ 28332/28333; **anonymes Image-Volume** unter `/home/bitcoin/.bitcoin` |
-| LND Alice/Bob                     | `lightninglabs/lnd:v0.19.3-beta`; verbundener finanzierter Regtest-Kanal                                                        | Je intern REST 8080, gRPC 10009, Peer 9735; `bearlett-regtest_alice`, `_bob`                                |
-| Nutshell                          | `cashubtc/nutshell:0.20.3`, LND Bob, Inputfee 100 PPK                                                                           | `127.0.0.1:43338` → 3338; `bearlett-regtest_cashu`, Bob-Zugang nur lesend                                   |
-| LNURLmint                         | Bestehendes Image `bearlett-regtest-lnurl:latest`, Quelle `bd21f6119ee70297c127531e139d517453c26587`, LND Alice, 1 sat Basisfee | `127.0.0.1:48111` → 8111; `bearlett-regtest_lnurl`, Alice-Zugang nur lesend                                 |
-| Playwright/Chromium               | Paket 1.63.0, Browserbuild 1243 vorhanden; 12 Tests ausgeführt                                                                  | Kurzlebiger lokaler Preview-Server; Screenshots/Testresultate                                               |
-| Echter Kehto                      | Gepatchter alter Checkout `14a14155`; Pakettests ausgeführt                                                                     | Host-Port beim späteren Start aus Paja-Ausgabe übernehmen; Hostdaten/Signerprofil separat                   |
-| Gewöhnlicher eigener Backup-Relay | **Fehlt als isolierter, geprüfter Bearlett-Dienst**                                                                             | Vorgesehen: Loopback 47777, eigene Relay-Datenbank                                                          |
-| Cashu-Sync-CAS-Relay              | Quelle vorhanden, Go-Tests bestanden; nicht als Dienst gestartet                                                                | Für V1 nicht erforderlich; eigener Prozess/SQLite erst bei späterem Experiment                              |
-| Android                           | `java`, `adb` und übliche SDK-Verzeichnisse nicht gefunden; kein Emulator-/Gerätenachweis                                       | SDK/JDK, AVD, Debug-APK, Keystore und App-DB fehlen                                                         |
-| Go                                | Kein Host-Go gefunden; Tests mit `golang:1.26-alpine`                                                                           | Temporärer Testcontainer, keine Relay-Datenbank                                                             |
+| Component                         | Present state / purpose                                                                                                     | Port / persistent data                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Node/npm/Git                      | 24.15.0 / 11.12.1 / 2.53.0.windows.1; builds and tests run                                                                  | No service; node_modules, lockfile, Git                                                                 |
+| pnpm                              | Present and used for the workshop; the project declares 10.8.0                                                              | Package cache; the pnpm patch version actually run was not logged separately                            |
+| WSL Ubuntu 2                      | Present; stopped at the start of the session                                                                                | Docker lives inside WSL; no Windows docker on PATH                                                      |
+| Docker/Compose                    | Engine 29.3.0 / Compose 5.1.0                                                                                               | Local WSL daemon, existing images/volumes                                                               |
+| Bitcoin                           | `bitcoin/bitcoin:29.0`, regtest                                                                                             | Internal only: RPC 18443, P2P 18444, ZMQ 28332/28333; **anonymous image volume** under `/home/bitcoin/.bitcoin` |
+| LND Alice/Bob                     | `lightninglabs/lnd:v0.19.3-beta`; connected funded regtest channel                                                          | Each internal REST 8080, gRPC 10009, peer 9735; `bearlett-regtest_alice`, `_bob`                        |
+| Nutshell                          | `cashubtc/nutshell:0.20.3`, LND Bob, input fee 100 PPK                                                                      | `127.0.0.1:43338` → 3338; `bearlett-regtest_cashu`; Bob access is read-only                             |
+| LNURLmint                         | Existing image `bearlett-regtest-lnurl:latest`, source `bd21f6119ee70297c127531e139d517453c26587`, LND Alice, 1 sat base fee | `127.0.0.1:48111` → 8111; `bearlett-regtest_lnurl`; Alice access is read-only                           |
+| Playwright/Chromium               | Package 1.63.0, browser build 1243 present; 12 tests run                                                                    | Short-lived local preview server; screenshots/test results                                              |
+| Real Kehto                        | Patched old checkout `14a14155`; package tests run                                                                          | Take the host port from the Paja output at later start; host data/signer profile are separate           |
+| Ordinary dedicated backup relay   | **Missing as an isolated, verified Bearlett service**                                                                       | Intended: loopback 47777, dedicated relay database                                                      |
+| Cashu-sync CAS relay              | Source present, Go tests passed; not started as a service                                                                   | Not required for V1; dedicated process/SQLite only for a later experiment                               |
+| Android                           | `java`, `adb` and usual SDK directories not found; no emulator/device evidence                                              | SDK/JDK, AVD, debug APK, keystore and app DB are missing                                                |
+| Go                                | No host Go found; tests with `golang:1.26-alpine`                                                                           | Temporary test container, no relay database                                                             |
 
-Die vollständigen Image-IDs stehen in `outputs/feasibility-2026-09-09/regtest-images.txt`.
-Dies sind lokale Image-IDs, keine behaupteten pullbaren Registry-Digests. Die
-laufende Kombination wurde getestet; ein frischer Build wurde nicht reproduziert.
-Nach Abschluss wurden **nur die fünf Bearlett-Regtest-Container gestoppt**,
-alle Datenvolumes erhalten.
+Full image IDs are in `outputs/feasibility-2026-09-09/regtest-images.txt`.
+These are local image IDs, not claimed pullable registry digests. The
+running combination was tested. A fresh build was not reproduced.
+After completion **only the five Bearlett regtest containers were stopped**.
+All data volumes were kept.
 
-WSL-Start aktivierte aufgrund bestehender Restart-Policies auch fremde
-`terrcvm-corpus`-Dienste: strfry auf 7777, Blossom auf 3000/8787. Ein Blossom-
-Dienst meldete unhealthy. Diese Dienste wurden weder geändert noch gestoppt
-und zählen nicht als Bearlett-Testinfrastruktur.
+Starting WSL also started foreign `terrcvm-corpus` services because of
+existing restart policies: strfry on 7777, Blossom on 3000/8787. One Blossom
+service reported unhealthy. These services were neither changed nor stopped
+and do not count as Bearlett test infrastructure.
 
-## Minimalumgebung: vorhandenen Regtest wieder starten
+## Minimal environment: restart the existing regtest
 
-Die Kopie nach G: enthält `work/lnurl-mint` nicht. Das bestehende Image und die
-Container genügen zum Wiederanlauf. Zuerst den Bestand prüfen:
+The copy on G: does not contain `work/lnurl-mint`. The existing image and the
+containers are enough to restart. First check the inventory:
 
 ```powershell
 Set-Location G:\Github\bearlett
@@ -49,16 +49,16 @@ wsl -d Ubuntu -- docker volume ls --filter name=bearlett-regtest
 wsl -d Ubuntu -- docker inspect bearlett-regtest-bitcoin-1 --format '{{json .Mounts}}'
 ```
 
-In Terminal A im Vordergrund laufen lassen, damit WSL nicht als untätig beendet
-wird. `--no-recreate` erhält insbesondere die Bitcoin-Volume-Zuordnung:
+Leave this running in the foreground in terminal A so WSL is not stopped as idle.
+`--no-recreate` keeps the Bitcoin volume mapping in particular:
 
 ```powershell
 wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml up --no-recreate --no-build
 ```
 
-In Terminal B bei vorhandener, älterer Kette einen frischen Block erzeugen.
-Ein bereits geladenes Wallet meldet beim `loadwallet` einen entsprechenden
-Fehler; andere Fehler erst beheben, bevor man fortsetzt:
+In terminal B, mine a fresh block if the chain is already present and older.
+A wallet that is already loaded reports a corresponding error on `loadwallet`.
+Fix any other error before continuing:
 
 ```powershell
 Set-Location G:\Github\bearlett
@@ -69,13 +69,13 @@ node scripts/regtest.mjs
 npm run test:regtest
 ```
 
-**Reproduzierter Startfehler:** Der Helper erzeugt ab Höhe 101 keine neuen
-Initialblöcke. Bei der alten Kette waren LND und Bitcoin auf gleicher Höhe,
-aber `synced_to_chain` blieb false. Der neue Block beseitigte das Problem.
-Eine frische Kette bootstrapped der Helper selbst mit 101 Blöcken, Funding
-und Kanalöffnung. Der Sonderweg oben ist für den vorhandenen Bestand.
+**Reproduced start fault:** The helper does not mine new initial blocks once
+height is 101 or above. On the old chain LND and Bitcoin were at the same height,
+but `synced_to_chain` stayed false. The new block cleared the problem.
+For a fresh chain the helper bootstraps itself with 101 blocks, funding
+and channel open. The special path above is for the existing inventory.
 
-Den Status explizit prüfen und anschließend nur dieses Projekt stoppen:
+Check status explicitly, then stop only this project:
 
 ```powershell
 wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml exec -T alice lncli --network=regtest getinfo
@@ -83,15 +83,15 @@ wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/comp
 wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml stop
 ```
 
-Kein `down -v`, kein globales Prune. Bitcoin- und LND-Daten müssen konsistent
-zusammen erhalten werden. Ein neuer Bitcoin-Container ohne die alte Kette ist
-kein zulässiger Reparaturversuch für bestehende LND-Volumes.
+No `down -v`. No global prune. Bitcoin and LND data must be kept together
+and consistent. A new Bitcoin container without the old chain is not an
+allowed repair attempt for existing LND volumes.
 
-### Frischer LNURLmint-Build: noch separat zu verifizieren
+### Fresh LNURLmint build: still to be verified separately
 
-Für einen frischen Checkout ohne vorhandenes Image ist zuerst die fehlende
-Quelle am im Compose referenzierten Pfad bereitzustellen. Nur ausführen, wenn
-der Zielpfad noch nicht existiert:
+For a fresh checkout with no existing image, first put the missing source at
+the path referenced in Compose. Run this only if the destination path does not
+yet exist:
 
 ```powershell
 git clone https://github.com/lnurlcash/lnurl-mint.git work/lnurl-mint
@@ -99,17 +99,16 @@ git -C work/lnurl-mint checkout --detach bd21f6119ee70297c127531e139d517453c2658
 wsl -d Ubuntu -- docker compose -f /mnt/g/Github/bearlett/tests/integration/compose.yaml build lnurl
 ```
 
-Das ist ein aus der bestehenden Compose-Konfiguration abgeleiteter Buildweg,
-kein in dieser Session bestandener Clean-Build. Für eine wirklich neue
-isolierte Umgebung zuerst in einer **Kopie** des Compose-Files ein explizites
-Bitcoin-Volume ergänzen und sämtliche Dienste unter einem neuen Projektnamen
-aufsetzen. Die bestehende Umgebung nicht durch neue Volumes ersetzen. Der
-heutige Helper fixiert außerdem den bisherigen Compose-Pfad: vor parallelen
-Stacks braucht er eine explizite Konfigurationsauswahl.
+This is a build path derived from the existing Compose configuration. It is
+not a clean build that passed in this session. For a genuinely new isolated
+environment first add an explicit Bitcoin volume in a **copy** of the Compose
+file and stand up every service under a new project name. Do not replace the
+existing environment with new volumes. Today's helper also pins the existing
+Compose path: parallel stacks need an explicit configuration choice first.
 
-## Prüfkommandos
+## Check commands
 
-Bearlett, jeweils aus dem Projektroot:
+Bearlett, each from the project root:
 
 ```powershell
 npm test
@@ -123,13 +122,13 @@ npm run format:check
 node node_modules/prettier/bin/prettier.cjs --check . --end-of-line auto
 ```
 
-Die fünf isolierten Reproduktionen bestätigen gegenwärtig die Fehler F00–F04.
-Sie sind absichtlich außerhalb der normalen Testsuite und keine bestandenen
-Wallet-Abnahmetests. Formatcheck ist bekanntermaßen nicht grün; `--end-of-line
-auto` dient der Ursachenabgrenzung und ersetzt nicht die Projektregel.
+The five isolated reproductions currently confirm faults F00–F04.
+They sit outside the normal test suite on purpose. They are not passing wallet
+acceptance tests. Format check is known not to be green. `--end-of-line
+auto` is for isolating the cause. It does not replace the project rule.
 
-Die Kehto-Pakettests liefen im erhaltenen alten Checkout. Weder dieser
-Checkout noch der Patch wurden verändert:
+The Kehto package tests ran in the kept old checkout. Neither that
+checkout nor the patch was changed:
 
 ```powershell
 Set-Location C:\Users\FLX\Documents\Codex\2026-09-08\https-github-com-lnurlcash-lnurl-wallet\work\bearlett\work\kehto
@@ -137,8 +136,9 @@ node node_modules/vitest/vitest.mjs run packages/acl packages/firewall packages/
 node node_modules/vitest/vitest.mjs run --cache=false
 ```
 
-Breno-Snapshots sind im Quellenverzeichnis gepinnt. Installationen erfolgten
-mit Lockfile und ohne Lifecycle-Scripts; Tests/Builds danach ausdrücklich:
+Breno snapshots are pinned in the sources directory. Installs used the
+lockfile and skipped lifecycle scripts. Tests and builds were run afterwards,
+explicitly:
 
 ```powershell
 Set-Location G:\Github\bearlett\work\spec-check\brenorb--cashu-sync\wallet
@@ -156,25 +156,25 @@ pnpm verify
 pnpm test:conformance
 ```
 
-Go-Relaytests ohne Installation von Host-Go; Quellmount nur lesend:
+Go relay tests without installing host Go. Source mount is read-only:
 
 ```powershell
 wsl -d Ubuntu -- docker run --rm --name bearlett-spec-cas-test -v /mnt/g/Github/bearlett/work/spec-check/brenorb--cashu-sync/relay:/src:ro -w /src golang:1.26-alpine go test ./...
 ```
 
-Netzwerkzugriff wird für Dependencies benötigt. Keine öffentlichen
-`test:live`-Läufe, keine realen Guthaben. Workshop-Conformance prüft nicht
-sämtliche Lifecycle-Fälle und meldet eine Warnung zu undeclared domains.
+Network access is required for dependencies. No public
+`test:live` runs. No real balances. Workshop conformance does not cover
+every lifecycle case and reports a warning about undeclared domains.
 
-## Optionale Backup- und Geräteumgebung
+## Optional backup and device environment
 
-### Gewöhnlicher Relay
+### Ordinary relay
 
-Für den nächsten Backup-Spike einen eigenen lokalen Relay vorsehen. Kein CAS
-für den bestätigten Ein-Schreiber-Ansatz. Der folgende strfry-Aufbau ist ein
-**quellengeprüfter Vorschlag, noch nicht gebaut oder Ende-zu-Ende getestet**.
-Die offiziellen Docker-Builddateien verwenden derzeit Alpine 3.18.3; vor
-dauerhaftem Betrieb Baseimage und Buildabhängigkeiten neu prüfen.
+Plan a dedicated local relay for the next backup spike. No CAS
+for the confirmed one-writer approach. The strfry setup below is a
+**source-checked proposal, not yet built or end-to-end tested**.
+The official Docker build files currently use Alpine 3.18.3. Recheck the
+base image and build dependencies before lasting operation.
 
 ```powershell
 Set-Location G:\Github\bearlett
@@ -188,30 +188,30 @@ wsl -d Ubuntu -- docker run -d --name bearlett-backup-relay -p 127.0.0.1:47777:7
 wsl -d Ubuntu -- docker logs bearlett-backup-relay
 ```
 
-Stop/erneut starten: `wsl -d Ubuntu -- docker stop bearlett-backup-relay` bzw.
-`wsl -d Ubuntu -- docker start bearlett-backup-relay`. Der Host-Port bleibt
-Loopback; Container-internes `0.0.0.0` bedeutet hier keine öffentliche Freigabe.
-Eigene Datenbank behalten. Abnahme: signiertes NIP-78-Event veröffentlichen,
-ACK prüfen, per Event-ID erneut lesen, Signatur/Entschlüsselung/Restore prüfen,
-Relay neu starten und denselben Zustand wieder lesen. Bearletts dafür nötiger
-Backup-Client fehlt noch. Reguläre Relay-Funktion ist kein privater Lesezugang;
-Verschlüsselung und gewünschte Auth-Policy separat testen.
+Stop / start again: `wsl -d Ubuntu -- docker stop bearlett-backup-relay` and
+`wsl -d Ubuntu -- docker start bearlett-backup-relay`. The host port stays
+loopback. Container-internal `0.0.0.0` is not a public exposure here.
+Keep the dedicated database. Acceptance: publish a signed NIP-78 event,
+check the ACK, read it again by event ID, check signature/decryption/restore,
+restart the relay and read the same state again. Bearlett's backup client for
+this is still missing. Ordinary relay function is not private read access.
+Test encryption and the desired auth policy separately.
 
-### Host, Signer, TLS und Android
+### Host, signer, TLS and Android
 
-Der Preview-Host ersetzt nicht einen echten Kehto-/Paja-Test. Fehlender
-Prüfaufbau: verifizierte Wallet-/Notes-Artefakte, eigene Browserprofile, explizite
-Cashu-/Wallet-Berechtigung, NIP-07- oder NIP-46-Testsigner mit ausschließlich
-synthetischer Identität, persistenter Host-Store samt Quota-/I/O-Fehlerinjektion.
-Anschließend Upgrade des Artefakthashes und Intent-Cold-start prüfen. Blossom
-oder nsite sind erst für entsprechende Installation/Verteilung nötig, nicht
-für den beschriebenen Mint-Regtest.
+The preview host does not replace a real Kehto/Paja test. Missing
+check setup: verified Wallet/Notes artifacts, own browser profiles, explicit
+Cashu/wallet permission, a NIP-07 or NIP-46 test signer with a synthetic
+identity only, persistent host store with quota/I/O fault injection.
+Then check artifact-hash upgrade and intent cold start. Blossom
+or nsite are needed only for the matching install/distribution, not
+for the mint regtest described here.
 
-Für Android gemäß [offizieller Capacitor-Umgebung](https://capacitorjs.com/docs/getting-started/environment-setup)
-Android Studio ab 2025.2.1 samt JDK, SDK 36 und Platform-Tools installieren.
-API-36-Emulator plus ein echtes NFC-fähiges Android-Gerät für NIP-55/Amber,
-Kamera, NFC und hardwareabhängigen Keystore bereitstellen. Diese Installation
-und Gerätetests wurden nicht durchgeführt. Nach Einrichtung zuerst:
+For Android, install Android Studio from 2025.2.1 plus JDK, SDK 36 and
+platform-tools per the [official Capacitor environment](https://capacitorjs.com/docs/getting-started/environment-setup).
+Provide an API-36 emulator plus a real NFC-capable Android device for NIP-55/Amber,
+camera, NFC and hardware-backed keystore. This install and the device tests
+were not run. After setup, first:
 
 ```powershell
 adb version
@@ -221,61 +221,61 @@ adb reverse tcp:48111 tcp:48111
 adb reverse tcp:47777 tcp:47777
 ```
 
-ADB-Kommandos dienen nur einer lokal verbundenen Debug-Umgebung. Der Emulator
-kann alternativ `10.0.2.2` für den Windows-Host verwenden. Auf einem echten
-Telefon bezeichnet `127.0.0.1` dagegen das Telefon. WSL-zu-Windows-Weiterleitung
-vorher testen. Für Browser-/Host-Konformität eine lokale, auf dem Gerät
-vertrauenswürdige HTTPS/WSS-Terminierung und korrekt auflösbare Mint-Hostnamen
-ergänzen; keine Zertifikatsprüfungen im Produkt abschalten. Die fest gemappten
-`.test`-Identitäten des Node-Regtests lösen das nicht automatisch.
+ADB commands are only for a locally connected debug environment. The emulator
+can alternatively use `10.0.2.2` for the Windows host. On a real
+phone `127.0.0.1` names the phone. Test WSL-to-Windows forwarding
+first. For browser/host conformance add a local HTTPS/WSS termination trusted
+on the device and mint hostnames that resolve correctly. Do not turn off
+certificate checks in the product. The Node regtest's fixed
+`.test` identity mappings do not solve this automatically.
 
-Beide Mints beantworteten die geprüften OPTIONS-Requests mit
-`Access-Control-Allow-Origin: *`; Nutshell erlaubte POST/content-type. Das
-belegt Preflight-Header, nicht den gesamten Browserflow, TLS, Host-Firewall oder
-alle Endpoints. Backup-Relay, Quota-Tests und alle Mutationen müssen über die
-später tatsächlich verwendeten Adapter erneut geprüft werden.
+Both mints answered the checked OPTIONS requests with
+`Access-Control-Allow-Origin: *`. Nutshell allowed POST/content-type. That
+proves preflight headers, not the full browser flow, TLS, host firewall or
+every endpoint. Backup relay, quota tests and every mutation must be checked
+again through the adapters actually used later.
 
-### Ressourcen und Kosten
+### Resources and cost
 
-Gemessener Leerlauf der fünf Regtest-Dienste: zusammen ungefähr **341 MiB RAM**,
-jeweils unter 0,2 % CPU beim Snapshot. Imagegrößen: Bitcoin ca. 212 MB, LND
-224 MB, Nutshell 1,53 GB, LNURLmint 236 MB; zusammen ungefähr 2,2 GB, ohne Caches.
-Das ist kein Last- oder Android-Benchmark. WSL meldete ca. 15,6 GiB RAM und
-16 GiB Swap; ausreichend freier Platz war vorhanden.
+Measured idle of the five regtest services: about **341 MiB RAM** together,
+each under 0.2 % CPU at the snapshot. Image sizes: Bitcoin about 212 MB, LND
+224 MB, Nutshell 1.53 GB, LNURLmint 236 MB; about 2.2 GB together, without caches.
+This is not a load or Android benchmark. WSL reported about 15.6 GiB RAM and
+16 GiB swap. Enough free space was present.
 
-Planungsbudget, ausdrücklich Schätzung: 4 GB RAM für Builds/Mints; 8–16 GB
-mit Android-Emulator, 10–30 GB zusätzlicher Plattenplatz für SDK/AVD/Images.
-Ein kleiner lokaler Relay sollte zunächst mit 256 MiB Budget gemessen werden.
-Kein VPS, keine bezahlten APIs, keine echten Sats und keine Storegebühr für
-lokale Tests oder APK-Sideload erforderlich. Strom/Download und eventuell
-fehlende Testhardware bleiben reale Kosten; nichts wurde gekauft.
+Planning budget, explicitly an estimate: 4 GB RAM for builds/mints; 8–16 GB
+with Android emulator; 10–30 GB extra disk for SDK/AVD/images.
+A small local relay should first be measured against a 256 MiB budget.
+No VPS, no paid APIs, no real sats and no store fee are required for
+local tests or APK sideload. Power/download and possibly
+missing test hardware remain real costs. Nothing was bought.
 
-## Noch fehlende Abbruch- und Recovery-Nachweise
+## Interrupt and recovery evidence still missing
 
-Für **beide Transferrichtungen** dieselben Unterbrechungspunkte automatisieren.
-Ein erfolgreicher Node-Test mit MemoryStorage deckt keinen Prozess-/Datenträger-
-Crash ab. Testinstrumentierung soll nach einem benannten Journal-Checkpoint
-stoppen; anschließend mit einem neuen Prozess/Profil und erhaltenem Store
-starten. Keine zufälligen Sleeps als alleinigen Fehlerauslöser verwenden.
+Automate the same interrupt points for **both transfer directions**.
+A passing Node test with MemoryStorage does not cover a process/disk
+crash. Test instrumentation should stop after a named journal checkpoint,
+then start with a new process/profile and the kept store.
+Do not use random sleeps as the only fault trigger.
 
-| Unterbrechung / Störung                            | Heute belegt                                                | Nächster notwendiger Nachweis                                                         |
-| -------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Vor Reservierung / fehlgeschlagener lokaler Write  | Lokale Fail-closed-Tests, aber F00 im echten Shim bestätigt | Quota-/I/O-Fehler im Host; **kein** Mint-Request nach negativem Commit                |
-| Nach Counter/Outputs, vor Netzwerk                 | Fixtures; F04 bestätigt Counter-Lücke                       | Browser/Android kill; exakte Outputs erhalten, Counter nie zurücksetzen               |
-| Quote erzeugt, Transferlink noch nicht geschrieben | Codeprüfung, keine vollständige Crash-Matrix                | Verwaiste Quotes/Reservierungen erkennen und sicher weiterführen/abbrechen            |
-| Request gesendet, Antwort verloren                 | Echter Regtest Cashu→LNURLcash mit Restore, genau ein Melt  | Gleicher Lauf LNURLcash→Cashu und sämtlicher unmittelbarer mint/swap/melt-Pfade       |
-| Mint bestätigt, vor lokalem Asset-Commit           | Unit-Fixtures; F01 zeigt Lücke bei fehlendem Change         | Kill, NUT-07/09-Recovery, korrekte Wertbilanz und keine zweite Zahlung                |
-| Ziel gespeichert, vor Source-/Change-Abschluss     | Journalpfade geprüft, kein vollständiger Gerätebeleg        | Wiederaufnahme darf weder doppelt gutschreiben noch unvollständig complete melden     |
-| Abgelaufene Quote / ungeklärte Zahlung             | Teilweise Unitchecks                                        | Zahlungsverbot bei neu abgelaufener Quote, Erhalt schon bezahlter Ansprüche           |
-| Fremdes/unvollständiges/altes Backup               | F02/F03 reproduziert                                        | Vollständige Authentifizierung und Identität vor erstem Write; alten Stand sperren    |
-| Zwei Tabs/Writer, Backup während Mutation          | Nur instanzlokale Leases/Mutexe                             | Gemeinsamer Store-Writer, atomarer Snapshot, kein verlorenes Update                   |
-| Handover vor/nach jedem Checkpoint                 | Fehlend                                                     | Zwei Profile/Geräte, Quelle bleibt gesperrt, verlorene ACKs wiederaufnehmbar          |
-| Relay offline/alter Head/fehlende Chunks           | Fehlend                                                     | Verschlüsselter Roundtrip, Wiederanlauf, konsistenter Restore statt stiller Rollbacks |
-| Signerablehnung/-wechsel, Activityverlust          | Fehlend                                                     | Identität/Requestbindung; keine versehentlich neue Wallet/erneute Zahlung             |
-| Android force-stop/Lock/Neustart/NFC               | Fehlend                                                     | Echter Prozesskill und Gerät, transaktionaler Store, Entsperrung und Reconcile        |
+| Interrupt / fault                                  | Proven today                                                | Next required evidence                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Before reservation / failed local write            | Local fail-closed tests, but F00 confirmed in the real shim | Quota/I/O error in the host; **no** mint request after a negative commit          |
+| After counter/outputs, before network              | Fixtures; F04 confirms the counter gap                      | Browser/Android kill; keep exact outputs; never reset the counter                 |
+| Quote created, transfer link not yet written       | Code review, no complete crash matrix                       | Detect orphan quotes/reservations and continue or abort them safely               |
+| Request sent, response lost                        | Real regtest Cashu→LNURLcash with restore, exactly one melt | Same run LNURLcash→Cashu and every immediate mint/swap/melt path                  |
+| Mint confirmed, before local asset commit          | Unit fixtures; F01 shows a gap when change is missing       | Kill, NUT-07/09 recovery, correct value balance and no second payment             |
+| Destination saved, before source/change completion | Journal paths reviewed, no complete device evidence         | Resume must neither credit twice nor report incomplete as complete                |
+| Expired quote / unresolved payment                 | Partial unit checks                                         | Payment ban on a newly expired quote; keep already paid claims                    |
+| Foreign/incomplete/old backup                      | F02/F03 reproduced                                          | Full authentication and identity before the first write; lock the old state       |
+| Two tabs/writers, backup during mutation           | Instance-local leases/mutexes only                          | Shared store writer, atomic snapshot, no lost update                              |
+| Handover before/after every checkpoint             | Missing                                                     | Two profiles/devices, source stays locked, lost ACKs resumable                    |
+| Relay offline/old head/missing chunks              | Missing                                                     | Encrypted roundtrip, restart, consistent restore instead of silent rollbacks      |
+| Signer denial/switch, activity loss                | Missing                                                     | Identity/request binding; no accidental new wallet/second payment                 |
+| Android force-stop/lock/restart/NFC                | Missing                                                     | Real process kill and device, transactional store, unlock and reconcile           |
 
-Release-Grenze: F00–F04 beheben, offizielle externe Testvektoren ergänzen,
-Host-/Browser-/Gerätetests bestehen lassen und unabhängigen Review durchführen.
-Zusätzliche Mintimplementationen und Netzwerkausfälle verbreitern danach die
-Interoperabilitätsbelege. Granolas HTLC-Testnet ist kein Ersatz für diese
-Lightning-/Bearer-Wallet-Matrix.
+Release boundary: fix F00–F04, add official external test vectors, pass
+host/browser/device tests and run an independent review.
+Additional mint implementations and network failures then widen the
+interoperability evidence. Granola's HTLC testnet is not a substitute for this
+Lightning/bearer-wallet matrix.

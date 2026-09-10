@@ -281,13 +281,13 @@ input,select,textarea{font:inherit}
 
 <header class="top">
   <div class="mark" aria-hidden="true"></div>
-  <div><h1>Bearlett Hangar</h1><div class="sub">Vorschau · composable Napplets · 9. September 2026</div></div>
-  <div class="live"><span class="dot on" id="liveDot"></span><span id="liveTxt">Shell verbunden</span></div>
+  <div><h1>Bearlett Hangar</h1><div class="sub">Preview · composable Napplets · 9 September 2026</div></div>
+  <div class="live"><span class="dot on" id="liveDot"></span><span id="liveTxt">Shell connected</span></div>
 </header>
 
 <div class="shell">
-  <aside class="dock" aria-label="Installierte Napplets">
-    <h2>Installiert</h2>
+  <aside class="dock" aria-label="Installed napplets">
+    <h2>Installed</h2>
     <div id="dock"></div>
   </aside>
 
@@ -295,9 +295,9 @@ input,select,textarea{font:inherit}
     <div class="win" id="win" data-family="assets">
       <div class="win__bar">
         <span class="d" id="barD">bearlett-collection</span>
-        <span class="chip" id="barA">archetyp · collection</span>
+        <span class="chip" id="barA">archetype · collection</span>
         <span id="barReq"></span>
-        <span class="right"><span>fenster</span><span class="chip" id="barWin">win-1</span></span>
+        <span class="right"><span>window</span><span class="chip" id="barWin">win-1</span></span>
       </div>
       <div class="win__body" id="body">
 
@@ -305,51 +305,51 @@ input,select,textarea{font:inherit}
         <section class="nap collection" id="nap-collection" data-view="grid">
           <div class="a-row" style="justify-content:space-between;align-items:flex-end">
             <div>
-              <div class="a-label">bearlett-collection · sammlung</div>
-              <h2 class="a-h">Deine Karten</h2>
+              <div class="a-label">bearlett-collection · collection</div>
+              <h2 class="a-h">Your cards</h2>
             </div>
             <div class="a-counter" aria-live="polite">
-              <div><div class="a-label">Karten</div><b id="cCards">0</b></div>
-              <div><div class="a-label">Verschiedene</div><b id="cDistinct">0</b></div>
-              <div><div class="a-label">Doppelte</div><b id="cDupes">0</b></div>
+              <div><div class="a-label">Cards</div><b id="cCards">0</b></div>
+              <div><div class="a-label">Distinct</div><b id="cDistinct">0</b></div>
+              <div><div class="a-label">Duplicates</div><b id="cDupes">0</b></div>
             </div>
           </div>
           <div class="console">
-            <label><span class="a-label">Suche</span><input class="a-in" id="q" type="search" placeholder="Name, Typ, Charakter"></label>
-            <label><span class="a-label">Tier</span><select id="fTier"><option value="">Alle</option><option value="genesis">Genesis</option><option value="vault">Vault</option><option value="rare">Rare</option><option value="uncommon">Uncommon</option><option value="common">Common</option><option value="basic">Basic</option></select></label>
-            <label><span class="a-label">Sortierung</span><select id="fSort"><option value="rarest">Seltenste zuerst</option><option value="name">Name</option><option value="copies">Meiste Exemplare</option></select></label>
-            <label><span class="a-label">Ansicht</span><select id="fView"><option value="grid">Galerie</option><option value="list">Liste</option></select></label>
+            <label><span class="a-label">Search</span><input class="a-in" id="q" type="search" placeholder="Name, type, character"></label>
+            <label><span class="a-label">Tier</span><select id="fTier"><option value="">All</option><option value="genesis">Genesis</option><option value="vault">Vault</option><option value="rare">Rare</option><option value="uncommon">Uncommon</option><option value="common">Common</option><option value="basic">Basic</option></select></label>
+            <label><span class="a-label">Sort</span><select id="fSort"><option value="rarest">Rarest first</option><option value="name">Name</option><option value="copies">Most copies</option></select></label>
+            <label><span class="a-label">View</span><select id="fView"><option value="grid">Gallery</option><option value="list">List</option></select></label>
           </div>
           <div class="a-row" style="margin-bottom:8px">
-            <button class="a-btn ghost" id="btnSelect" aria-pressed="false">Auswählen</button>
-            <button class="a-btn" id="btnTrade" disabled>Weitergeben (0)</button>
-            <button class="a-btn ghost" id="btnRefresh">Aktualisieren</button>
-            <span class="tiny" id="invState">Frage Vault nach Bestand …</span>
+            <button class="a-btn ghost" id="btnSelect" aria-pressed="false">Select</button>
+            <button class="a-btn" id="btnTrade" disabled>Hand over (0)</button>
+            <button class="a-btn ghost" id="btnRefresh">Refresh</button>
+            <span class="tiny" id="invState">Asking vault for holdings …</span>
             <span class="tiny" id="selHint" hidden style="color:var(--cream)"></span>
           </div>
           <div id="collectionBody"></div>
           <div class="hiddenbox">
-            <div class="a-label">Nicht gezeigt · getrennt, nicht gelöscht</div>
-            <div class="row"><span>1 Token mit unbekanntem Keyset <span class="demo">Demo</span></span><span class="tiny">unlesbar · nicht interagieren · melden</span></div>
-            <div class="row"><span>0 Token mit ungültiger Bindung</span><span class="tiny">ungültig</span></div>
+            <div class="a-label">Not shown · hidden, not deleted</div>
+            <div class="row"><span>1 token with unknown keyset <span class="demo">Demo</span></span><span class="tiny">unreadable · do not interact · report</span></div>
+            <div class="row"><span>0 tokens with invalid binding</span><span class="tiny">invalid</span></div>
           </div>
         </section>
 
         <!-- ===== card ===== -->
         <section class="nap" id="nap-card" hidden>
           <div class="a-row" style="justify-content:space-between;margin-bottom:14px">
-            <div class="a-label">bearlett-card · karte</div>
-            <button class="a-btn ghost" data-intent="collection/open">Zur Sammlung</button>
+            <div class="a-label">bearlett-card · card</div>
+            <button class="a-btn ghost" data-intent="collection/open">To collection</button>
           </div>
           <div class="detail">
-            <div class="scene" id="scene" aria-label="Karte, per Ziehen drehbar">
+            <div class="scene" id="scene" aria-label="Card, drag to rotate">
               <canvas id="glow" width="320" height="448" aria-hidden="true"></canvas>
               <div class="card3d" id="card3d">
                 <div class="face front"><img id="cdFront" alt=""></div>
                 <div class="face back">
                   <div class="bh" id="cdBackName"></div>
                   <dl class="prov" id="cdProv"></dl>
-                  <div class="verified" id="cdVerified">Bild-Hash geprüft</div>
+                  <div class="verified" id="cdVerified">Image hash checked</div>
                 </div>
               </div>
             </div>
@@ -360,11 +360,11 @@ input,select,textarea{font:inherit}
               <div class="tiny" id="cdType"></div>
               <div class="rules" id="cdRules"></div>
               <dl class="kv" id="cdKv"></dl>
-              <div class="tiny">Zustand kommt aus <span class="mono">/v1/checkstate</span> des Mints, Exemplare und Wahrscheinlichkeit aus dem Zensus <span class="mono">tier-census-r3</span>. Die Karte ist an deinen P2BK-Schlüssel gebunden.</div>
+              <div class="tiny">State comes from the mint's <span class="mono">/v1/checkstate</span>; copies and probability come from the census <span class="mono">tier-census-r3</span>. The card is bound to your P2BK key.</div>
               <div class="actions">
-                <button class="a-btn" id="btnFlip">Umdrehen</button>
-                <button class="a-btn ghost" id="btnTradeOne">Weitergeben</button>
-                <button class="a-btn ghost" id="btnMeta">Metadaten aktualisieren</button>
+                <button class="a-btn" id="btnFlip">Flip</button>
+                <button class="a-btn ghost" id="btnTradeOne">Hand over</button>
+                <button class="a-btn ghost" id="btnMeta">Refresh metadata</button>
               </div>
             </div>
           </div>
@@ -374,185 +374,185 @@ input,select,textarea{font:inherit}
         <section class="nap" id="nap-reveal" hidden>
           <div class="a-row" style="justify-content:space-between;margin-bottom:14px">
             <div>
-              <div class="a-label">bearlett-reveal · öffnen</div>
-              <h2 class="a-h" id="rvTitle">Fünf Karten angenommen</h2>
-              <div class="tiny" id="rvSub">Quelle: Übergabe · Tausch beim Mint bestätigt · erst dann wird aufgedeckt</div>
+              <div class="a-label">bearlett-reveal · reveal</div>
+              <h2 class="a-h" id="rvTitle">Five cards accepted</h2>
+              <div class="tiny" id="rvSub">Source: handoff · Mint swap confirmed · only then is it revealed</div>
             </div>
-            <button class="a-btn ghost" data-intent="collection/open">Zur Sammlung</button>
+            <button class="a-btn ghost" data-intent="collection/open">To collection</button>
           </div>
           <div class="composition" id="comp" data-composition-id="reveal" data-width="960" data-height="420" data-start="0" data-duration="0">
             <div class="ghosttext" aria-hidden="true">600B</div>
             <div class="tray" id="tray"></div>
           </div>
           <div class="transport">
-            <button class="a-btn" id="btnPlay">Abspielen</button>
-            <input type="range" id="scrub" min="0" max="10" step="0.01" value="0" aria-label="Zeitachse">
+            <button class="a-btn" id="btnPlay">Play</button>
+            <input type="range" id="scrub" min="0" max="10" step="0.01" value="0" aria-label="Timeline">
             <span class="t" id="tRead">0.00 s / 0.00 s</span>
           </div>
           <div class="tracks" id="tracks"></div>
-          <div class="legend"><span><i style="background:var(--a-steel)"></i>deal 300 ms · stagger 55 ms</span><span><i style="background:var(--gold)"></i>charge 300 / 760 ms</span><span><i style="background:var(--purple)"></i>flip 600 ms</span><span><i style="background:var(--ember)"></i>burst 700 / 850 ms</span><span><i style="background:var(--a-dim)"></i>label 300 ms ab +420 ms</span></div>
-          <p class="tiny" style="margin-top:10px">Jeder sichtbare Wert ist eine Funktion der Zeit: <span class="mono">state(t)</span> wird gerendert, kein Element hält Animationszustand. Clips tragen <span class="mono">data-start</span> und <span class="mono">data-duration</span> nach dem HyperFrames-Vertrag; die Zeitachse ist skrubbbar und in Node prüfbar.</p>
+          <div class="legend"><span><i style="background:var(--a-steel)"></i>deal 300 ms · stagger 55 ms</span><span><i style="background:var(--gold)"></i>charge 300 / 760 ms</span><span><i style="background:var(--purple)"></i>flip 600 ms</span><span><i style="background:var(--ember)"></i>burst 700 / 850 ms</span><span><i style="background:var(--a-dim)"></i>label 300 ms from +420 ms</span></div>
+          <p class="tiny" style="margin-top:10px">Every visible value is a function of time: <span class="mono">state(t)</span> is rendered; no element holds animation state. Clips carry <span class="mono">data-start</span> and <span class="mono">data-duration</span> per the HyperFrames contract; the timeline is scrubbable and checkable in Node.</p>
         </section>
 
         <!-- ===== trade ===== -->
         <section class="nap" id="nap-trade" hidden>
           <div class="a-row" style="justify-content:space-between;margin-bottom:14px">
-            <div><div class="a-label">bearlett-trade · weitergeben</div><h2 class="a-h">Karten weitergeben</h2></div>
-            <button class="a-btn ghost" data-intent="collection/open">Abbrechen</button>
+            <div><div class="a-label">bearlett-trade · hand over</div><h2 class="a-h">Hand over cards</h2></div>
+            <button class="a-btn ghost" data-intent="collection/open">Cancel</button>
           </div>
           <div class="two">
             <div>
-              <div class="a-label" style="margin-bottom:8px">Verlässt dein Wallet</div>
+              <div class="a-label" style="margin-bottom:8px">Leaves your wallet</div>
               <div class="shelf" id="tradeShelf"></div>
-              <div class="warn" style="margin-top:16px">Eine übergebene Karte wird beim Mint an den Empfängerschlüssel getauscht. Der Ergebnis-Token erscheint im Vault, nie hier. Wer eine Kopie des Tokens hat, kann um die Einlösung konkurrieren, bis der Empfänger ihn annimmt.</div>
+              <div class="warn" style="margin-top:16px">A handed-over card is swapped at the mint onto the recipient key. The result token appears in the vault, never here. Anyone holding a copy can race the redeem until the recipient accepts it.</div>
             </div>
             <div class="form">
-              <label><span class="a-label">Empfängerschlüssel (P2BK, 64 hex)</span><input class="a-in" id="recip" placeholder="Einfügen oder scannen" autocomplete="off" spellcheck="false"></label>
+              <label><span class="a-label">Recipient key (P2BK, 64 hex)</span><input class="a-in" id="recip" placeholder="Paste or scan" autocomplete="off" spellcheck="false"></label>
               <div class="a-row">
-                <button class="a-btn ghost" data-intent="scanner/open" data-payload='{"expect":"pubkey"}'>Scannen</button>
-                <button class="a-btn ghost" id="btnDemoKey">Demo-Schlüssel einsetzen</button>
+                <button class="a-btn ghost" data-intent="scanner/open" data-payload='{"expect":"pubkey"}'>Scan</button>
+                <button class="a-btn ghost" id="btnDemoKey">Insert demo key</button>
               </div>
-              <div class="tiny" id="recipState">Neuer Empfänger: noch nie an diesen Schlüssel gesendet.</div>
+              <div class="tiny" id="recipState">New recipient: never sent to this key.</div>
               <div class="review" id="tradeReview"></div>
-              <button class="a-btn" id="btnTradeConfirm" disabled>An Vault übergeben</button>
+              <button class="a-btn" id="btnTradeConfirm" disabled>Hand to vault</button>
             </div>
           </div>
         </section>
 
         <!-- ===== vault (core, assets) ===== -->
         <section class="nap" id="nap-vault" hidden>
-          <div class="a-label" style="margin-bottom:8px">nutft-vault · kern · hält karten-proofs und p2bk-schlüssel</div>
+          <div class="a-label" style="margin-bottom:8px">nutft-vault · core · holds card proofs and p2bk keys</div>
           <div class="vaultbox">
             <div class="step" id="vStepIdle">
-              <div class="st">Kein offener Auftrag</div>
-              <div class="tiny">Der Vault zeigt nur Prüfungen, Bestätigungen und Ergebnisse. Alles andere übernehmen Oberflächen-Napplets über Intents.</div>
-              <dl class="kv"><dt>Bestand</dt><dd id="vCount">–</dd><dt>Mint</dt><dd>https://mint.600b.test <span class="demo">Demo</span></dd><dt>Letztes Backup</dt><dd>heute 21:42 · Kind 37378 · verschlüsselt</dd><dt>Gerät</dt><dd>dieses Gerät ist der einzige Schreiber</dd></dl>
+              <div class="st">No open job</div>
+              <div class="tiny">The vault shows reviews, confirmations and results only. Surface napplets take everything else through intents.</div>
+              <dl class="kv"><dt>Holdings</dt><dd id="vCount">–</dd><dt>Mint</dt><dd>https://mint.600b.test <span class="demo">Demo</span></dd><dt>Last backup</dt><dd>today 21:42 · Kind 37378 · encrypted</dd><dt>Device</dt><dd>this device is the only writer</dd></dl>
             </div>
             <div class="step" id="vStepReview" hidden>
-              <div class="st" id="vReviewTitle">Auftrag prüfen</div>
+              <div class="st" id="vReviewTitle">Review the job</div>
               <div class="review" id="vReview"></div>
-              <div class="tiny">Zustellung heißt nicht Erfolg. Bestätige nur, was du meinst.</div>
-              <div class="a-row"><button class="a-btn" id="vUnlock">Entsperren und bestätigen</button><button class="a-btn ghost" id="vDismiss">Verwerfen</button></div>
+              <div class="tiny">Delivery is not success. Confirm only what you mean.</div>
+              <div class="a-row"><button class="a-btn" id="vUnlock">Unlock and confirm</button><button class="a-btn ghost" id="vDismiss">Dismiss</button></div>
             </div>
             <div class="step" id="vStepWork" hidden>
-              <div class="st">Tausch beim Mint …</div>
-              <div class="tiny" id="vWorkTxt">Prüfe Bindung, DLEQ und Zustand · sende /nutft/trade</div>
+              <div class="st">Swap at the mint …</div>
+              <div class="tiny" id="vWorkTxt">Checking binding, DLEQ and state · send /nutft/trade</div>
             </div>
             <div class="step" id="vStepResult" hidden>
-              <div class="st">Ergebnis</div>
+              <div class="st">Result</div>
               <div class="two" style="grid-template-columns:auto 1fr;align-items:center">
-                <canvas class="qr" id="vQr" width="33" height="33" aria-label="QR-Muster, nicht funktional"></canvas>
+                <canvas class="qr" id="vQr" width="33" height="33" aria-label="QR pattern, not functional"></canvas>
                 <div>
-                  <div class="tiny">Ergebnis-Token für den Empfänger <span class="demo">nicht funktional</span></div>
+                  <div class="tiny">Result token for the recipient <span class="demo">not functional</span></div>
                   <div class="mono" style="color:var(--cream);word-break:break-all;margin:6px 0" id="vToken">cashuB… (Demo)</div>
-                  <div class="tiny">Der Token verlässt dieses Fenster nur, wenn du ihn teilst. Bis zur Annahme beim Mint bleibt er ein Bearer-Secret.</div>
+                  <div class="tiny">The token leaves this window only if you share it. Until the mint accepts it, it remains a bearer secret.</div>
                 </div>
               </div>
-              <div class="a-row"><button class="a-btn" id="vDone">Fertig · zur Sammlung</button></div>
+              <div class="a-row"><button class="a-btn" id="vDone">Done · to collection</button></div>
             </div>
           </div>
         </section>
 
         <!-- ===== overview (pay) ===== -->
         <section class="nap" id="nap-overview" hidden>
-          <div class="p-label">bearlett-overview · übersicht <span class="demo">Demo-Daten</span></div>
+          <div class="p-label">bearlett-overview · overview <span class="demo">Demo data</span></div>
           <div class="balance"><b id="ovTotal">53</b><span>sats</span></div>
-          <div class="p-hint" id="ovSub">2 Scheine · Guthaben bleibt je Mint getrennt</div>
+          <div class="p-hint" id="ovSub">2 notes · Balance stays separate per mint</div>
           <div class="p-btns">
-            <button class="p-btn" data-intent="pay/open">Senden</button>
-            <button class="p-btn" data-intent="receive/open">Empfangen</button>
-            <button class="p-btn ghost" data-intent="scanner/open" data-payload='{"expect":"any"}'>Scannen</button>
+            <button class="p-btn" data-intent="pay/open">Send</button>
+            <button class="p-btn" data-intent="receive/open">Receive</button>
+            <button class="p-btn ghost" data-intent="scanner/open" data-payload='{"expect":"any"}'>Scan</button>
           </div>
           <div class="p-card">
-            <div class="p-label">Je Mint</div>
+            <div class="p-label">Per mint</div>
             <div class="p-rows" id="ovMints"></div>
           </div>
           <div class="p-card" style="margin-top:12px">
-            <div class="p-label" style="display:flex;justify-content:space-between"><span>Letzte Bewegungen</span><button class="p-btn ghost" style="padding:4px 8px;font-size:9px" data-intent="activity/open">Alle</button></div>
+            <div class="p-label" style="display:flex;justify-content:space-between"><span>Recent activity</span><button class="p-btn ghost" style="padding:4px 8px;font-size:9px" data-intent="activity/open">All</button></div>
             <div class="p-rows" id="ovRecent"></div>
           </div>
         </section>
 
         <!-- ===== pay (send) ===== -->
         <section class="nap" id="nap-pay" hidden>
-          <div class="p-label">bearlett-pay · senden</div>
-          <h2 class="p-h">Wohin sollen die Sats?</h2>
+          <div class="p-label">bearlett-pay · send</div>
+          <h2 class="p-h">Where should the sats go?</h2>
           <div class="p-form" style="margin-top:14px">
-            <label><span class="p-label">Ziel</span><textarea class="p-in" id="payIn" rows="3" placeholder="BOLT11-Rechnung, BOLT12-Angebot (lno1…), Lightning-Adresse, Cashu-Token oder LNURLcash-Schein" spellcheck="false"></textarea></label>
-            <div class="detect" id="payDetect"><span class="p-hint">Erkennung läuft beim Tippen.</span></div>
-            <div class="p-hint">Beispiele zum Einsetzen:
-              <button class="p-btn ghost" style="padding:4px 8px;font-size:9px" id="exOffer">BOLT12-Angebot</button>
-              <button class="p-btn ghost" style="padding:4px 8px;font-size:9px" id="exAddr">Lightning-Adresse</button>
+            <label><span class="p-label">Destination</span><textarea class="p-in" id="payIn" rows="3" placeholder="BOLT11 invoice, BOLT12 offer (lno1…), Lightning address, Cashu token or LNURLcash note" spellcheck="false"></textarea></label>
+            <div class="detect" id="payDetect"><span class="p-hint">Detection runs as you type.</span></div>
+            <div class="p-hint">Insert examples:
+              <button class="p-btn ghost" style="padding:4px 8px;font-size:9px" id="exOffer">BOLT12 offer</button>
+              <button class="p-btn ghost" style="padding:4px 8px;font-size:9px" id="exAddr">Lightning address</button>
               <button class="p-btn ghost" style="padding:4px 8px;font-size:9px" id="exBolt11">BOLT11</button>
             </div>
-            <label id="payAmtWrap" hidden><span class="p-label">Betrag in Sats</span><input class="p-in" id="payAmt" type="number" min="1" step="1" placeholder="21"></label>
+            <label id="payAmtWrap" hidden><span class="p-label">Amount in sats</span><input class="p-in" id="payAmt" type="number" min="1" step="1" placeholder="21"></label>
             <div class="p-card" id="payFee" hidden></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="p-btn" id="btnPayGo" disabled>Weiter zum Wallet</button>
-              <button class="p-btn ghost" data-intent="scanner/open" data-payload='{"expect":"payment"}'>Scannen</button>
-              <button class="p-btn ghost" data-intent="overview/open">Zurück</button>
+              <button class="p-btn" id="btnPayGo" disabled>Continue to wallet</button>
+              <button class="p-btn ghost" data-intent="scanner/open" data-payload='{"expect":"payment"}'>Scan</button>
+              <button class="p-btn ghost" data-intent="overview/open">Back</button>
             </div>
           </div>
         </section>
 
         <!-- ===== receive ===== -->
         <section class="nap" id="nap-receive" hidden>
-          <div class="p-label">bearlett-receive · empfangen</div>
-          <h2 class="p-h">Wie möchtest du empfangen?</h2>
+          <div class="p-label">bearlett-receive · receive</div>
+          <h2 class="p-h">How do you want to receive?</h2>
           <div class="tabs" role="tablist" style="margin-top:14px">
-            <button role="tab" aria-selected="true" data-tab="bolt12">BOLT12-Angebot</button>
-            <button role="tab" aria-selected="false" data-tab="bolt11">BOLT11-Rechnung</button>
-            <button role="tab" aria-selected="false" data-tab="token">Token oder Schein</button>
+            <button role="tab" aria-selected="true" data-tab="bolt12">BOLT12 offer</button>
+            <button role="tab" aria-selected="false" data-tab="bolt11">BOLT11 invoice</button>
+            <button role="tab" aria-selected="false" data-tab="token">Token or note</button>
           </div>
           <div class="p-form" id="rcBolt12">
-            <label><span class="p-label">Betrag in Sats · leer für betragslos</span><input class="p-in" id="rcAmt" type="number" min="1" step="1" placeholder="leer = Zahler wählt"></label>
-            <label><span class="p-label">Beschreibung</span><input class="p-in" id="rcDesc" value="Bearlett · Meetup-Kasse" maxlength="60"></label>
-            <div class="p-hint">Ein Angebot ist wiederverwendbar. Das Wallet erzeugt es mit eigenem Schlüssel und holt Eingänge selbst ab. Der Mint muss Angebote mit Beschreibung signalisieren.</div>
-            <div><button class="p-btn" id="btnOffer">Angebot beim Wallet anfordern</button></div>
+            <label><span class="p-label">Amount in sats · empty for amountless</span><input class="p-in" id="rcAmt" type="number" min="1" step="1" placeholder="empty = payer chooses"></label>
+            <label><span class="p-label">Description</span><input class="p-in" id="rcDesc" value="Bearlett · meetup till" maxlength="60"></label>
+            <div class="p-hint">An offer is reusable. The wallet creates it with its own key and collects incoming payments itself. The mint must signal offers with a description.</div>
+            <div><button class="p-btn" id="btnOffer">Request offer from wallet</button></div>
             <div id="rcOffer" hidden class="p-card">
-              <div class="p-label">Dein Angebot <span class="demo">nicht funktional</span></div>
-              <div class="p-qr"><canvas id="rcQr" width="41" height="41" aria-label="QR-Muster, nicht funktional"></canvas><div><div class="mono" style="font-size:12px;word-break:break-all" id="rcOfferTxt"></div><div class="p-note" id="rcOfferMeta"></div><div style="margin-top:10px"><button class="p-btn ghost" id="btnCopyOffer">Text kopieren</button></div></div></div>
+              <div class="p-label">Your offer <span class="demo">not functional</span></div>
+              <div class="p-qr"><canvas id="rcQr" width="41" height="41" aria-label="QR pattern, not functional"></canvas><div><div class="mono" style="font-size:12px;word-break:break-all" id="rcOfferTxt"></div><div class="p-note" id="rcOfferMeta"></div><div style="margin-top:10px"><button class="p-btn ghost" id="btnCopyOffer">Copy text</button></div></div></div>
             </div>
           </div>
           <div class="p-form" id="rcBolt11" hidden>
-            <label><span class="p-label">Betrag in Sats</span><input class="p-in" type="number" min="1" step="1" value="21"></label>
-            <div class="p-hint">Eine Rechnung gilt einmal. Nach Zahlung reserviert das Wallet den Schein beim Mint und prüft ihn.</div>
-            <div><button class="p-btn" id="btnInvoice">Rechnung beim Wallet anfordern</button></div>
+            <label><span class="p-label">Amount in sats</span><input class="p-in" type="number" min="1" step="1" value="21"></label>
+            <div class="p-hint">An invoice is one-shot. After payment the wallet reserves the note at the mint and checks it.</div>
+            <div><button class="p-btn" id="btnInvoice">Request invoice from wallet</button></div>
           </div>
           <div class="p-form" id="rcToken" hidden>
-            <label><span class="p-label">Cashu-Token oder LNURLcash-Schein</span><textarea class="p-in" rows="3" id="rcTok" placeholder="cashuA… / cashuB… / lnurl…" spellcheck="false"></textarea></label>
-            <div class="p-hint">Annahme heißt Tausch beim Mint. Eine nur gelesene Kopie ist noch kein Guthaben.</div>
-            <div><button class="p-btn" id="btnTok">An Wallet übergeben</button></div>
+            <label><span class="p-label">Cashu token or LNURLcash note</span><textarea class="p-in" rows="3" id="rcTok" placeholder="cashuA… / cashuB… / lnurl…" spellcheck="false"></textarea></label>
+            <div class="p-hint">Acceptance is a swap at the mint. A copy you only read is not yet a balance.</div>
+            <div><button class="p-btn" id="btnTok">Hand to wallet</button></div>
           </div>
-          <div style="margin-top:16px"><button class="p-btn ghost" data-intent="overview/open">Zurück</button></div>
+          <div style="margin-top:16px"><button class="p-btn ghost" data-intent="overview/open">Back</button></div>
         </section>
 
         <!-- ===== activity ===== -->
         <section class="nap" id="nap-activity" hidden>
-          <div class="p-label">bearlett-activity · aktivität <span class="demo">Demo-Daten</span></div>
-          <h2 class="p-h">Chronik</h2>
+          <div class="p-label">bearlett-activity · activity <span class="demo">Demo data</span></div>
+          <h2 class="p-h">History</h2>
           <div class="p-card" style="margin-top:14px"><div class="p-rows" id="actRows"></div></div>
-          <div class="p-note">Jede Zeile trägt Mint, Status und Zahlungsnachweis. <span class="mono">pending</span> bleibt, bis Rechnung und Preimage geprüft sind; ein fehlender Schein allein beweist nichts.</div>
-          <div style="margin-top:16px"><button class="p-btn ghost" data-intent="overview/open">Zurück</button></div>
+          <div class="p-note">Each row carries mint, status and payment proof. <span class="mono">pending</span> stays until invoice and preimage check out; a missing note alone proves nothing.</div>
+          <div style="margin-top:16px"><button class="p-btn ghost" data-intent="overview/open">Back</button></div>
         </section>
 
         <!-- ===== wallet (core, pay) ===== -->
         <section class="nap" id="nap-wallet" hidden>
-          <div class="p-label">bearlett-wallet · kern · hält scheine, proofs und journal</div>
+          <div class="p-label">bearlett-wallet · core · holds notes, proofs and journal</div>
           <div class="p-card" style="max-width:560px;margin-top:12px">
             <div id="wIdle">
-              <h2 class="p-h">Kein offener Auftrag</h2>
-              <div class="p-note">Das Wallet zeigt Prüfungen, Bestätigungen, Scheine, Mints und Backup. Senden, Empfangen, Scannen und Chronik sind eigene Napplets.</div>
-              <div class="p-rows" style="margin-top:10px"><div class="p-row"><span>Scheine</span><span class="m">2 bereit · 0 ausstehend</span><span class="amt">53</span></div><div class="p-row"><span>Backup</span><span class="m">verschlüsselt · heute</span><span class="pill settled">ok</span></div><div class="p-row"><span>Sperre</span><span class="m">nach 5 Minuten</span><span class="pill">an</span></div></div>
+              <h2 class="p-h">No open job</h2>
+              <div class="p-note">The wallet shows reviews, confirmations, notes, mints and backup. Send, receive, scan and history are separate napplets.</div>
+              <div class="p-rows" style="margin-top:10px"><div class="p-row"><span>Notes</span><span class="m">2 ready · 0 pending</span><span class="amt">53</span></div><div class="p-row"><span>Backup</span><span class="m">encrypted · today</span><span class="pill settled">ok</span></div><div class="p-row"><span>Lock</span><span class="m">after 5 minutes</span><span class="pill">on</span></div></div>
             </div>
             <div id="wReview" hidden>
-              <h2 class="p-h" id="wTitle">Zahlung prüfen</h2>
+              <h2 class="p-h" id="wTitle">Review payment</h2>
               <div class="p-review" id="wRows" style="margin-top:12px"></div>
-              <div class="p-note">Erfolg wird erst gemeldet, wenn Ziel und Wechselgeld verbucht sind. Unklare Zahlungen werden nie automatisch wiederholt.</div>
-              <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="p-btn" id="wConfirm">Entsperren und bestätigen</button><button class="p-btn ghost" id="wDismiss">Verwerfen</button></div>
+              <div class="p-note">Success is reported only after destination and change are booked. Unclear payments are never retried automatically.</div>
+              <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="p-btn" id="wConfirm">Unlock and confirm</button><button class="p-btn ghost" id="wDismiss">Dismiss</button></div>
             </div>
-            <div id="wWork" hidden><h2 class="p-h" id="wWorkTitle">Wird ausgeführt …</h2><div class="p-note" id="wWorkTxt"></div></div>
-            <div id="wDone" hidden><h2 class="p-h" id="wDoneTitle">Verbucht</h2><div class="p-review" id="wDoneRows" style="margin-top:12px"></div><div style="margin-top:14px"><button class="p-btn" data-intent="overview/open">Zur Übersicht</button></div></div>
+            <div id="wWork" hidden><h2 class="p-h" id="wWorkTitle">Running …</h2><div class="p-note" id="wWorkTxt"></div></div>
+            <div id="wDone" hidden><h2 class="p-h" id="wDoneTitle">Settled</h2><div class="p-review" id="wDoneRows" style="margin-top:12px"></div><div style="margin-top:14px"><button class="p-btn" data-intent="overview/open">To overview</button></div></div>
           </div>
         </section>
 
@@ -563,7 +563,7 @@ input,select,textarea{font:inherit}
             <h2 class="p-h a-h" id="stubTitle"></h2>
             <p id="stubText" style="margin:0"></p>
             <dl class="contract" id="stubContract"></dl>
-            <div><button class="p-btn a-btn ghost" id="stubBack">Zurück</button></div>
+            <div><button class="p-btn a-btn ghost" id="stubBack">Back</button></div>
           </div>
         </section>
 
@@ -571,10 +571,10 @@ input,select,textarea{font:inherit}
     </div>
   </main>
 
-  <aside class="logc" aria-label="Intent-Protokoll">
+  <aside class="logc" aria-label="Intent log">
     <h2>Intents · NAP-INTENT</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
-    <div class="hint">ok und handled bedeuten Zustellung, nie Erfolg. Kein Napplet adressiert ein anderes direkt; die Shell wählt den Standard-Handler je Archetyp.</div>
+    <div class="hint">ok and handled mean delivery, never success. No napplet addresses another directly; the shell picks the default handler per archetype.</div>
   </aside>
 </div>
 
@@ -604,20 +604,20 @@ function mulberry(seed){ return function(){ seed = seed + 0x6D2B79F5 | 0; let t 
 
 /* ---------- napplet catalog ---------- */
 const NAPPLETS = [
-  {d:'bearlett-collection', a:'collection', fam:'assets', title:'Sammlung', req:['resource','inc'], view:'collection', win:'win-1'},
-  {d:'bearlett-card', a:'card', fam:'assets', title:'Karte', req:['resource','inc'], view:'card', win:'win-2'},
-  {d:'bearlett-reveal', a:'reveal', fam:'assets', title:'Öffnen', req:['resource','inc'], view:'reveal', win:'win-3'},
-  {d:'bearlett-trade', a:'trade', fam:'assets', title:'Weitergeben', req:['inc'], view:'trade', win:'win-4'},
+  {d:'bearlett-collection', a:'collection', fam:'assets', title:'Collection', req:['resource','inc'], view:'collection', win:'win-1'},
+  {d:'bearlett-card', a:'card', fam:'assets', title:'Card', req:['resource','inc'], view:'card', win:'win-2'},
+  {d:'bearlett-reveal', a:'reveal', fam:'assets', title:'Reveal', req:['resource','inc'], view:'reveal', win:'win-3'},
+  {d:'bearlett-trade', a:'trade', fam:'assets', title:'Hand over', req:['inc'], view:'trade', win:'win-4'},
   {d:'nutft-vault', a:'vault', fam:'core-assets', title:'Vault', req:['storage','resource','inc'], view:'vault', win:'win-5', core:true},
-  {d:'bearlett-overview', a:'overview', fam:'pay', title:'Übersicht', req:['inc'], view:'overview', win:'win-6'},
-  {d:'bearlett-pay', a:'pay', fam:'pay', title:'Senden', req:['resource','inc'], view:'pay', win:'win-7'},
-  {d:'bearlett-receive', a:'receive', fam:'pay', title:'Empfangen', req:['inc'], view:'receive', win:'win-8'},
-  {d:'bearlett-scanner', a:'scanner', fam:'pay', title:'Scanner', req:['inc'], view:'stub', win:'win-9', stub:{text:'Im Prototyp nicht ausgeführt: Kamera und NFC müssen vom Host gewährt werden. Der Scanner erkennt das Format und stellt den Auftrag beim passenden Archetyp.', out:['napplet:wallet/receive {note}','napplet:vault/receive {token}','napplet:pay/open {invoice | offer | address}','napplet:trade/recipient {pubkey}']}},
-  {d:'bearlett-activity', a:'activity', fam:'pay', title:'Aktivität', req:['inc'], view:'activity', win:'win-10'},
+  {d:'bearlett-overview', a:'overview', fam:'pay', title:'Overview', req:['inc'], view:'overview', win:'win-6'},
+  {d:'bearlett-pay', a:'pay', fam:'pay', title:'Send', req:['resource','inc'], view:'pay', win:'win-7'},
+  {d:'bearlett-receive', a:'receive', fam:'pay', title:'Receive', req:['inc'], view:'receive', win:'win-8'},
+  {d:'bearlett-scanner', a:'scanner', fam:'pay', title:'Scanner', req:['inc'], view:'stub', win:'win-9', stub:{text:'Not run in this prototype. Camera and NFC must be granted by the host. The scanner detects the format and posts the job to the matching archetype.', out:['napplet:wallet/receive {note}','napplet:vault/receive {token}','napplet:pay/open {invoice | offer | address}','napplet:trade/recipient {pubkey}']}},
+  {d:'bearlett-activity', a:'activity', fam:'pay', title:'Activity', req:['inc'], view:'activity', win:'win-10'},
   {d:'bearlett-wallet', a:'wallet', fam:'core-pay', title:'Wallet', req:['storage','resource','inc'], view:'wallet', win:'win-11', core:true},
-  {d:'bearlett-notes', a:'bearer-designer', fam:'pay', title:'Notes', req:['storage','inc'], view:'stub', win:'win-12', stub:{text:'Bestehendes Napplet, im Prototyp nicht ausgeführt. Gestaltet Scheine und sendet nur die Erscheinung an das Wallet, nie Beträge, Mint oder Secrets.', out:['napplet:wallet/design NoteDesignMessage']}},
+  {d:'bearlett-notes', a:'bearer-designer', fam:'pay', title:'Notes', req:['storage','inc'], view:'stub', win:'win-12', stub:{text:'Existing napplet, not run in this prototype. Designs notes and sends appearance only, never amounts, mint or secrets.', out:['napplet:wallet/design NoteDesignMessage']}},
 ];
-const FAM_LABEL = {assets:'Asset-Familie', 'core-assets':'Kern · Assets', pay:'Pay-Familie', 'core-pay':'Kern · Pay'};
+const FAM_LABEL = {assets:'Asset family', 'core-assets':'Core · assets', pay:'Pay family', 'core-pay':'Core · pay'};
 const byArch = Object.fromEntries(NAPPLETS.map(n => [n.a, n]));
 
 /* ---------- log ---------- */
@@ -640,7 +640,7 @@ function renderDock(){
   for (const n of NAPPLETS){
     if (n.fam !== fam){ fam = n.fam; const f = document.createElement('div'); f.className = 'fam'; f.textContent = FAM_LABEL[fam]; dock.appendChild(f); }
     const b = document.createElement('button'); b.className = 'nap-btn'; b.type = 'button'; b.dataset.d = n.d;
-    b.innerHTML = `<span class="t">${n.title}</span><span class="a">${n.a}</span><span class="d">${n.d}</span><span class="run">läuft im Hintergrund</span>`;
+    b.innerHTML = `<span class="t">${n.title}</span><span class="a">${n.a}</span><span class="d">${n.d}</span><span class="run">running in the background</span>`;
     b.addEventListener('click', () => intent(n.a, 'open', {}, {focus:true}));
     dock.appendChild(b);
   }
@@ -649,7 +649,7 @@ function show(n, msg){
   active = n;
   $$('.nap-btn').forEach(b => b.setAttribute('aria-current', b.dataset.d === n.d ? 'true' : 'false'));
   winEl.dataset.family = n.fam;
-  $('#barD').textContent = n.d; $('#barA').textContent = 'archetyp · ' + n.a; $('#barWin').textContent = n.win;
+  $('#barD').textContent = n.d; $('#barA').textContent = 'archetype · ' + n.a; $('#barWin').textContent = n.win;
   $('#barReq').innerHTML = n.req.map(r => `<span class="chip req">${r}</span>`).join(' ');
   $$('.nap').forEach(s => s.hidden = true);
   $('#nap-' + n.view).hidden = false;
@@ -678,7 +678,7 @@ document.addEventListener('click', e => {
 
 /* ---------- helpers ---------- */
 function esc(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
-function fmt(n){ return new Intl.NumberFormat('de-AT').format(n); }
+function fmt(n){ return new Intl.NumberFormat('en-GB').format(n); }
 function drawQr(canvas, seed){
   const ctx = canvas.getContext('2d'); const n = canvas.width; const r = mulberry(seed);
   ctx.fillStyle = '#fff'; ctx.fillRect(0,0,n,n); ctx.fillStyle = '#0f0c08';
@@ -694,9 +694,9 @@ let inventory = null;
 const VIEWS = {};
 VIEWS.collection = {
   receive(msg){
-    if (msg && msg.convention === 'napplet:collection/inventory'){ inventory = msg.payload; $('#invState').textContent = `Bestand vom Vault · ${new Date(inventory.generated_at).toLocaleTimeString('de-AT')} · ${inventory.mint}`; render(); return; }
-    if (!inventory){ $('#invState').textContent = 'Frage Vault nach Bestand …'; $('#collectionBody').innerHTML = '<div class="empty">Warte auf <span class="mono">napplet:collection/inventory</span> vom Vault.</div>';
-      if (byArch.vault) intent('vault', 'inventory', {}, {focus:false}); else $('#collectionBody').innerHTML = '<div class="empty">Kein Vault installiert. Ohne Kern gibt es keinen Bestand.</div>'; }
+    if (msg && msg.convention === 'napplet:collection/inventory'){ inventory = msg.payload; $('#invState').textContent = `Holdings from vault · ${new Date(inventory.generated_at).toLocaleTimeString('en-GB')} · ${inventory.mint}`; render(); return; }
+    if (!inventory){ $('#invState').textContent = 'Asking vault for holdings …'; $('#collectionBody').innerHTML = '<div class="empty">Waiting for <span class="mono">napplet:collection/inventory</span> from the vault.</div>';
+      if (byArch.vault) intent('vault', 'inventory', {}, {focus:false}); else $('#collectionBody').innerHTML = '<div class="empty">No vault installed. Without a core there are no holdings.</div>'; }
     else render();
   }
 };
@@ -704,18 +704,18 @@ function assets(){ return inventory ? inventory.assets.map(a => ({...byId[a.asse
 function render(){
   const q = $('#q').value.trim().toLowerCase(), tier = $('#fTier').value, sort = $('#fSort').value;
   let list = assets().filter(c => (!tier || c.rarity === tier) && (!q || (c.name + ' ' + c.type_line + ' ' + (c.character||'')).toLowerCase().includes(q)));
-  list.sort((x,y) => sort === 'name' ? x.name.localeCompare(y.name,'de') : sort === 'copies' ? y.owned - x.owned : (TIER_RANK[y.rarity]-TIER_RANK[x.rarity]) || x.name.localeCompare(y.name,'de'));
+  list.sort((x,y) => sort === 'name' ? x.name.localeCompare(y.name,'en') : sort === 'copies' ? y.owned - x.owned : (TIER_RANK[y.rarity]-TIER_RANK[x.rarity]) || x.name.localeCompare(y.name,'en'));
   const all = assets();
   $('#cCards').textContent = all.reduce((s,c)=>s+c.owned,0); $('#cDistinct').textContent = all.length; $('#cDupes').textContent = all.reduce((s,c)=>s+Math.max(0,c.owned-1),0);
   const body = $('#collectionBody');
-  body.innerHTML = `<div class="edition"><h3>${esc(COLLECTION_ID)}</h3><span class="tiny">Edition One · signierter Katalog · ${list.length} von ${all.length} Karten</span></div>
+  body.innerHTML = `<div class="edition"><h3>${esc(COLLECTION_ID)}</h3><span class="tiny">Edition One · signed catalogue · ${list.length} of ${all.length} cards</span></div>
     <div class="grid" id="grid">${list.map(tileHtml).join('')}</div>
-    <div class="listv">${list.map(rowHtml).join('')}</div>` + (list.length ? '' : '<div class="empty">Keine Karte passt zu Filter und Suche.</div>');
+    <div class="listv">${list.map(rowHtml).join('')}</div>` + (list.length ? '' : '<div class="empty">No card matches the filter and search.</div>');
   $$('.tile', body).forEach(bindTile);
   $$('.listv .row', body).forEach(r => r.addEventListener('click', () => selectMode() ? toggleSel(r.dataset.id) : intent('card','open',{collection_id:COLLECTION_ID, asset_id:r.dataset.id})));
 }
 function tileHtml(c){
-  return `<button class="tile" type="button" data-id="${c.id}" data-tier="${c.rarity}" aria-pressed="${sel.has(c.id)}" aria-label="${esc(c.name)}, ${TIER_LABEL[c.rarity]}, ${c.owned} Exemplare">
+  return `<button class="tile" type="button" data-id="${c.id}" data-tier="${c.rarity}" aria-pressed="${sel.has(c.id)}" aria-label="${esc(c.name)}, ${TIER_LABEL[c.rarity]}, ${c.owned} copies">
     <div class="tile__inner"><img src="${c.data}" alt="" loading="lazy"><div class="foil"></div></div>
     ${c.owned > 1 ? `<span class="tile__n">×${c.owned}</span>` : ''}<span class="tile__sel">${sel.has(c.id) ? '✓' : ''}</span>
     <div class="tile__meta"><span class="n">${esc(c.name)}</span><span class="r">${TIER_LABEL[c.rarity]}</span></div></button>`;
@@ -730,14 +730,14 @@ function bindTile(t){
   t.addEventListener('click', () => { if (selectMode()) toggleSel(t.dataset.id); else intent('card', 'open', {collection_id:COLLECTION_ID, asset_id:t.dataset.id}); });
 }
 const selectMode = () => $('#btnSelect').getAttribute('aria-pressed') === 'true';
-function updateTradeBtn(){ const b = $('#btnTrade'); b.disabled = sel.size === 0; b.textContent = `Weitergeben (${sel.size})`; const h = $('#selHint'); h.hidden = !selectMode(); h.textContent = sel.size ? `${sel.size} gewählt · weitere Karten antippen oder Weitergeben drücken` : 'Karten antippen, um sie auszuwählen'; }
+function updateTradeBtn(){ const b = $('#btnTrade'); b.disabled = sel.size === 0; b.textContent = `Hand over (${sel.size})`; const h = $('#selHint'); h.hidden = !selectMode(); h.textContent = sel.size ? `${sel.size} selected · tap more cards or press Hand over` : 'Tap cards to select them'; }
 function toggleSel(id){ sel.has(id) ? sel.delete(id) : sel.add(id); const on = sel.has(id); $$(`.tile[data-id="${id}"], .listv .row[data-id="${id}"]`).forEach(el => { el.setAttribute('aria-pressed', on); const box = $('.tile__sel, .row__sel', el); if (box) box.textContent = on ? '✓' : ''; }); updateTradeBtn(); }
-function setSelectMode(on){ const b = $('#btnSelect'); b.setAttribute('aria-pressed', on); b.textContent = on ? 'Auswahl beenden' : 'Auswählen'; $('#nap-collection').dataset.select = on; if (!on){ sel.clear(); $$('.tile, .listv .row').forEach(el => { el.setAttribute('aria-pressed', 'false'); const box = $('.tile__sel, .row__sel', el); if (box) box.textContent = ''; }); } updateTradeBtn(); }
+function setSelectMode(on){ const b = $('#btnSelect'); b.setAttribute('aria-pressed', on); b.textContent = on ? 'Done selecting' : 'Select'; $('#nap-collection').dataset.select = on; if (!on){ sel.clear(); $$('.tile, .listv .row').forEach(el => { el.setAttribute('aria-pressed', 'false'); const box = $('.tile__sel, .row__sel', el); if (box) box.textContent = ''; }); } updateTradeBtn(); }
 $('#q').addEventListener('input', render); $('#fTier').addEventListener('change', render); $('#fSort').addEventListener('change', render);
 $('#fView').addEventListener('change', e => $('#nap-collection').dataset.view = e.target.value);
 $('#btnSelect').addEventListener('click', () => setSelectMode(!selectMode()));
 $('#btnTrade').addEventListener('click', () => intent('trade','open',{collection_id:COLLECTION_ID, assets:[...sel]}));
-$('#btnRefresh').addEventListener('click', () => { inventory = null; intent('vault','refresh',{collection_id:COLLECTION_ID},{focus:false}); intent('vault','inventory',{},{focus:false}); $('#invState').textContent = 'Aktualisiere …'; });
+$('#btnRefresh').addEventListener('click', () => { inventory = null; intent('vault','refresh',{collection_id:COLLECTION_ID},{focus:false}); intent('vault','inventory',{},{focus:false}); $('#invState').textContent = 'Refreshing …'; });
 
 /* ================= vault (core) ================= */
 let vaultJob = null;
@@ -748,28 +748,28 @@ VIEWS.vault = {
     if (msg.action === 'refresh'){ log('vault: checkstate · ' + D.cards.length + ' proofs', 'UNSPENT', true); }
   },
   receive(msg){
-    $('#vCount').textContent = `${Object.values(OWNED).reduce((a,b)=>a+b,0)} Karten · ${D.cards.length} verschiedene · Einheit ${COLLECTION_ID}`;
+    $('#vCount').textContent = `${Object.values(OWNED).reduce((a,b)=>a+b,0)} cards · ${D.cards.length} distinct · unit ${COLLECTION_ID}`;
     const steps = ['vStepIdle','vStepReview','vStepWork','vStepResult'].map(id => $('#'+id));
     const go = i => steps.forEach((s,j) => s.hidden = j !== i);
     if (!msg || msg.action === 'open'){ go(0); return; }
     if (msg.action === 'trade'){
       vaultJob = msg.payload; const cards = vaultJob.assets.map(id => byId[id]);
-      $('#vReviewTitle').textContent = 'Übergabe prüfen';
-      $('#vReview').innerHTML = cards.map(c => `<div class="l"><span>${esc(c.name)}</span><span>${TIER_LABEL[c.rarity]} · ${COLLECTION_ID}</span></div>`).join('') + `<div class="l"><span>Empfänger</span><span>${vaultJob.recipient_pubkey.slice(0,12)}…${vaultJob.recipient_pubkey.slice(-6)}</span></div><div class="l"><span>Mint-Gebühr</span><span>0 sat <span class="demo">Demo</span></span></div><div class="l"><span>Absender</span><span>${esc(vaultJob.sender)}</span></div>`;
+      $('#vReviewTitle').textContent = 'Review handoff';
+      $('#vReview').innerHTML = cards.map(c => `<div class="l"><span>${esc(c.name)}</span><span>${TIER_LABEL[c.rarity]} · ${COLLECTION_ID}</span></div>`).join('') + `<div class="l"><span>Recipient</span><span>${vaultJob.recipient_pubkey.slice(0,12)}…${vaultJob.recipient_pubkey.slice(-6)}</span></div><div class="l"><span>Mint fee</span><span>0 sat <span class="demo">Demo</span></span></div><div class="l"><span>Sender</span><span>${esc(vaultJob.sender)}</span></div>`;
       go(1); return;
     }
-    if (msg.action === 'receive'){ $('#vReviewTitle').textContent = 'Empfang prüfen'; $('#vReview').innerHTML = `<div class="l"><span>Token</span><span>${esc(String(msg.payload.token||'').slice(0,24))}…</span></div><div class="l"><span>Annahme</span><span>Tausch beim Mint, dann Aufdecken</span></div>`; vaultJob = {receive:true}; go(1); return; }
+    if (msg.action === 'receive'){ $('#vReviewTitle').textContent = 'Review receive'; $('#vReview').innerHTML = `<div class="l"><span>Token</span><span>${esc(String(msg.payload.token||'').slice(0,24))}…</span></div><div class="l"><span>Acceptance</span><span>Swap at the mint, then reveal</span></div>`; vaultJob = {receive:true}; go(1); return; }
     go(0);
   }
 };
-$('#vDismiss').addEventListener('click', () => { vaultJob = null; log('vault: Auftrag verworfen', 'keine Änderung', true); VIEWS.vault.receive({action:'open'}); });
+$('#vDismiss').addEventListener('click', () => { vaultJob = null; log('vault: job dismissed', 'no change', true); VIEWS.vault.receive({action:'open'}); });
 $('#vUnlock').addEventListener('click', () => {
   const steps = ['vStepIdle','vStepReview','vStepWork','vStepResult'].map(id => $('#'+id)); steps.forEach((s,j)=>s.hidden = j!==2);
   const rev = () => {
-    if (vaultJob && vaultJob.receive){ log('vault: /nutft/trade angenommen', 'gespeichert', true); const revealCards = ['E1-043','E1-160','E1-212','E1-037','E1-262']; intent('reveal','open',{kind:'nutft/reveal', version:1, source:'trade', assets:revealCards.map(id => ({asset_id:id, tier:byId[id].rarity, name:byId[id].name}))}); return; }
+    if (vaultJob && vaultJob.receive){ log('vault: /nutft/trade accepted', 'stored', true); const revealCards = ['E1-043','E1-160','E1-212','E1-037','E1-262']; intent('reveal','open',{kind:'nutft/reveal', version:1, source:'trade', assets:revealCards.map(id => ({asset_id:id, tier:byId[id].rarity, name:byId[id].name}))}); return; }
     log('vault: /nutft/trade', 'signature · dleq ok', true);
     for (const id of vaultJob.assets) OWNED[id] = Math.max(0, (OWNED[id]||0) - 1); inventory = null; setSelectMode(false);
-    drawQr($('#vQr'), 600 + vaultJob.assets.length); $('#vToken').textContent = 'cashuB' + 'eyJ0IjpbeyJpIjoiNjAwQi1FMSIsInAiOlt7ImEiOjEsInMiOiJudXRmdCJ9XX1dfQ'.slice(0, 40) + '… (Demo, nicht einlösbar)';
+    drawQr($('#vQr'), 600 + vaultJob.assets.length); $('#vToken').textContent = 'cashuB' + 'eyJ0IjpbeyJpIjoiNjAwQi1FMSIsInAiOlt7ImEiOjEsInMiOiJudXRmdCJ9XX1dfQ'.slice(0, 40) + '… (Demo, not redeemable)';
     steps.forEach((s,j)=>s.hidden = j!==3);
   };
   setTimeout(rev, RM ? 0 : 900);
@@ -786,12 +786,12 @@ VIEWS.card = {
     $('#cdTier').textContent = `${TIER_LABEL[c.rarity]} · ${COLLECTION_ID} · ${c.id}`;
     $('#cdName').textContent = c.name; $('#cdBackName').textContent = c.name;
     $('#cdAff').innerHTML = (c.affinity.length ? c.affinity : ['Neutral']).map(a => `<span class="aff" style="color:${AFF_COLOR[a]||'var(--neutral)'}">${esc(a)}</span>`).join('');
-    $('#cdType').textContent = c.type_line + (c.cost ? ` · Kosten ${c.cost}` : '') + (c.character ? ` · Charakter ${c.character}` : '');
+    $('#cdType').textContent = c.type_line + (c.cost ? ` · Cost ${c.cost}` : '') + (c.character ? ` · Character ${c.character}` : '');
     $('#cdRules').innerHTML = esc(c.rules_text || '—') + (c.flavor_text ? `<i>${esc(c.flavor_text)}</i>` : '');
     const owned = OWNED[c.id] || 0;
-    $('#cdKv').innerHTML = `<dt>Du hältst</dt><dd>${owned} Exemplar${owned===1?'':'e'}</dd><dt>Im Umlauf</dt><dd>${c.copies==null ? 'unbegrenzt' : fmt(c.copies) + ' Exemplare'}</dd><dt>Wahrscheinlichkeit</dt><dd>1 von ${fmt(c.one_in_packs)} Packs</dd><dt>Zustand</dt><dd>UNSPENT <span class="demo">Demo</span></dd><dt>Bild</dt><dd>${c.mime} · ${fmt(c.bytes)} Bytes</dd>`;
-    $('#cdProv').innerHTML = `<dt>Edition</dt><dd>${COLLECTION_ID}</dd><dt>Asset</dt><dd>${c.id}</dd><dt>Bild sha256</dt><dd>${c.sha256.slice(0,16)}…${c.sha256.slice(-8)}</dd><dt>Zensus</dt><dd>${CENSUS.slice(0,12)}… · tier-census-r3</dd><dt>Bindung</dt><dd>SHA-256("Cashu_NutFT_v1" + collection, asset, catalog) · an deinen P2BK-Schlüssel</dd><dt>Spiegel</dt><dd>${(D.meta.mirrors||[]).map(m => m.replace('https://','')).join(' · ')}</dd>`;
-    $('#cdVerified').textContent = 'Bild-Hash geprüft · Katalog signiert';
+    $('#cdKv').innerHTML = `<dt>You hold</dt><dd>${owned} ${owned===1?'copy':'copies'}</dd><dt>In circulation</dt><dd>${c.copies==null ? 'unlimited' : fmt(c.copies) + ' copies'}</dd><dt>Probability</dt><dd>1 in ${fmt(c.one_in_packs)} packs</dd><dt>State</dt><dd>UNSPENT <span class="demo">Demo</span></dd><dt>Image</dt><dd>${c.mime} · ${fmt(c.bytes)} bytes</dd>`;
+    $('#cdProv').innerHTML = `<dt>Edition</dt><dd>${COLLECTION_ID}</dd><dt>Asset</dt><dd>${c.id}</dd><dt>Image sha256</dt><dd>${c.sha256.slice(0,16)}…${c.sha256.slice(-8)}</dd><dt>Census</dt><dd>${CENSUS.slice(0,12)}… · tier-census-r3</dd><dt>Binding</dt><dd>SHA-256("Cashu_NutFT_v1" + collection, asset, catalog) · bound to your P2BK key</dd><dt>Mirrors</dt><dd>${(D.meta.mirrors||[]).map(m => m.replace('https://','')).join(' · ')}</dd>`;
+    $('#cdVerified').textContent = 'Image hash checked · catalogue signed';
     startGlow();
   }
 };
@@ -804,7 +804,7 @@ $('#btnFlip').addEventListener('click', () => { flip = flip ? 0 : 180; $('#card3
 scene.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#btnFlip').click(); } });
 scene.tabIndex = 0;
 $('#btnTradeOne').addEventListener('click', () => { if (cur) intent('trade','open',{collection_id:COLLECTION_ID, assets:[cur.id]}); });
-$('#btnMeta').addEventListener('click', () => { intent('vault','refresh',{collection_id:COLLECTION_ID, asset_id:cur && cur.id},{focus:false}); $('#cdVerified').textContent = 'Katalog erneut geprüft · Bild-Hash unverändert'; });
+$('#btnMeta').addEventListener('click', () => { intent('vault','refresh',{collection_id:COLLECTION_ID, asset_id:cur && cur.id},{focus:false}); $('#cdVerified').textContent = 'Catalogue rechecked · image hash unchanged'; });
 let glowRaf = 0;
 function startGlow(){
   cancelAnimationFrame(glowRaf);
@@ -825,8 +825,8 @@ VIEWS.trade = {
 };
 function validateTrade(){
   const v = $('#recip').value.trim(); const ok = /^[0-9a-f]{64}$/i.test(v);
-  $('#recipState').textContent = !v ? 'Neuer Empfänger: noch nie an diesen Schlüssel gesendet.' : ok ? 'Schlüssel gültig · neuer Empfänger, bitte zweimal lesen.' : 'Kein gültiger P2BK-Schlüssel: 64 Hex-Zeichen erwartet.';
-  $('#tradeReview').innerHTML = `<div class="l"><span>Karten</span><span>${tradeAssets.length}</span></div>` + tradeAssets.map(id => `<div class="l"><span>${esc(byId[id].name)}</span><span>${TIER_LABEL[byId[id].rarity]}</span></div>`).join('') + `<div class="l"><span>Wirkung</span><span>Tausch beim Mint an Empfänger</span></div><div class="l"><span>Mint-Gebühr</span><span>0 sat <span class="demo">Demo</span></span></div>`;
+  $('#recipState').textContent = !v ? 'New recipient: never sent to this key.' : ok ? 'Key valid · new recipient, read it twice.' : 'Not a valid P2BK key: 64 hex characters expected.';
+  $('#tradeReview').innerHTML = `<div class="l"><span>Cards</span><span>${tradeAssets.length}</span></div>` + tradeAssets.map(id => `<div class="l"><span>${esc(byId[id].name)}</span><span>${TIER_LABEL[byId[id].rarity]}</span></div>`).join('') + `<div class="l"><span>Effect</span><span>Swap at the mint onto the recipient</span></div><div class="l"><span>Mint fee</span><span>0 sat <span class="demo">Demo</span></span></div>`;
   $('#btnTradeConfirm').disabled = !ok;
   $$('.mini', $('#tradeShelf')).forEach(m => m.classList.toggle('leaving', ok));
 }
@@ -877,40 +877,40 @@ VIEWS.reveal = {
   receive(msg){
     const ids = (msg && msg.payload && msg.payload.assets) ? msg.payload.assets.map(a => a.asset_id) : ['E1-043','E1-160','E1-212','E1-037','E1-262'];
     rvCards = ids.map(id => byId[id]).filter(Boolean).sort((a,b) => TIER_RANK[a.rarity]-TIER_RANK[b.rarity]);
-    const src = msg && msg.payload && msg.payload.source; $('#rvTitle').textContent = `${['Null','Eine','Zwei','Drei','Vier','Fünf','Sechs'][rvCards.length] || rvCards.length} Karten angenommen`;
-    $('#rvSub').textContent = `Quelle: ${src === 'booster' ? 'Booster' : src === 'restore' ? 'Wiederherstellung' : 'Übergabe'} · Tausch beim Mint bestätigt · erst dann wird aufgedeckt`;
+    const src = msg && msg.payload && msg.payload.source; $('#rvTitle').textContent = `${['Zero','One','Two','Three','Four','Five','Six'][rvCards.length] || rvCards.length} cards accepted`;
+    $('#rvSub').textContent = `Source: ${src === 'booster' ? 'Booster' : src === 'restore' ? 'restore' : 'handoff'} · Mint swap confirmed · only then is it revealed`;
     tl = buildTimeline(rvCards); $('#comp').dataset.duration = tl.duration; $('#scrub').max = tl.duration;
     const tray = $('#tray'); tray.style.setProperty('--n', rvCards.length);
     tray.innerHTML = rvCards.map((c,i) => `<div class="pull clip" id="pull-${c.id}" data-tier="${c.rarity}" data-start="${(i*.055).toFixed(3)}" data-duration="${tl.duration}"><div class="pull__inner"><div class="pull__face pull__back"><img src="${D.back.data}" alt=""></div><div class="pull__face pull__front"><img src="${c.data}" alt="${esc(c.name)}"></div></div><span class="pull__burst"></span>${c.rarity !== 'common' ? `<span class="pull__rarity">${TIER_LABEL[c.rarity].toUpperCase()}</span>` : ''}</div>`).join('');
     pulls = $$('.pull', tray);
     pulls.forEach((el,i) => el.addEventListener('click', () => { const f = tl.clips.find(k => k.card === i && k.kind === 'flip'); if (f && rvT < f.start) seek(f.start + .6); }));
     $('#tracks').innerHTML = rvCards.map((c,i) => `<div class="track"><span>${esc(c.name).slice(0,18)}</span><div class="lane">${tl.clips.filter(k => k.card===i).map(k => `<span class="tclip" data-kind="${k.kind}" data-start="${k.start}" data-duration="${k.dur}" title="${k.id} · ${k.start}s +${k.dur}s" style="left:${(k.start/tl.duration*100).toFixed(2)}%;width:${(k.dur/tl.duration*100).toFixed(2)}%"></span>`).join('')}<span class="playhead"></span></div></div>`).join('');
-    playing = false; $('#btnPlay').textContent = 'Abspielen';
+    playing = false; $('#btnPlay').textContent = 'Play';
     seek(RM ? tl.duration : 0);
     if (!RM) play();
   }
 };
 function seek(t){ rvT = clamp(t, 0, tl.duration); renderReveal(rvT); }
 function play(){ if (playing) return; if (rvT >= tl.duration - .001) rvT = 0; playing = true; $('#btnPlay').textContent = 'Pause'; rvLast = performance.now();
-  const tick = now => { if (!playing) return; rvT += (now - rvLast)/1000; rvLast = now; if (rvT >= tl.duration){ rvT = tl.duration; playing = false; $('#btnPlay').textContent = 'Nochmal'; } renderReveal(rvT); if (playing) rvRaf = requestAnimationFrame(tick); }; rvRaf = requestAnimationFrame(tick); }
-function pause(){ playing = false; cancelAnimationFrame(rvRaf); $('#btnPlay').textContent = 'Abspielen'; }
+  const tick = now => { if (!playing) return; rvT += (now - rvLast)/1000; rvLast = now; if (rvT >= tl.duration){ rvT = tl.duration; playing = false; $('#btnPlay').textContent = 'Replay'; } renderReveal(rvT); if (playing) rvRaf = requestAnimationFrame(tick); }; rvRaf = requestAnimationFrame(tick); }
+function pause(){ playing = false; cancelAnimationFrame(rvRaf); $('#btnPlay').textContent = 'Play'; }
 $('#btnPlay').addEventListener('click', () => playing ? pause() : play());
 $('#scrub').addEventListener('input', e => { pause(); seek(parseFloat(e.target.value)); });
 
 /* ================= pay family ================= */
 const MINTS = [{mint:'cashu.test', protocol:'Cashu', sat:32, pending:0}, {mint:'demo.mint.test', protocol:'LNURLcash', sat:21, pending:0}];
 const ACT = [
-  {at:'heute 21:58', kind:'Empfangen', mint:'cashu.test', sat:32, status:'settled'},
-  {at:'heute 21:41', kind:'Empfangen', mint:'demo.mint.test', sat:21, status:'settled'},
-  {at:'gestern 19:12', kind:'Bezahlt · BOLT11', mint:'cashu.test', sat:-150, status:'settled'},
-  {at:'gestern 18:40', kind:'Mint · Lightning', mint:'cashu.test', sat:200, status:'settled'},
-  {at:'Mo 09:03', kind:'Bezahlt · Lightning-Adresse', mint:'demo.mint.test', sat:-21, status:'failed'},
+  {at:'today 21:58', kind:'Receive', mint:'cashu.test', sat:32, status:'settled'},
+  {at:'today 21:41', kind:'Receive', mint:'demo.mint.test', sat:21, status:'settled'},
+  {at:'yesterday 19:12', kind:'Paid · BOLT11', mint:'cashu.test', sat:-150, status:'settled'},
+  {at:'yesterday 18:40', kind:'Mint · Lightning', mint:'cashu.test', sat:200, status:'settled'},
+  {at:'Mon 09:03', kind:'Paid · Lightning address', mint:'demo.mint.test', sat:-21, status:'failed'},
 ];
 function balanceMessage(){ return {kind:'bearlett/balance', version:1, total_sat:MINTS.reduce((s,m)=>s+m.sat,0), by_mint:MINTS.map(m => ({mint:m.mint, protocol:m.protocol.toLowerCase(), sat:m.sat, pending_sat:m.pending})), recent:ACT.slice(0,3)}; }
 function actRow(a){ return `<div class="p-row"><span>${esc(a.kind)}<br><span class="m">${esc(a.at)} · ${esc(a.mint)}</span></span><span class="pill ${a.status}">${a.status}</span><span class="amt">${a.sat>0?'+':''}${fmt(a.sat)}</span></div>`; }
 VIEWS.overview = {
   receive(msg){
-    if (msg && msg.convention === 'napplet:overview/balance'){ const b = msg.payload; $('#ovTotal').textContent = fmt(b.total_sat); $('#ovSub').textContent = `${b.by_mint.length} Mints · Guthaben bleibt je Mint getrennt`; $('#ovMints').innerHTML = b.by_mint.map(m => `<div class="p-row"><span>${esc(m.mint)}</span><span class="m">${m.protocol}${m.pending_sat ? ` · ${m.pending_sat} ausstehend` : ''}</span><span class="amt">${fmt(m.sat)}</span></div>`).join(''); $('#ovRecent').innerHTML = b.recent.map(actRow).join(''); return; }
+    if (msg && msg.convention === 'napplet:overview/balance'){ const b = msg.payload; $('#ovTotal').textContent = fmt(b.total_sat); $('#ovSub').textContent = `${b.by_mint.length} mints · Balance stays separate per mint`; $('#ovMints').innerHTML = b.by_mint.map(m => `<div class="p-row"><span>${esc(m.mint)}</span><span class="m">${m.protocol}${m.pending_sat ? ` · ${m.pending_sat} pending` : ''}</span><span class="amt">${fmt(m.sat)}</span></div>`).join(''); $('#ovRecent').innerHTML = b.recent.map(actRow).join(''); return; }
     intent('wallet','balance',{},{focus:false});
   }
 };
@@ -921,26 +921,26 @@ let payKind = null;
 function detect(v){
   v = v.trim().replace(/^lightning:/i,'');
   if (!v) return null;
-  if (/^lno1[a-z0-9]+$/i.test(v)) return {kind:'BOLT12-Angebot', conv:'wallet/pay-offer', amountless:true, why:'wiederverwendbar; Betrag wählst du'};
-  if (/^lnbc[a-z0-9]+$/i.test(v)) return {kind:'BOLT11-Rechnung', conv:'wallet/pay', amountless:false, why:'einmalig; Betrag steckt in der Rechnung'};
-  if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v)) return {kind:'Lightning-Adresse', conv:'wallet/pay', amountless:true, why:'LNURL-pay wird aufgelöst, dann BOLT11'};
-  if (/^(cashu:)?cashu[ab]/i.test(v)) return {kind:'Cashu-Token', conv:'wallet/receive', amountless:false, why:'das ist Empfang, nicht Senden'};
-  if (/^lnurl/i.test(v) || /^https?:\/\//i.test(v)) return {kind:'LNURLcash-Schein', conv:'wallet/receive', amountless:false, why:'das ist Empfang, nicht Senden'};
-  return {kind:'Unbekannt', conv:null, why:'kein bekanntes Format'};
+  if (/^lno1[a-z0-9]+$/i.test(v)) return {kind:'BOLT12 offer', conv:'wallet/pay-offer', amountless:true, why:'reusable; you choose the amount'};
+  if (/^lnbc[a-z0-9]+$/i.test(v)) return {kind:'BOLT11 invoice', conv:'wallet/pay', amountless:false, why:'one-shot; amount is in the invoice'};
+  if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v)) return {kind:'Lightning address', conv:'wallet/pay', amountless:true, why:'LNURL-pay is resolved, then BOLT11'};
+  if (/^(cashu:)?cashu[ab]/i.test(v)) return {kind:'Cashu token', conv:'wallet/receive', amountless:false, why:'that is receive, not send'};
+  if (/^lnurl/i.test(v) || /^https?:\/\//i.test(v)) return {kind:'LNURLcash note', conv:'wallet/receive', amountless:false, why:'that is receive, not send'};
+  return {kind:'Unknown', conv:null, why:'not a known format'};
 }
 function payUpdate(){
   const v = $('#payIn').value; const d = detect(v); payKind = d; const out = $('#payDetect');
-  if (!d){ out.innerHTML = '<span class="p-hint">Erkennung läuft beim Tippen.</span>'; $('#payAmtWrap').hidden = true; $('#payFee').hidden = true; $('#btnPayGo').disabled = true; return; }
+  if (!d){ out.innerHTML = '<span class="p-hint">Detection runs as you type.</span>'; $('#payAmtWrap').hidden = true; $('#payFee').hidden = true; $('#btnPayGo').disabled = true; return; }
   out.innerHTML = `<span class="k">${d.kind}</span><span class="p-hint">${d.why}</span>`;
   const sendable = d.conv === 'wallet/pay' || d.conv === 'wallet/pay-offer';
   $('#payAmtWrap').hidden = !(sendable && d.amountless); $('#payFee').hidden = !sendable;
-  if (sendable){ const amt = d.amountless ? (parseInt($('#payAmt').value,10) || 0) : 150; $('#payFee').innerHTML = `<div class="p-review"><div class="l"><span>Betrag</span><span>${fmt(amt)} sat</span></div><div class="l"><span>Gebührenreserve</span><span>${Math.max(1, Math.ceil(amt*.01))} sat <span class="demo">Schätzung</span></span></div><div class="l"><span>Aus Mint</span><span>cashu.test · Cashu</span></div><div class="l"><span>Wirkung</span><span>${d.conv === 'wallet/pay-offer' ? 'Melt-Quote für das Angebot, Wechselgeld wird verbucht' : 'Melt der Rechnung, Wechselgeld wird verbucht'}</span></div></div>`; $('#btnPayGo').disabled = d.amountless && !amt; }
+  if (sendable){ const amt = d.amountless ? (parseInt($('#payAmt').value,10) || 0) : 150; $('#payFee').innerHTML = `<div class="p-review"><div class="l"><span>Amount</span><span>${fmt(amt)} sat</span></div><div class="l"><span>Fee reserve</span><span>${Math.max(1, Math.ceil(amt*.01))} sat <span class="demo">estimate</span></span></div><div class="l"><span>From mint</span><span>cashu.test · Cashu</span></div><div class="l"><span>Effect</span><span>${d.conv === 'wallet/pay-offer' ? 'Melt quote for the offer; change is booked' : 'Melt the invoice; change is booked'}</span></div></div>`; $('#btnPayGo').disabled = d.amountless && !amt; }
   else $('#btnPayGo').disabled = true;
 }
 $('#payIn').addEventListener('input', payUpdate); $('#payAmt').addEventListener('input', payUpdate);
-$('#exOffer').addEventListener('click', () => { $('#payIn').value = 'lno1demo0000bearlettmeetupkassennappletangebotnichtfunktional'; payUpdate(); $('#payAmt').focus(); });
-$('#exAddr').addEventListener('click', () => { $('#payIn').value = 'kasse@demo.mint.test'; payUpdate(); $('#payAmt').focus(); });
-$('#exBolt11').addEventListener('click', () => { $('#payIn').value = 'lnbc1500n1demo0000nichtfunktionalbearlettrechnung'; payUpdate(); });
+$('#exOffer').addEventListener('click', () => { $('#payIn').value = 'lno1demo0000bearlettmeetupcashnappletoffernotfunctional'; payUpdate(); $('#payAmt').focus(); });
+$('#exAddr').addEventListener('click', () => { $('#payIn').value = 'pay@demo.mint.test'; payUpdate(); $('#payAmt').focus(); });
+$('#exBolt11').addEventListener('click', () => { $('#payIn').value = 'lnbc1500n1demo0000notfunctionalbearlettinvoice'; payUpdate(); });
 $('#btnPayGo').addEventListener('click', () => { const d = payKind; if (!d) return; const [a, act] = d.conv.split('/'); const amt = d.amountless ? parseInt($('#payAmt').value,10) : 150;
   intent(a, act, d.conv === 'wallet/pay-offer' ? {offer:$('#payIn').value.trim(), amountMsat:amt*1000} : {invoice:$('#payIn').value.trim()}, {focus:true}); });
 VIEWS.pay = { receive(msg){ if (msg && msg.payload){ const p = msg.payload; $('#payIn').value = p.offer || p.invoice || p.address || $('#payIn').value; } payUpdate(); } };
@@ -950,9 +950,9 @@ $$('#nap-receive [role=tab]').forEach(t => t.addEventListener('click', () => { $
 $('#btnOffer').addEventListener('click', () => { const amt = parseInt($('#rcAmt').value,10) || null; intent('wallet','receive-offer',{amount:amt, description:$('#rcDesc').value.trim()},{focus:false}); });
 $('#btnInvoice').addEventListener('click', () => intent('wallet','mint',{amount:21},{focus:true}));
 $('#btnTok').addEventListener('click', () => { const v = $('#rcTok').value.trim(); if (!v) return; if (/^(cashu:)?cashub/i.test(v) && /nutft/i.test(v)) intent('vault','receive',{token:v},{focus:true}); else intent('wallet','receive',{note:v},{focus:true}); });
-$('#btnCopyOffer').addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText($('#rcOfferTxt').textContent).catch(()=>{}); $('#btnCopyOffer').textContent = 'Kopiert'; setTimeout(() => $('#btnCopyOffer').textContent = 'Text kopieren', 1200); });
+$('#btnCopyOffer').addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText($('#rcOfferTxt').textContent).catch(()=>{}); $('#btnCopyOffer').textContent = 'Copied'; setTimeout(() => $('#btnCopyOffer').textContent = 'Copy text', 1200); });
 VIEWS.receive = {
-  receive(msg){ if (msg && msg.convention === 'napplet:receive/offer'){ const o = msg.payload; $('#rcOffer').hidden = false; $('#rcOfferTxt').textContent = o.offer; $('#rcOfferMeta').textContent = `${o.amount_sat ? fmt(o.amount_sat) + ' sat' : 'betragslos'} · ${o.description} · ${o.mint} · läuft nicht ab`; drawQr($('#rcQr'), 21 + (o.amount_sat||0)); } }
+  receive(msg){ if (msg && msg.convention === 'napplet:receive/offer'){ const o = msg.payload; $('#rcOffer').hidden = false; $('#rcOfferTxt').textContent = o.offer; $('#rcOfferMeta').textContent = `${o.amount_sat ? fmt(o.amount_sat) + ' sat' : 'amountless'} · ${o.description} · ${o.mint} · does not expire`; drawQr($('#rcQr'), 21 + (o.amount_sat||0)); } }
 };
 
 /* wallet (core, pay) */
@@ -960,41 +960,41 @@ let wJob = null;
 VIEWS.wallet = {
   background(msg){
     if (msg.action === 'balance') setTimeout(() => intent('overview','balance', balanceMessage(), {focus:true}), RM ? 0 : 200);
-    if (msg.action === 'activity') log('wallet: journal gelesen', `${ACT.length} einträge`, true);
-    if (msg.action === 'receive-offer'){ const p = msg.payload; setTimeout(() => intent('receive','offer',{kind:'bearlett/offer', version:1, offer:'lno1demo' + 'bearlett' + (p.amount||'amountless') + 'nichtfunktional', amount_sat:p.amount, description:p.description || 'Bearlett', mint:'cashu.test', expires_at:null},{focus:true}), RM ? 0 : 320); }
+    if (msg.action === 'activity') log('wallet: journal read', `${ACT.length} entries`, true);
+    if (msg.action === 'receive-offer'){ const p = msg.payload; setTimeout(() => intent('receive','offer',{kind:'bearlett/offer', version:1, offer:'lno1demo' + 'bearlett' + (p.amount||'amountless') + 'notfunctional', amount_sat:p.amount, description:p.description || 'Bearlett', mint:'cashu.test', expires_at:null},{focus:true}), RM ? 0 : 320); }
   },
   receive(msg){
     const panes = ['wIdle','wReview','wWork','wDone'].map(id => $('#'+id)); const go = i => panes.forEach((p,j) => p.hidden = j !== i);
     if (!msg || msg.action === 'open'){ go(0); return; }
     wJob = msg;
-    if (msg.action === 'pay' || msg.action === 'pay-offer'){ const amt = msg.action === 'pay-offer' ? Math.round(msg.payload.amountMsat/1000) : 150; $('#wTitle').textContent = msg.action === 'pay-offer' ? 'BOLT12-Zahlung prüfen' : 'Zahlung prüfen';
-      $('#wRows').innerHTML = `<div class="l"><span>Ziel</span><span>${esc((msg.payload.offer || msg.payload.invoice || '').slice(0,28))}…</span></div><div class="l"><span>Betrag</span><span>${fmt(amt)} sat</span></div><div class="l"><span>fee_reserve</span><span>${Math.max(1, Math.ceil(amt*.01))} sat <span class="demo">Demo</span></span></div><div class="l"><span>Quelle</span><span>cashu.test · ${msg.action === 'pay-offer' ? 'createMeltQuoteBolt12' : 'createMeltQuote'}</span></div><div class="l"><span>Absender</span><span>bearlett-pay</span></div>`; go(1); return; }
-    if (msg.action === 'receive'){ $('#wTitle').textContent = 'Empfang prüfen'; $('#wRows').innerHTML = `<div class="l"><span>Eingabe</span><span>${esc(String(msg.payload.note||'').slice(0,28))}…</span></div><div class="l"><span>Wirkung</span><span>speichern, dann rotieren beim Mint</span></div>`; go(1); return; }
-    if (msg.action === 'mint'){ $('#wTitle').textContent = 'Rechnung erzeugen'; $('#wRows').innerHTML = `<div class="l"><span>Betrag</span><span>${fmt(msg.payload.amount)} sat</span></div><div class="l"><span>Mint</span><span>cashu.test · createMintQuote</span></div>`; go(1); return; }
+    if (msg.action === 'pay' || msg.action === 'pay-offer'){ const amt = msg.action === 'pay-offer' ? Math.round(msg.payload.amountMsat/1000) : 150; $('#wTitle').textContent = msg.action === 'pay-offer' ? 'Review BOLT12 payment' : 'Review payment';
+      $('#wRows').innerHTML = `<div class="l"><span>Destination</span><span>${esc((msg.payload.offer || msg.payload.invoice || '').slice(0,28))}…</span></div><div class="l"><span>Amount</span><span>${fmt(amt)} sat</span></div><div class="l"><span>fee_reserve</span><span>${Math.max(1, Math.ceil(amt*.01))} sat <span class="demo">Demo</span></span></div><div class="l"><span>Source</span><span>cashu.test · ${msg.action === 'pay-offer' ? 'createMeltQuoteBolt12' : 'createMeltQuote'}</span></div><div class="l"><span>Sender</span><span>bearlett-pay</span></div>`; go(1); return; }
+    if (msg.action === 'receive'){ $('#wTitle').textContent = 'Review receive'; $('#wRows').innerHTML = `<div class="l"><span>Input</span><span>${esc(String(msg.payload.note||'').slice(0,28))}…</span></div><div class="l"><span>Effect</span><span>store, then rotate at the mint</span></div>`; go(1); return; }
+    if (msg.action === 'mint'){ $('#wTitle').textContent = 'Create invoice'; $('#wRows').innerHTML = `<div class="l"><span>Amount</span><span>${fmt(msg.payload.amount)} sat</span></div><div class="l"><span>Mint</span><span>cashu.test · createMintQuote</span></div>`; go(1); return; }
     go(0);
   }
 };
-$('#wDismiss').addEventListener('click', () => { wJob = null; log('wallet: Auftrag verworfen', 'keine Änderung', true); VIEWS.wallet.receive({action:'open'}); });
+$('#wDismiss').addEventListener('click', () => { wJob = null; log('wallet: job dismissed', 'no change', true); VIEWS.wallet.receive({action:'open'}); });
 $('#wConfirm').addEventListener('click', () => {
   const panes = ['wIdle','wReview','wWork','wDone'].map(id => $('#'+id)); panes.forEach((p,j) => p.hidden = j !== 2);
-  const isPay = wJob.action === 'pay' || wJob.action === 'pay-offer'; $('#wWorkTitle').textContent = isPay ? 'Melt läuft …' : wJob.action === 'mint' ? 'Rechnung wird erzeugt …' : 'Rotation läuft …';
-  $('#wWorkTxt').textContent = isPay ? 'Quote angenommen · Zahlung pending, bis Rechnung und Preimage geprüft sind' : '';
+  const isPay = wJob.action === 'pay' || wJob.action === 'pay-offer'; $('#wWorkTitle').textContent = isPay ? 'Melt running …' : wJob.action === 'mint' ? 'Invoice being created …' : 'Rotation running …';
+  $('#wWorkTxt').textContent = isPay ? 'Quote accepted · Payment pending until invoice and preimage check out' : '';
   setTimeout(() => {
-    if (isPay){ const amt = wJob.action === 'pay-offer' ? Math.round(wJob.payload.amountMsat/1000) : 150; MINTS[0].sat = Math.max(0, MINTS[0].sat - amt); ACT.unshift({at:'jetzt', kind: wJob.action === 'pay-offer' ? 'Bezahlt · BOLT12' : 'Bezahlt · BOLT11', mint:'cashu.test', sat:-amt, status:'settled'});
-      $('#wDoneTitle').textContent = 'Verbucht'; $('#wDoneRows').innerHTML = `<div class="l"><span>Bezahlt</span><span>${fmt(amt)} sat</span></div><div class="l"><span>Gebühr tatsächlich</span><span>1 sat</span></div><div class="l"><span>Wechselgeld</span><span>verbucht · cashu.test</span></div><div class="l"><span>Nachweis</span><span>Preimage geprüft</span></div>`; log('wallet: melt', 'settled · wechselgeld verbucht', true); }
-    else if (wJob.action === 'mint'){ $('#wDoneTitle').textContent = 'Rechnung bereit'; $('#wDoneRows').innerHTML = `<div class="l"><span>Rechnung</span><span>lnbc210n1demo… <span class="demo">nicht funktional</span></span></div><div class="l"><span>Schein</span><span>reserviert, wird nach Zahlung geprüft</span></div>`; }
-    else { $('#wDoneTitle').textContent = 'Angenommen'; $('#wDoneRows').innerHTML = `<div class="l"><span>Schein</span><span>gespeichert und rotiert</span></div>`; }
+    if (isPay){ const amt = wJob.action === 'pay-offer' ? Math.round(wJob.payload.amountMsat/1000) : 150; MINTS[0].sat = Math.max(0, MINTS[0].sat - amt); ACT.unshift({at:'now', kind: wJob.action === 'pay-offer' ? 'Paid · BOLT12' : 'Paid · BOLT11', mint:'cashu.test', sat:-amt, status:'settled'});
+      $('#wDoneTitle').textContent = 'Settled'; $('#wDoneRows').innerHTML = `<div class="l"><span>Paid</span><span>${fmt(amt)} sat</span></div><div class="l"><span>Fee paid</span><span>1 sat</span></div><div class="l"><span>Change</span><span>booked · cashu.test</span></div><div class="l"><span>Proof</span><span>Preimage checked</span></div>`; log('wallet: melt', 'settled · change booked', true); }
+    else if (wJob.action === 'mint'){ $('#wDoneTitle').textContent = 'Invoice ready'; $('#wDoneRows').innerHTML = `<div class="l"><span>Invoice</span><span>lnbc210n1demo… <span class="demo">not functional</span></span></div><div class="l"><span>Note</span><span>reserved, checked after payment</span></div>`; }
+    else { $('#wDoneTitle').textContent = 'Accepted'; $('#wDoneRows').innerHTML = `<div class="l"><span>Note</span><span>stored and rotated</span></div>`; }
     panes.forEach((p,j) => p.hidden = j !== 3); wJob = null;
   }, RM ? 0 : 900);
 });
 
 /* stub */
-VIEWS.stub = { receive(msg, n){ $('#stubLabel').textContent = `${n.d} · ${n.a}`; $('#stubTitle').textContent = n.title; $('#stubText').textContent = n.stub.text; $('#stubContract').innerHTML = `<dt>Nimmt an</dt><dd>napplet:${n.a}/open ${msg && msg.payload && Object.keys(msg.payload).length ? esc(JSON.stringify(msg.payload)) : '{}'}</dd><dt>Sendet</dt><dd>${n.stub.out.map(esc).join('<br>')}</dd><dt>requires</dt><dd>${n.req.join(', ')}</dd>`; $('#stubBack').onclick = () => intent(n.fam === 'pay' ? 'overview' : 'collection','open',{}); } };
+VIEWS.stub = { receive(msg, n){ $('#stubLabel').textContent = `${n.d} · ${n.a}`; $('#stubTitle').textContent = n.title; $('#stubText').textContent = n.stub.text; $('#stubContract').innerHTML = `<dt>Accepts</dt><dd>napplet:${n.a}/open ${msg && msg.payload && Object.keys(msg.payload).length ? esc(JSON.stringify(msg.payload)) : '{}'}</dd><dt>Sends</dt><dd>${n.stub.out.map(esc).join('<br>')}</dd><dt>requires</dt><dd>${n.req.join(', ')}</dd>`; $('#stubBack').onclick = () => intent(n.fam === 'pay' ? 'overview' : 'collection','open',{}); } };
 
 /* ---------- boot ---------- */
 renderDock();
-$('#liveTxt').textContent = 'Shell verbunden · ' + NAPPLETS.length + ' Napplets';
-log('shell: Katalog geladen', `${NAPPLETS.length} manifeste · kind 35129`, true);
+$('#liveTxt').textContent = 'Shell connected · ' + NAPPLETS.length + ' Napplets';
+log('shell: catalogue loaded', `${NAPPLETS.length} manifests · kind 35129`, true);
 intent('collection', 'open', {});
 })();
 </script>

@@ -1,230 +1,232 @@
-# Infrastruktur: was noch gebaut werden muss
+# Infrastructure: what still has to be built
 
-Stand: 10. September 2026. Ergänzung zu
-[INFRASTRUCTURE-2026-09-09.md](INFRASTRUCTURE-2026-09-09.md) (Inventar und
-Testplan) und [UI-DESIGN-2026-09-09.md](UI-DESIGN-2026-09-09.md) (zwölf composable
-Napplets). Dieses Dokument listet nur, was fehlt, und ordnet es. Nichts davon ist
-gebaut oder bestellt.
+As of 10 September 2026. Addendum to
+[INFRASTRUCTURE-2026-09-09.md](INFRASTRUCTURE-2026-09-09.md) (inventory and
+test plan) and [UI-DESIGN-2026-09-09.md](UI-DESIGN-2026-09-09.md) (twelve composable
+napplets). This document lists only what is missing, and orders it. None of it is
+built or ordered.
 
-## Grundsatz: bestehende Mints nutzen
+## Principle: use existing mints
 
-Bearlett betreibt keine eigene Mint für Sats. Drei Klassen von Ausstellern, alle
-vorhanden oder von Dritten betrieben:
+Bearlett does not run its own mint for sats. Three classes of issuer, all
+present or operated by third parties:
 
-| Asset             | Aussteller                                                                                                                                                                                 | Vorhanden                                      | Zu tun                                                                                                                                                        |
+| Asset             | Issuer                                                                                                                                                                                     | Present                                        | To do                                                                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cashu-Sats        | Bestehende Nutshell-Mints. Regtest: `cashubtc/nutshell:0.20.3` an LND Bob, Host-Port 43338. Produktion: öffentliche Mints nach Kriterien wählen                                            | Regtest ja, Auswahl produktiver Mints nein     | Kriterienliste anwenden: NUT-07, NUT-08, NUT-09, NUT-13, NUT-20, Gebührenpolitik, Erreichbarkeit, BOLT12-Signal; mindestens zwei Mints je Einheit für Ausfall |
-| LNURLcash-Scheine | Bestehende LNURLmint-Instanzen (dnis `lnurl-mint`). Regtest: Image `bearlett-regtest-lnurl:latest`, Quelle `bd21f61`, an LND Alice, Host-Port 48111                                        | Regtest ja, produktiver Dienst nicht ermittelt | Öffentliche LNURLcash-Dienste ermitteln und gegen LUD-25 prüfen; kein eigener Betrieb in V1                                                                   |
-| NutFT-Karten      | First-Party-Mint der TCG-Wallet (`TCG600nap/server/nutft-mint.js`). Sie ist laut [TCG-WALLET-2026-09-09.md](TCG-WALLET-2026-09-09.md) vorgeschrieben und nicht durch Dritt-Mints ersetzbar | Code ja, Betrieb siehe Abschnitt F             | Hosting, Lightning-Backend, Katalog und Artwork; Anleitung in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md)                                                  |
+| Cashu sats        | Existing Nutshell mints. Regtest: `cashubtc/nutshell:0.20.3` on LND Bob, host port 43338. Production: choose public mints against criteria                                                  | Regtest yes, production mint selection no      | Apply the criteria list: NUT-07, NUT-08, NUT-09, NUT-13, NUT-20, fee policy, reachability, BOLT12 signal; at least two mints per unit for failover            |
+| LNURLcash notes   | Existing LNURLmint instances (dni's `lnurl-mint`). Regtest: image `bearlett-regtest-lnurl:latest`, source `bd21f61`, on LND Alice, host port 48111                                         | Regtest yes, production service not identified | Identify public LNURLcash services and check them against LUD-25; no in-house operation in V1                                                                      |
+| NutFT cards       | First-party mint of the TCG wallet (`TCG600nap/server/nutft-mint.js`). Per [TCG-WALLET-2026-09-09.md](TCG-WALLET-2026-09-09.md) it is required and not replaceable by third-party mints     | Code yes, operation see section F              | Hosting, Lightning backend, catalogue and artwork; instructions in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md)                                             |
 
-Alles, was eine Mint braucht, um Bearlett zu bedienen, ist ein HTTPS-Endpunkt mit
-den genannten NUTs und korrekten CORS-Headern. Beide Regtest-Mints beantworten
-OPTIONS-Requests mit `Access-Control-Allow-Origin: *`; das belegt den Preflight,
-nicht den vollen Browserfluss.
+All a mint needs to serve Bearlett is an HTTPS endpoint with
+the named NUTs and correct CORS headers. Both regtest mints answer
+OPTIONS requests with `Access-Control-Allow-Origin: *`. That proves the preflight,
+not the full browser flow.
 
-## Was vorhanden ist
+## What is present
 
-Aus dem Inventar vom 9. September, unverändert:
+From the inventory of 9 September, unchanged:
 
-- Regtest-Stapel unter WSL Ubuntu mit Docker Engine 29.3.0: Bitcoin, LND Alice und
-  Bob `v0.19.3-beta` mit finanziertem Kanal, Nutshell, LNURLmint;
+- Regtest stack under WSL Ubuntu with Docker Engine 29.3.0: Bitcoin, LND Alice and
+  Bob `v0.19.3-beta` with a funded channel, Nutshell, LNURLmint;
   `tests/integration/compose.yaml`, `scripts/regtest.mjs`, `npm run test:regtest`.
-  Leerlauf etwa 341 MiB RAM, Images zusammen etwa 2,2 GB.
-- Echter Kehto als gepatchter alter Checkout `14a14155`; Pakettests bestanden.
-- Lokale Fremddienste aus `terrcvm-corpus`: strfry auf 7777, Blossom auf 3000 und
-  8787, einer davon unhealthy; nicht Teil von Bearlett.
-- Blossom-Spiegel für Kartenbilder: `blossom.primal.net`, `blossom.bimcvp.com`,
-  `nostr.download`. Verschlüsselte TCG-Backups laufen heute über
-  `blossom.bimcvp.com` und `wss://relay.bimcvp.com` (Kind 37378).
-- Entwicklungs-Host `scripts/napplet-host.mjs` mit Test-Mint im Speicher; kein
-  Produktionshost.
+  Idle about 341 MiB RAM, images about 2.2 GB together.
+- Real Kehto as a patched old checkout `14a14155`; package tests passed.
+- Local foreign services from `terrcvm-corpus`: strfry on 7777, Blossom on 3000 and
+  8787, one of them unhealthy; not part of Bearlett.
+- Blossom mirrors for card images: `blossom.primal.net`, `blossom.bimcvp.com`,
+  `nostr.download`. Encrypted TCG backups currently run through
+  `blossom.bimcvp.com` and `wss://relay.bimcvp.com` (kind 37378).
+- Development host `scripts/napplet-host.mjs` with an in-memory test mint; not a
+  production host.
 
-Fehlend nach der Kopie nach `G:`: der Checkout `work/lnurl-mint` und die
-Docker-Volumes des früheren Standorts. Vor jedem Regtest wiederherstellen, wie in
-INFRASTRUCTURE-2026-09-09 beschrieben.
+Missing after the copy to `G:`: the `work/lnurl-mint` checkout and the
+Docker volumes of the previous location. Restore them before every regtest, as
+described in INFRASTRUCTURE-2026-09-09.
 
-## Was gebaut werden muss
+## What has to be built
 
-Reihenfolge nach Abhängigkeit. Ohne A läuft kein Napplet außerhalb der Vorschau.
+Order by dependency. Without A no napplet runs outside the preview.
 
-### A. Shell und Host-Fähigkeiten
+### A. Shell and host capabilities
 
-1. Produktive Shell mit den NAP-Domänen `storage`, `resource`, `inc`, `intent`.
-   Kandidaten: Kehto (Checkout vorhanden) oder der Nappelin-Hangar (betreibt heute
-   nur ein Speicher-Relay, siehe
+1. Production shell with the NAP domains `storage`, `resource`, `inc`, `intent`.
+   Candidates: Kehto (checkout present) or the Nappelin Hangar (today it runs
+   only a storage relay, see
    [NAPPELIN-INTEGRATION-2026-09-09.md](NAPPELIN-INTEGRATION-2026-09-09.md)).
-2. Die experimentelle `cashu`-Host-Fähigkeit mit Writer-Lease je Speicherbereich
-   nach [KEHTO.md](KEHTO.md). Ohne sie bleibt nur LNURLcash.
-3. Resource-Policy: Allowlist für Mints, LNURLcash-Dienste und Blossom-Spiegel,
-   nur HTTPS, 3-MB-Grenze für Kartenbilder, keine Bearer-URLs in Logs.
-4. Kaltstart-Zustellung von Intents, Standard-Handler je Archetyp, ein Fenster je
-   Speicherbereich. Nachweis für Anfrage und Antwort über zwei Intents, wie in
-   UI-DESIGN Abschnitt 6 beschrieben.
-5. Persistenter Host-Store mit Quota- und I/O-Fehlerinjektion für Tests.
+2. The experimental `cashu` host capability with a writer lease per storage scope
+   per [KEHTO.md](KEHTO.md). Without it only LNURLcash remains.
+3. Resource policy: allowlist for mints, LNURLcash services and Blossom mirrors,
+   HTTPS only, 3 MB limit for card images, no bearer URLs in logs.
+4. Cold-start delivery of intents, default handler per archetype, one window per
+   storage scope. Evidence for request and response across two intents, as
+   described in UI-DESIGN section 6.
+5. Persistent host store with quota and I/O fault injection for tests.
 
-Befund Kehto vom 10. September 2026 (Entscheidung: Shell zuerst über den
-Kehto-Vertrag):
+Kehto finding of 10 September 2026 (decision: shell first via the
+Kehto contract):
 
-- Korrektur zum Inventar: `14a14155` ist der lokale Patch-Commit auf Branch
-  `feature/cashu-capability`, Basis `a7e0d12f`. Das ist zugleich der heutige
-  Upstream-Stand von `kehto/web` (7. September 2026); seither ist nichts
-  gelandet, und `contributions/kehto-cashu.patch` wendet sich sauber auf Upstream
-  an. Der gepatchte Checkout liegt noch unter dem alten Codex-Pfad mit
-  `node_modules`, aber ohne gebautes Paja; `G:\Github\kehto-web` ist ein alter
-  Stand ohne Patch.
-- Der Patch liefert `cashu:request` als eigene, nie implizit gewährte
-  Fähigkeit, den Dienst mit festem `/v1`-Endpunktplan, nur Einheit `sat`, und
-  eine Writer-Lease je Speicherbereich im Speicher des Hosts. In Paja ist der
-  Dienst noch nicht registriert; `createDevServices` und die Schalterliste
-  brauchen den Eintrag.
-- Betrieb mit Intents: `pnpm paja` im gepatchten Checkout, ein `naddr` je
-  Napplet. Vorher signierte Manifeste (Kind 35129), ein erreichbarer Relay und
-  ein Blossom-Server für das Artefakt; Paja kennt keine lokale Dateiinstallation.
-  Kaltstart liefert genau ein `inc.event` mit der Konvention nach `shell.ready`.
-- Lücken gegenüber dem Design: kein persistenter Standard-Handler je Archetyp
-  und kein Chooser (Ambiguität wird abgelehnt); kein Fenster-je-Speicherbereich
-  außer der Cashu-Lease; Resource-Policy erlaubt jedes HTTPS bis 10 MB ohne
-  Allowlist; Host-Store nur localStorage mit 512 KiB Quote, kein IndexedDB.
-- Reihenfolge: frischen Upstream-Checkout patchen und Paja bauen, Cashu-Dienst
-  registrieren, beide Napplets signiert installieren, dann Standard-Handler,
-  Fenster-Sperre und Resource-Allowlist über die Origin-Grant-Hooks ergänzen.
+- Inventory correction: `14a14155` is the local patch commit on branch
+  `feature/cashu-capability`, base `a7e0d12f`. That is also today's
+  upstream state of `kehto/web` (7 September 2026). Nothing has landed since.
+  `contributions/kehto-cashu.patch` applies cleanly to upstream.
+  The patched checkout still lives under the old Codex path with
+  `node_modules`, but without a built Paja. `G:\Github\kehto-web` is an old
+  tree without the patch.
+- The patch supplies `cashu:request` as its own capability, never granted
+  implicitly, the service with a fixed `/v1` endpoint plan, unit `sat` only, and
+  a writer lease per storage scope in the host's memory. In Paja the
+  service is not yet registered. `createDevServices` and the switch list
+  need the entry.
+- Operation with intents: `pnpm paja` in the patched checkout, one `naddr` per
+  napplet. First: signed manifests (kind 35129), a reachable relay and
+  a Blossom server for the artifact. Paja has no local file install.
+  Cold start delivers exactly one `inc.event` with the convention after `shell.ready`.
+- Gaps versus the design: no persistent default handler per archetype
+  and no chooser (ambiguity is rejected); no window-per-storage-scope
+  except the Cashu lease; resource policy allows any HTTPS up to 10 MB without
+  an allowlist; host store is localStorage only with a 512 KiB quota, no IndexedDB.
+- Order: patch a fresh upstream checkout and build Paja, register the Cashu
+  service, install both napplets signed, then add default handler,
+  window lock and resource allowlist through the origin-grant hooks.
 
-### B. Identität und Signer
+### B. Identity and signer
 
-1. Wiederherstellbare Nappelin-Identität als Zugang; Gast nur temporär.
-2. NIP-44 im Worker oder über externen Signer (NIP-07 im Web, NIP-46 oder NIP-55
-   auf Android). Kein privater Schlüssel im iframe.
-3. Kompatibilitätsadapter zwischen bestehendem TCG-Backup und dem
-   Hangar-Vertrag; Figur-/Stein-Provisionierung und Wiederherstellung auf einem
-   zweiten Gerät nachweisen.
+1. Recoverable Nappelin identity as access; guest only temporary.
+2. NIP-44 in the worker or through an external signer (NIP-07 on the web, NIP-46
+   or NIP-55 on Android). No private key in the iframe.
+3. Compatibility adapter between the existing TCG backup and the
+   Hangar contract; prove figure/stone provisioning and restore on a
+   second device.
 
-### C. Backup-Transport
+### C. Backup transport
 
-1. Persistenter Nostr-Relay für signierte Backup-Referenzen. Ein isolierter,
-   geprüfter Bearlett-Relay fehlt; vorgesehen ist strfry auf Loopback 47777 mit
-   eigener Datenbank, Vorschlag noch nicht gebaut. Die 500-Event-Grenze der
-   TCG-Sync-Historie ist zu beheben oder zu umgehen.
-2. Verschlüsselte Snapshots auf Blossom: zwei unabhängige Speicher plus
-   Dateibackup, Upload-Autorisierung über den Signer, Rücklesen und Hashprüfung vor
-   Veröffentlichung der Referenz. Aufbewahrung und Quoten der Spiegel prüfen.
-3. Expliziter Gerätewechsel mit einem Schreiber; kein Relay liefert einen Lock.
+1. Persistent Nostr relay for signed backup references. An isolated,
+   verified Bearlett relay is missing; intended is strfry on loopback 47777 with
+   its own database, proposal not yet built. The 500-event limit of the
+   TCG sync history has to be fixed or bypassed.
+2. Encrypted snapshots on Blossom: two independent stores plus
+   a file backup, upload authorisation through the signer, read-back and hash
+   check before publishing the reference. Check retention and quotas of the
+   mirrors.
+3. Explicit device change with one writer; no relay supplies a lock.
 
-### D. Medien
+### D. Media
 
-1. Spiegelung der Kartenbilder auf mindestens zwei Blossom-Servern sichern, die
-   nicht vom selben Betreiber abhängen. Heute sind drei Spiegel konfiguriert,
-   Spiegelung selbst ist in der TCG-Wallet nicht implementiert.
-2. Bildcache im Napplet über den Storage-NAP, mit Quotenverhalten nach Neustart.
+1. Secure mirroring of card images onto at least two Blossom servers that
+   do not depend on the same operator. Today three mirrors are configured.
+   Mirroring itself is not implemented in the TCG wallet.
+2. Image cache in the napplet through the storage NAP, with quota behaviour
+   after restart.
 
-### E. Lightning und BOLT12
+### E. Lightning and BOLT12
 
-1. cashu-ts 4.10.1 kann BOLT12-Mint- und Melt-Quotes; der Mint muss sie anbieten
-   und Angebote mit Beschreibung signalisieren. Welche bestehenden Mints das tun,
-   ist zu ermitteln.
-2. Der Regtest hängt an LND. LND bietet BOLT12-Angebote bis `v0.21.0-beta`
-   (Juni 2026) nicht nativ; `v0.21` leitet Onion-Nachrichten weiter, Angebote
-   liefert nur der Sidecar LNDK. Core Lightning, LDK und Eclair können BOLT12
-   nativ. Für BOLT12-Tests braucht der Stapel einen CLN-Knoten im Compose und
-   eine Mint, die Angebote anbietet. Belegt ist das für die Rust-Mint des Cashu
-   Development Kit ab `v0.12.0`: BOLT12 Ende zu Ende, wahlweise mit CLN-Backend
-   oder mit `cdk-ldk-node`, das Mint und Lightning-Knoten in einem Binary
-   betreibt. Für Nutshell 0.20.3 wurde keine BOLT12-Unterstützung gefunden.
-   Konsequenz: Für BOLT12 im Regtest eine CDK-Mint neben Nutshell aufnehmen,
-   für die Produktion bestehende CDK-Mints mit BOLT12-Signal wählen. Quellen:
+1. cashu-ts 4.10.1 can create BOLT12 mint and melt quotes. The mint must offer
+   them and signal offers with a description. Which existing mints do that
+   has to be determined.
+2. The regtest is tied to LND. LND does not offer native BOLT12 offers up to
+   `v0.21.0-beta` (June 2026). `v0.21` forwards onion messages. Offers come only
+   from the sidecar LNDK. Core Lightning, LDK and Eclair can do BOLT12
+   natively. For BOLT12 tests the stack needs a CLN node in Compose and
+   a mint that issues offers. That is proven for the Cashu Development Kit
+   Rust mint from `v0.12.0`: BOLT12 end to end, optionally with a CLN backend
+   or with `cdk-ldk-node`, which runs mint and Lightning node in one binary.
+   No BOLT12 support was found for Nutshell 0.20.3.
+   Consequence: for BOLT12 in regtest add a CDK mint beside Nutshell;
+   for production choose existing CDK mints with a BOLT12 signal. Sources:
    <https://www.spark.money/research/lightning-network-2026-state>,
    <https://www.nobsbitcoin.com/lndk/>, <https://github.com/cashubtc/cdk/releases>,
    <https://blog.cashu.space/cashu-highlights-q3-25/>.
-3. LNURLcash kennt kein BOLT12. BOLT12-Zahlungen aus LNURLcash-Guthaben laufen über
-   die vorhandene Lightning-Brücke zu einem Cashu-Mint; keine neue Infrastruktur,
-   aber ein zusätzlicher Regtest-Pfad.
+3. LNURLcash has no BOLT12. BOLT12 payments from LNURLcash balances go through
+   the existing Lightning bridge to a Cashu mint. No new infrastructure,
+   but an extra regtest path.
 
-### F. NutFT-Mint für Karten
+### F. NutFT mint for cards
 
-Befund aus `TCG600nap` `d753505`, Details in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md);
-Vergleich mit Brenos Pokémon-Mint in
+Finding from `TCG600nap` `d753505`, details in [HOW-TO-MINT-ASSETS.md](HOW-TO-MINT-ASSETS.md);
+comparison with Breno's Pokémon mint in
 [NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md):
 
-- Ein Node-Prozess `server/table.js` (`npm run table`), Port `PORT` mit Standard
-  8777, reines HTTP. TLS kommt vom Reverse-Proxy: Caddy auf Loopback mit
-  `TRUST_PROXY=loopback`, systemd-Unit `tcg-table.service` laut
-  `docs/deploy-runbook-mint.md`. Die Mint ist eine Bibliothek in diesem Server,
-  kein eigener Prozess.
-- Zwei Instanzen: Edition One unter den Basispfaden, G unter `/g` mit eigener
-  SQLite-Datei (`G_NUTFT_DB`, `G_NUTFT_FUNDING` verpflichtend).
-- Lightning-Backends in `server/funding.js`: `lnd` über REST mit
-  Invoice-Macaroon, `phoenixd` (zahlt auch aus), `cashu` (custodial, nur
-  Staging), `mock` (nur mit `NUTFT_ALLOW_VIRTUAL=1`), `none` als Gratis-Demo.
-  Booster werden per BOLT11 bezahlt; BOLT12-Verkauf wäre Neubau.
-- Identität: `mint_seed` und `catalog_private_key` entstehen beim ersten Start in
-  der SQLite-Tabelle `nutft_meta`. Es gibt keine Schlüsseldatei. Das
-  Datenbank-Backup ist das Backup der Mint-Identität.
-- Katalog: `NUTFT_CATALOG_URI` zeigt auf `GET /nutft/catalog` der eigenen Mint;
-  das Tripel aus `census_sha256`, `collection_id` und `catalog_uri` wird
-  eingefroren, jede Abweichung verweigert den Start.
-- Live heute: Runbook Pfad A als Gratis-Demo auf `tcg.nappelin.com`. Im Code steht
-  keine Mint-URL; `site/shop.js:96` leitet sie aus `location.origin` ab.
+- One Node process `server/table.js` (`npm run table`), port `PORT` defaulting to
+  8777, plain HTTP. TLS comes from the reverse proxy: Caddy on loopback with
+  `TRUST_PROXY=loopback`, systemd unit `tcg-table.service` per
+  `docs/deploy-runbook-mint.md`. The mint is a library in this server,
+  not its own process.
+- Two instances: Edition One under the base paths, G under `/g` with its own
+  SQLite file (`G_NUTFT_DB`, `G_NUTFT_FUNDING` mandatory).
+- Lightning backends in `server/funding.js`: `lnd` over REST with an
+  invoice macaroon, `phoenixd` (also pays out), `cashu` (custodial, staging
+  only), `mock` (only with `NUTFT_ALLOW_VIRTUAL=1`), `none` as a free demo.
+  Boosters are paid with BOLT11. BOLT12 sales would be new work.
+- Identity: `mint_seed` and `catalog_private_key` are created on first start in
+  the SQLite table `nutft_meta`. There is no key file. The
+  database backup is the backup of the mint identity.
+- Catalogue: `NUTFT_CATALOG_URI` points at `GET /nutft/catalog` of this mint.
+  The triple of `census_sha256`, `collection_id` and `catalog_uri` is
+  frozen. Any deviation refuses start.
+- Live today: runbook path A as a free demo on `tcg.nappelin.com`. No mint URL
+  is in the code. `site/shop.js:96` derives it from `location.origin`.
 
-Zu bauen oder zu betreiben:
+To build or operate:
 
-1. Server mit Domain, Caddy und systemd; verschlüsseltes, getrenntes Backup der
-   SQLite-Datei vor der ersten Ausgabe.
-2. Lightning-Backend: phoenixd oder LND mit Invoice-Macaroon; Backend-Zugang nur
-   vom Mint-Host. Beacon-Quelle für Ziehungen (`NUTFT_BEACON_SOURCE`,
-   `NUTFT_BEACON_CONFIRMATIONS`) bei Booster-Editionen; Manifest-Editionen wie G
-   brauchen keinen Beacon.
-3. Blossom-Uploads der Kartenbilder mit einem Nostr-Schlüssel
-   (`scripts/upload-blobs.mjs`, BUD-02, Kind 24242, `PALACE_NSEC`) auf die drei
-   Spiegel; Vorhandensein mit `scripts/check_blobs.py` prüfen.
-4. Backup-Relay mit Wallet-Allowlist (`TCG_WALLET_BACKUP_ALLOWLIST`,
+1. Server with domain, Caddy and systemd; encrypted, separate backup of the
+   SQLite file before the first issuance.
+2. Lightning backend: phoenixd or LND with an invoice macaroon; backend access
+   only from the mint host. Beacon source for draws (`NUTFT_BEACON_SOURCE`,
+   `NUTFT_BEACON_CONFIRMATIONS`) on booster editions. Manifest editions such as G
+   need no beacon.
+3. Blossom uploads of the card images with a Nostr key
+   (`scripts/upload-blobs.mjs`, BUD-02, kind 24242, `PALACE_NSEC`) onto the three
+   mirrors; check presence with `scripts/check_blobs.py`.
+4. Backup relay with a wallet allowlist (`TCG_WALLET_BACKUP_ALLOWLIST`,
    `server/relay-policy-patch.js`, `server/relay-wallet-allowlist.js`).
-5. Für die Bearlett-Assets-Napplets: Mint-URL und Spiegel über die
-   Resource-Policy, nicht im Code. Die feste Einheitenliste in
-   `site/nutft-wallet.js` ist auf `feature/nutft-catalog-blob` entfernt, und die
-   Mint liefert den Katalog dort als hashadressierten Blob mit
-   `NUTFT_CATALOG_MIRRORS`; siehe
-   [NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md), Abschnitt 8.
-   Offen: Katalog-Blob live veröffentlichen und Spiegel eintragen.
-6. Härtung: `NUTFT_REQUIRE_PRODUCTION_KEYS` ist nur dokumentiert, nicht
-   implementiert; Verkaufsmodus `NUTFT_SALES`, Preisleiter
-   `NUTFT_PRICE_SCHEDULE`, Rechnungs-TTL und Claim-Frist bewusst setzen.
+5. For the Bearlett assets napplets: mint URL and mirrors through the
+   resource policy, not in code. The fixed unit list in
+   `site/nutft-wallet.js` is removed on `feature/nutft-catalog-blob`, and the
+   mint serves the catalogue there as a hash-addressed blob with
+   `NUTFT_CATALOG_MIRRORS`; see
+   [NUTFT-POKEMON-POC-2026-09-10.md](NUTFT-POKEMON-POC-2026-09-10.md), section 8.
+   Open: publish the catalogue blob live and register the mirrors.
+6. Hardening: `NUTFT_REQUIRE_PRODUCTION_KEYS` is documented only, not
+   implemented. Set sales mode `NUTFT_SALES`, price ladder
+   `NUTFT_PRICE_SCHEDULE`, invoice TTL and claim window deliberately.
 
-### G. Test- und Nachweisumgebung
+### G. Test and evidence environment
 
-1. Crash-Matrix aus INFRASTRUCTURE-2026-09-09 automatisieren: Stopp nach benanntem
-   Journal-Checkpoint, Neustart mit erhaltenem Store, für beide Transferrichtungen.
-2. Host- und Browsertests mit verifizierten Artefakten, eigenen Browserprofilen,
-   NIP-07- oder NIP-46-Testsigner mit synthetischer Identität, Upgrade des
-   Artefakthashes und Intent-Kaltstart.
-3. Android nach Capacitor: Android Studio ab 2025.2.1, JDK, SDK 36, API-36-Emulator
-   und ein echtes NFC-fähiges Gerät für NIP-55, Kamera, NFC und Keystore. Nicht
-   eingerichtet. `adb reverse` für 43338, 48111, 47777; lokale, auf dem Gerät
-   vertrauenswürdige HTTPS/WSS-Terminierung und auflösbare Mint-Hostnamen.
-4. Messung eines gebauten Napplets mit Three.js auf einem mittleren Android-Gerät.
+1. Automate the crash matrix from INFRASTRUCTURE-2026-09-09: stop after a named
+   journal checkpoint, restart with the kept store, for both transfer directions.
+2. Host and browser tests with verified artifacts, own browser profiles,
+   a NIP-07 or NIP-46 test signer with a synthetic identity, artifact-hash
+   upgrade and intent cold start.
+3. Android per Capacitor: Android Studio from 2025.2.1, JDK, SDK 36, API-36
+   emulator and a real NFC-capable device for NIP-55, camera, NFC and keystore.
+   Not set up. `adb reverse` for 43338, 48111, 47777; local HTTPS/WSS termination
+   trusted on the device and resolvable mint hostnames.
+4. Measurement of a built napplet with Three.js on a mid-range Android device.
 
-### H. Verteilung und Betrieb
+### H. Distribution and operations
 
-1. Signierte NIP-5D-Manifeste (Kind 35129) und ein Installationsweg über die Shell.
-   Blossom oder nsite erst bei Installation und Verteilung, nicht für den Regtest.
-2. TLS-Terminierung und DNS für alle selbst betriebenen Dienste: NutFT-Mint,
-   Backup-Relay, Blossom-Spiegel. Keine Zertifikatsprüfung im Produkt abschalten.
-3. GitHub Actions bleiben aus, bis der Auftraggeber sie freigibt; die frühere
-   Freigabeprüfung hat das Aktivieren ohne Rückfrage abgelehnt.
+1. Signed NIP-5D manifests (kind 35129) and an install path through the shell.
+   Blossom or nsite only at install and distribution, not for the regtest.
+2. TLS termination and DNS for every self-operated service: NutFT mint,
+   backup relay, Blossom mirror. Do not turn off certificate checks in the product.
+3. GitHub Actions stay off until the client authorises them. The earlier
+   authorisation check refused enabling them without asking.
 
-## Was ausdrücklich nicht gebaut wird
+## What is explicitly not built
 
-- Keine eigene Sats-Mint, weder Cashu noch LNURLcash.
-- Kein Marktplatz, keine Preise, keine HTLC-Swaps: Granola bleibt V2.
-- Kein Compare-and-swap-Relay für Cashu-Sync; für V1 nicht erforderlich.
-- Hashtree und Envelope sind optionale Zusätze, keine Voraussetzung für
-  verschlüsselte Backups.
+- No sats mint of its own, neither Cashu nor LNURLcash.
+- No marketplace, no prices, no HTLC swaps: Granola stays V2.
+- No compare-and-swap relay for Cashu-sync; not required for V1.
+- Hashtree and Envelope are optional extras, not a prerequisite for
+  encrypted backups.
 
-## Budget und Reihenfolge
+## Budget and order
 
-Planungsbudget aus dem Inventar, ausdrücklich Schätzung: 4 GB RAM für Builds und
-Mints, 8 bis 16 GB mit Android-Emulator, 10 bis 30 GB Plattenplatz für SDK, AVD und
-Images, 256 MiB für einen kleinen Relay. Kein VPS und keine echten Sats für lokale
-Tests. Für den Betrieb der NutFT-Mint, eines Relays und eines Blossom-Spiegels
-kommt ein Server mit TLS hinzu; Größe nach Abschnitt F.
+Planning budget from the inventory, explicitly an estimate: 4 GB RAM for builds
+and mints, 8 to 16 GB with Android emulator, 10 to 30 GB disk for SDK, AVD and
+images, 256 MiB for a small relay. No VPS and no real sats for local
+tests. For operating the NutFT mint, a relay and a Blossom mirror
+a server with TLS is added; size per section F.
 
-Empfohlene Reihenfolge: A, dann B und C parallel, dann E und F, dann G, zuletzt H
-und Android.
+Recommended order: A, then B and C in parallel, then E and F, then G, last H
+and Android.

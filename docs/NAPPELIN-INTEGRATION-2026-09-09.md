@@ -1,63 +1,110 @@
-# Nappelin: gemeinsamer Zugang zur Wallet
+# Nappelin: shared access to the wallet
 
-Stand: 2026-09-09. Codeprüfung, Architekturvorschlag und lokale Tests; keine Neuimplementierung oder Live-Freigabe. Nappelin-Commit: `1b2f2c8ca84e779aa51c31ce2d274341aca50c68`.
+Status: 9 September 2026. Code check, architecture proposal and local tests. Not
+a rewrite or live release. Nappelin commit: `1b2f2c8ca84e779aa51c31ce2d274341aca50c68`.
 
-## Ergebnis
+## Result
 
-Die vorhandene Nappelin-Identität ist als gemeinsamer Zugang geeignet. Die Wallet-Anbindung ist aber noch nicht durchgängig: Der Hangar reicht Signaturen durch, das TCG-Backup braucht zusätzlich NIP-44. Ein gleicher öffentlicher Schlüssel allein stellt diese Fähigkeit nicht bereit. Die flüchtige Gastidentität eignet sich nicht als wiederherstellbarer Zugang zu Geld.
+The existing Nappelin identity is suitable as shared access. The wallet binding
+is not yet end-to-end: Hangar passes signatures through. The TCG backup
+additionally needs NIP-44. The same public key alone does not provide that
+capability. The ephemeral guest identity is not suitable as recoverable access
+to money.
 
-## Was der Code tatsächlich macht
+## What the code actually does
 
-| Baustein | Befund |
+| Building block | Finding |
 |---|---|
-| Hangar-Gast | `keyholder.ts` erzeugt einen zufälligen Nostr-Schlüssel im Worker. Kein Secret-Export, kein dauerhafter Gast-Recovery-Pfad. |
-| Figur / Stein | `object-code.ts` erzeugt Locator und Passwort mit jeweils 128 Bit Zufall. Der Code adressiert einen Locker; er ist noch keine vollständige Konto-Provisionierung. `keyholder.ts` lädt das verschlüsselte Secret und entschlüsselt lokal. |
-| Locker | `locker-core.ts` implementiert den keys.justworks-Vertrag mit NIP-49 und scrypt logN=16. Er akzeptiert diesen Kostenparameter explizit. |
-| Browser-Signer | `extension.ts` delegiert Public Key und Signaturen, kontrolliert Kontoänderungen und Signaturantworten. NIP-44 wird bislang nicht durchgereicht. |
-| Öffentliche Identity-Schnittstelle | `types.ts` enthält `pubkey`, `kind`, `signEvent`, `dispose`; keine Backup-Verschlüsselung. |
-| Betreiberidentitäten | `services/agent-api/scripts/mint-identity.mjs` erzeugt Plattform-/Agent-Schlüssel mit NIP-49 logN=20. Das sind keine Spieler-Wallet-Schlüssel und keine direkt kompatiblen Figur-/Stein-Locker-Blobs. Script nicht ausgeführt. |
-| TCG-Wallet | Separater P2BK-Ausgabeschlüssel und bestehender Wallet-Snapshot. `nostr-wallet-sync.js` verschlüsselt über `identity.nip44`, nutzt Nostr und bei großen Snapshots Blossom. |
-| Hangar-Netzwerk | `host.ts` betreibt für Napplets aktuell ein Speicher-Relay; es ist kein persistenter Nostr-Backup-Dienst. |
+| Hangar guest | `keyholder.ts` creates a random Nostr key in the worker. No secret export. No durable guest recovery path. |
+| Figure / stone | `object-code.ts` creates locator and password with 128 bits of randomness each. The code addresses a locker. It is not yet complete account provisioning. `keyholder.ts` loads the encrypted secret and decrypts locally. |
+| Locker | `locker-core.ts` implements the keys.justworks contract with NIP-49 and scrypt logN=16. It accepts this cost parameter explicitly. |
+| Browser signer | `extension.ts` delegates public key and signatures, controls account changes and signature replies. NIP-44 is not passed through so far. |
+| Public identity interface | `types.ts` contains `pubkey`, `kind`, `signEvent`, `dispose`; no backup encryption. |
+| Operator identities | `services/agent-api/scripts/mint-identity.mjs` creates platform/agent keys with NIP-49 logN=20. These are not player wallet keys and not directly compatible figure/stone locker blobs. Script not executed. |
+| TCG wallet | Separate P2BK spend key and existing wallet snapshot. `nostr-wallet-sync.js` encrypts via `identity.nip44`, uses Nostr and Blossom for large snapshots. |
+| Hangar network | `host.ts` currently runs a storage relay for napplets. It is not a persistent Nostr backup service. |
 
-NIP-49 schützt den privaten Login-Schlüssel mit einer Passphrase. NIP-44 schützt hier Wallet-Backup-Daten über den Signer. Diese Funktionen ersetzen einander nicht. Das ältere E-Mail-/Shamir-Konzept in `docs/KEY-DESIGN.md` ist nicht der Nachweis eines implementierten Spieler-Recovery-Flows.
+NIP-49 protects the private login key with a passphrase. NIP-44 here protects
+wallet backup data via the signer. These functions do not replace each other.
+The older email/Shamir concept in `docs/KEY-DESIGN.md` is not evidence of an
+implemented player recovery flow.
 
-## Empfohlene Verbindung für V1
+## Recommended connection for V1
 
-1. **Wiederherstellbare Nappelin-Identität als Zugang.** Unterstützten Signer oder provisionierte Figur/Stein verwenden. Gast vor dauerhafter Geldnutzung in einen wiederherstellbaren Zugang überführen; nicht stillschweigend einen neuen Schlüssel erzeugen.
-2. **Geldschlüssel getrennt erhalten.** Vorhandene TCG-P2BK-Schlüssel und Wallet-Secrets bleiben eigenständige Geheimnisse im geschützten Wallet-Zustand. Nicht durch den Nostr-Login-Schlüssel ersetzen. Ein gemeinsamer Login bedeutet nicht einen Schlüssel für alle Aufgaben.
-3. **Hostseitigen Backup-Service ergänzen.** Intern NIP-44 im lokalen Worker bzw. über einen geeigneten externen Signer bereitstellen. Napplets erhalten eng begrenzte Wallet-/Backup-Operationen; kein privater Schlüssel wird ins iframe exportiert. Bestehenden TCG-Adapter auf den aktuellen Hangar-/Kehto-Vertrag abbilden.
-4. **Transport anschließen.** Persistentes Relay und erlaubten Blossom-Upload/Download im Host konfigurieren. Vollständigen Snapshot zuerst lokal verschlüsseln, Upload zurücklesen und Hash prüfen, dann signierte Referenz veröffentlichen. Blossom speichert in diesem Ablauf bereits verschlüsselte Daten; der Speicherort allein erzeugt keine Verschlüsselung.
-5. **Gerätewechsel ausdrücklich durchführen.** Ausstehende Zahlungen klären, letzten bestätigten Zustand sichern, altes Gerät sperren, neues Gerät wiederherstellen und Mint-Zustand abgleichen. Die bisherige Web-Locks-Sperre koordiniert keine anderen Geräte. Ein kopierter Bearer-Token bleibt ausgebbar; für belastbaren Entzug alter Kopien braucht es ein dafür geprüftes Reissue-/Rekey-Verfahren bei der Mint. Eine Nostr-Markierung allein erzwingt das nicht.
-6. **Android verwendet denselben Vertrag.** Hostseitige Schlüsselhaltung und geschützter lokaler Speicher, dieselben Snapshot- und Identitätsregeln. Lifecycle-Sperren beim App-Wechsel und Rückkehr vom externen Signer gezielt testen.
+1. **Recoverable Nappelin identity as access.** Use a supported signer or a
+   provisioned figure/stone. Convert guest to recoverable access before durable
+   money use. Do not silently create a new key.
+2. **Keep money keys separate.** Existing TCG P2BK keys and wallet secrets remain
+   independent secrets in the protected wallet state. Do not replace them with
+   the Nostr login key. A shared login does not mean one key for every task.
+3. **Add a host-side backup service.** Provide NIP-44 internally in the local
+   worker or via a suitable external signer. Napplets receive tightly limited
+   wallet/backup operations. No private key is exported into the iframe. Map the
+   existing TCG adapter onto the current Hangar/Kehto contract.
+4. **Connect transport.** Configure a persistent relay and allowed Blossom
+   upload/download in the host. First encrypt the complete snapshot locally, read
+   the upload back and check the hash, then publish the signed reference. In this
+   flow Blossom already stores encrypted data. The storage location alone does
+   not create encryption.
+5. **Execute device handover explicitly.** Clear pending payments, persist the
+   last confirmed state, lock the old device, restore the new device and
+   reconcile mint state. The existing Web Locks mutex does not coordinate other
+   devices. A copied bearer token remains spendable. Durable revocation of old
+   copies needs a checked reissue/rekey procedure at the mint. A Nostr mark
+   alone does not enforce that.
+6. **Android uses the same contract.** Host-side key custody and protected local
+   storage, the same snapshot and identity rules. Specifically test lifecycle
+   locks on app switch and return from the external signer.
 
-Bestehende TCG-Backups lassen sich nur mit ihrem bisherigen Entschlüsselungszugang öffnen. Bei Wechsel der Nappelin-Identität ist eine explizite Migration mit dem alten Zugang nötig. Schlüssel-, Konto- oder Sessionwechsel müssen auch laufende Verschlüsselungsantworten entwerten. Ein Timeout darf niemals automatisch eine leere Ersatz-Wallet anlegen.
+Existing TCG backups can be opened only with their previous decryption access.
+On change of Nappelin identity, an explicit migration with the old access is
+required. Key, account or session changes must also invalidate in-flight
+encryption replies. A timeout must never automatically create an empty
+replacement wallet.
 
-## Konkret fehlend / noch nachzuweisen
+## Missing / still to prove
 
-- NIP-44-Fähigkeit im Worker, Worker-Protokoll, Identity-Adapter und externen Signer-Pfad einschließlich Konto-/Sessionbindung.
-- Kompatibilitätsadapter zwischen bestehendem TCG-Backup und aktuellem Hangar; persistenter Relay-/Blossom-Service mit Berechtigungen.
-- Vollständige Figur-/Stein-Provisionierung und Wiederherstellung auf einem zweiten Gerät gegen den vorgesehenen Locker. Der geprüfte Unlock-Code allein belegt dessen Produktionstauglichkeit nicht.
-- Geschützter lokaler Wallet-Speicher: Das TCG-Backup verschlüsselt den Remote-Snapshot, der vorhandene lokale Wallet-Zustand enthält weiterhin Secrets in localStorage.
-- Geprüfter Geräteübergabe- und Crash-Recovery-Ablauf; Schutz vor veralteten Snapshots und weiter ausgebbaren Token-Kopien.
-- Reale Interoperabilitätsprobe mit Nappelin-Signer, TCG-Snapshot, Relay, Blossom und anschließendem Restore auf einem zweiten Gerät.
+- NIP-44 capability in the worker, worker protocol, identity adapter and
+  external signer path including account/session binding.
+- Compatibility adapter between existing TCG backup and current Hangar;
+  persistent relay/Blossom service with permissions.
+- Complete figure/stone provisioning and recovery on a second device against the
+  intended locker. The checked unlock code alone does not prove its production
+  readiness.
+- Protected local wallet storage: the TCG backup encrypts the remote snapshot;
+  the existing local wallet state still contains secrets in localStorage.
+- Checked device handover and crash-recovery flow; protection against stale
+  snapshots and still-spendable token copies.
+- Real interoperability trial with Nappelin signer, TCG snapshot, relay, Blossom
+  and subsequent restore on a second device.
 
-Envelope/Hashtree sind keine Lösung für diese Identity- und Writer-Lücken. Ihre zusätzliche Einbindung ist für das bestehende verschlüsselte Snapshot-Verfahren nicht Voraussetzung. Granola/Monero/USDT bleibt V2.
+Envelope/Hashtree are not a solution for these identity and writer gaps. Their
+extra binding is not a prerequisite for the existing encrypted snapshot
+procedure. Granola/Monero/USDT remains V2.
 
-## Reproduzierte Tests und Grenzen
+## Reproduced tests and limits
 
 ```powershell
 node --test G:/Github/nappelin.com/apps/hangar/test/identity.test.mjs G:/Github/nappelin.com/apps/hangar/test/locker.test.mjs G:/Github/nappelin.com/apps/hangar/test/login-lifecycle.test.mjs
 ```
 
-Ergebnis: **27 bestanden, 0 fehlgeschlagen**. Enthält echte lokale Kryptografie und Locker-Testvektoren; Locker-Anfragen und Browser-Lifecycle werden simuliert. Zusätzlich **6 TCG-Wallet-Sync-Tests bestanden**, mit simuliertem Signer/Relay/Blossom. Das ist kein Live-End-to-End-Nachweis der Verbindung.
+Result: **27 passed, 0 failed**. Contains real local cryptography and locker
+test vectors. Locker requests and browser lifecycle are simulated. Additionally
+**6 TCG wallet sync tests passed**, with simulated signer/relay/Blossom. That is
+not a live end-to-end proof of the connection.
 
-Logs: `outputs/feasibility-2026-09-09/nappelin-identity-tests.log` und `tcg-wallet-sync.log` im Bearlett-Repository. Entscheidungen vor Erstellung dieses Berichts in `audit.sqlite` erfasst.
+Logs: `outputs/feasibility-2026-09-09/nappelin-identity-tests.log` and
+`tcg-wallet-sync.log` in the Bearlett repository. Decisions recorded in
+`audit.sqlite` before this report was written.
 
-## Primäre Codebelege
+## Primary code evidence
 
 - `G:/Github/nappelin.com/apps/hangar/src/identity/{types,keyholder,object-code,locker-core,extension,worker,worker-client,slot}.ts`
 - `G:/Github/nappelin.com/apps/hangar/src/{host,login}.ts`
 - `G:/Github/nappelin.com/services/agent-api/scripts/mint-identity.mjs`
 - `G:/Github/TCG600nap/site/{napplet,nostr-wallet-sync,nutft-wallet}.js`
 
-Infografik: `nappelin-wallet-v1-infographic-2026-09-09.png`, erzeugt mit dem eingebauten ImageGen-Werkzeug. Prompt: `nappelin-wallet-v1-infographic-prompt.txt`. Die Grafik ist ein Architekturentwurf; die Original-SVGs im Nappelin-Repository bleiben die verbindlichen Logo-Assets.
+Infographic: `nappelin-wallet-v1-infographic-2026-09-09.png`, produced with the
+built-in ImageGen tool. Prompt: `nappelin-wallet-v1-infographic-prompt.txt`. The
+graphic is an architecture sketch. The original SVGs in the Nappelin repository
+remain the canonical logo assets.
