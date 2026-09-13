@@ -1,6 +1,7 @@
 import {createSignal, createMemo, For, Show, onMount, onCleanup} from 'solid-js'
 import {render} from 'solid-js/web'
 import {getWalletHost} from '../host'
+import type {WalletHost} from '../host'
 import {installNutftShim} from '../../host/nutft-shim'
 import {startCollectionWallet} from './bootstrap'
 import type {NutFTWalletApi} from './bootstrap'
@@ -11,6 +12,13 @@ import type {SupplyChain} from './supply'
 import {createFaceCache} from './faces'
 import type {AsyncStore} from './bootstrap'
 import {EDITIONS} from './editions'
+import {
+  INVENTORY_CONVENTION,
+  INVENTORY_STORAGE_KEY,
+  buildInventory,
+  isInventoryRequest
+} from './inventory'
+import type {Inventory} from './inventory'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
 import './collection.css'
 
@@ -118,6 +126,9 @@ function App() {
 
   let wallet: NutFTWalletApi | null = null
   let storage: AsyncStore | null = null
+  let inc: WalletHost['inc'] = undefined
+  let inventory: Inventory | null = null
+  let requests: {close(): void} | undefined
   let faces: ReturnType<typeof createFaceCache> | null = null
   let shim: ReturnType<typeof installNutftShim> | null = null
 
@@ -182,6 +193,26 @@ function App() {
     }
   }
 
+  /* What other napplets may know: counts per card, never a proof. The last
+     inventory is kept by the shell so the host can answer for this napplet
+     while it is closed, and announced so an open one hears it at once. A
+     fault here must not blank the cards, which are already on screen. */
+  const publishInventory = async (snapshot: Snapshot) => {
+    try {
+      const built = buildInventory(
+        EDITION,
+        snapshot,
+        Math.floor(Date.now() / 1000)
+      )
+      inventory = built
+      await storage?.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(built))
+      inc?.emit(INVENTORY_CONVENTION, built)
+    } catch {
+      /* The collection is shown regardless; nobody is told an inventory
+         that could not be built. */
+    }
+  }
+
   const refresh = async () => {
     if (!wallet) return
     setBusy('Reading the mint')
@@ -190,6 +221,7 @@ function App() {
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
+      await publishInventory(snapshot)
       await checkSupply(snapshot)
     } catch (error) {
       setFailure(readable(error))
@@ -202,6 +234,19 @@ function App() {
     try {
       const host = getWalletHost()
       storage = host.storage
+      inc = host.inc
+      /* Another napplet asking for this edition's inventory gets the current
+         one again. Any other payload on the topic, including this napplet's
+         own announcements, is ignored, and the handler never throws: the
+         shell's dispatch is not the place for this napplet's errors. */
+      requests = inc?.on(INVENTORY_CONVENTION, event => {
+        try {
+          if (isInventoryRequest(event.payload, EDITION.id) && inventory)
+            inc?.emit(INVENTORY_CONVENTION, inventory)
+        } catch {
+          /* ignored on purpose */
+        }
+      })
       shim = installNutftShim()
       /* One collection is open in one window. The lease is taken before any
          card is read, so a second window is told plainly instead of racing. */
@@ -234,6 +279,7 @@ function App() {
   })
 
   onCleanup(() => {
+    requests?.close()
     faces?.dispose()
     shim?.dispose()
   })

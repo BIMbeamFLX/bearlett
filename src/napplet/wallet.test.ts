@@ -378,7 +378,7 @@ describe('untrusted intents and designs', () => {
     const close = vi.fn()
     const on = vi.fn(() => ({close}))
     const disconnect = listenWalletIntents(
-      {storage, resource: {bytes: vi.fn()}, inc: {on}},
+      {storage, resource: {bytes: vi.fn()}, inc: {on, emit: vi.fn()}},
       vi.fn(),
       vi.fn()
     )
