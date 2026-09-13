@@ -232,6 +232,7 @@ NAAT standards. They follow the current stable queryless convention model.
 | Role              | Convention                     | Payload                                 | Effect                               |
 | ----------------- | ------------------------------ | --------------------------------------- | ------------------------------------ |
 | `collection`      | `napplet:collection/open`      | absent or `{}`                          | Show one collection                  |
+| `collection`      | `napplet:collection/inventory` | `nutft/inventory` or a request for one  | Announce the cards held              |
 | `wallet`          | `napplet:wallet/open`          | absent or `{}`                          | Show wallet                          |
 | `wallet`          | `napplet:wallet/receive`       | `{note: string}`                        | Stage receive review                 |
 | `wallet`          | `napplet:wallet/pay`           | `{invoice: string}`                     | Stage payment review                 |
@@ -266,6 +267,55 @@ most one pending review in memory. Malformed and oversized inputs are rejected.
 NAP-INTENT itself does not define a handler-side receive API. This implementation
 uses its documented convention delivery via INC. A shell using another
 cold-start delivery mechanism needs to adapt that mechanism to these topics.
+
+### Collection inventory intent
+
+A game that wants to know which cards a holder owns must not be handed the
+proofs: a proof is the card. What a collection napplet tells anyone else is
+therefore a count per asset id, `nutft/inventory` v1, and nothing more:
+
+```json
+{
+  "v": 1,
+  "kind": "nutft/inventory",
+  "edition": "600b-e1",
+  "collection_id": "600B-E1",
+  "catalog_uri": "https://mint.example/e1/nutft/catalog",
+  "mint": "https://mint.example/e1",
+  "at": 1757800000,
+  "cards": [
+    {"asset_id": "E1-001", "count": 2},
+    {"asset_id": "E1-042", "count": 1}
+  ]
+}
+```
+
+Every field is required and no other field is allowed, on the payload or on a
+card. `edition`, `collection_id` and `asset_id` are strings of 1 to 64
+characters; `count` is a positive integer, so a card that is not held is not
+listed; `cards` is sorted by `asset_id` in code-unit order, holds no repeats and
+at most 4096 entries; `at` is unix seconds. `src/napplet/collection/inventory.ts`
+builds the payload from the wallet's snapshot and reads it back with the same
+strictness, and the build runs its own output through that reader.
+
+**When it is emitted.** After every successful `refresh()` of the collection:
+on open, after a handover, after a retry. Each time, the payload is written to
+the shell's storage under the key `inventory`, so a host can answer
+`intent.invoke({archetype: 'collection', convention: 'napplet:collection/inventory'})`
+from storage while the collection is closed, and emitted on the INC topic
+`napplet:collection/inventory` so an open napplet hears it at once. The
+collection also listens on that topic: a payload
+`{"v": 1, "kind": "nutft/inventory-request", "edition": "600b-e1"}` naming its
+own edition is answered by emitting the current inventory again. Any other
+payload on the topic, including the collection's own announcements and a
+request for another edition, is ignored. The edition is compiled in; a request
+cannot choose one.
+
+**What is never included.** Proofs, secrets, the curve point `Y`, the holder's
+address, pubkeys of any kind, and mint states. The counts are taken from the
+`nutft` tag the mint signed into each proof, not from the catalogue entry it
+resolved to. A payload that carries anything beyond the fields above is
+refused by the reader, not trimmed.
 
 ## Notes
 

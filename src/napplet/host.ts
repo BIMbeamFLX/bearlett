@@ -6,7 +6,8 @@ export type WalletHost = {
   cashu?: CashuHost
   storage: Pick<typeof storage, 'getItem' | 'setItem' | 'keys'>
   resource: Pick<typeof resource, 'bytes'>
-  inc?: Pick<typeof inc, 'on'>
+  /** `emit` as well as `on`: the collection answers requests on its topic. */
+  inc?: Pick<typeof inc, 'on' | 'emit'>
 }
 
 /** Refuse an ephemeral wallet when the shell cannot persist its secrets. */
