@@ -52,7 +52,8 @@ export default defineConfig(({mode}) => {
              key is not a collection, it is a fresh wallet on every open. */
           requires: ['storage', 'resource', 'inc'],
           archetypes: [
-            {slug: 'collection', convention: 'napplet:collection/open'}
+            {slug: 'collection', convention: 'napplet:collection/open'},
+            {slug: 'collection', convention: 'napplet:collection/inventory'}
           ]
         })
       ],
