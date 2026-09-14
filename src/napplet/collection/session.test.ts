@@ -457,6 +457,42 @@ const restoredAccount = async (
 
 const MIGRATION_KEY = `${RANDOM_KEY}:migration`
 
+describe('handing cards over', () => {
+  it('keeps every handed-over card until the holder says it was passed on', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1, 2])
+    const first = phone.open()
+    await first.session.open()
+    const secrets = (await first.session.snapshot()).owned.map(
+      item => (item.proof as {secret: string}).secret
+    )
+    const recipient = addressOf(ACCOUNT_B).pubkey
+    const handed = await first.session.handOver(secrets[0], recipient)
+    expect(handed.token).toMatch(/^cashuB/)
+    /* The second handover stops before the mint answers. */
+    mint.before = 'trade'
+    await expect(
+      first.session.handOver(secrets[1], recipient)
+    ).rejects.toThrow()
+    expect(await first.session.sent()).toEqual([
+      {token: handed.token, at: expect.any(String)}
+    ])
+
+    /* The window closes. Nothing handed over is lost with it, and the
+       interrupted handover is finished and listed the next time round. */
+    const second = phone.open()
+    await second.session.open()
+    await second.session.snapshot()
+    const sent = await second.session.sent()
+    expect(sent).toHaveLength(2)
+    expect(sent.map(entry => entry.token)).toContain(handed.token)
+
+    await second.session.passedOn(sent.map(entry => entry.token))
+    expect(await second.session.sent()).toEqual([])
+    expect((await second.session.snapshot()).owned).toEqual([])
+  })
+})
+
 describe('moving the device cards to the account', () => {
   it('moves them, switches after confirming, and a new device restores them', async () => {
     const mint = new TestNutftMint()
@@ -494,6 +530,9 @@ describe('moving the device cards to the account', () => {
     expect(await session.destination()).toBe(addressOf(ACCOUNT_A).pubkey)
     expect((await session.snapshot()).owned).toHaveLength(2)
     expect((await phone.state(RANDOM_KEY)).tokens).toEqual([])
+    /* The moves are not left behind as handovers waiting to be passed on. */
+    expect((await phone.state(RANDOM_KEY)).outgoing).toEqual([])
+    expect(await session.sent()).toEqual([])
     /* A finished move leaves no journal and no token behind. */
     expect(JSON.parse(phone.storage.map.get(MIGRATION_KEY)!)).toEqual({
       v: 1,

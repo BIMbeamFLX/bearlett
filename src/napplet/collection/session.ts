@@ -477,6 +477,14 @@ export function openSession(deps: SessionDeps) {
         await moveOps.save(journal)
       }
       const result = await runMigration(journal, moveOps, progress)
+      /* The old wallet filed each move as a card sent. They are confirmed
+         under the account now, so they are not left to look like handovers
+         still waiting to be passed on. */
+      for (const step of journal.steps)
+        if (step.token) {
+          const sent = step.token
+          await on(randomKey, () => wallet.forgetOutgoing(sent))
+        }
       await store.setItem(
         journalKey,
         JSON.stringify({
@@ -538,6 +546,27 @@ export function openSession(deps: SessionDeps) {
         return (await wallet.tradeProof(edition.mint, secret, recipient)) as {
           token?: string
         }
+      }),
+
+    /**
+     * Cards handed over from the wallet on screen and not yet confirmed as
+     * passed on, newest first. The card library keeps every one in storage
+     * from the moment the mint re-binds it, because the token is the only
+     * thing that can ever claim that card; a handover that stopped halfway
+     * still lists every card it did hand over.
+     */
+    sent: (): Promise<Array<{token: string; at?: string}>> =>
+      on(activeKey(), async () => {
+        const state = (await wallet.read()) as StoredWallet
+        return (state.outgoing ?? [])
+          .filter(entry => !lockedTo(entry.token, state.privateKey))
+          .map(({token, at}) => ({token, ...(at ? {at} : {})}))
+      }),
+
+    /** Forget handed-over cards the holder says were passed on. */
+    passedOn: (tokens: readonly string[]): Promise<void> =>
+      on(activeKey(), async () => {
+        for (const token of tokens) await wallet.forgetOutgoing(token)
       })
   }
 }

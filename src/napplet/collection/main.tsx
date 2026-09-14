@@ -126,7 +126,7 @@ function App() {
   const [selected, setSelected] = createSignal<readonly string[]>([])
   const [handover, setHandover] = createSignal(false)
   const [recipient, setRecipient] = createSignal('')
-  const [handedOver, setHandedOver] = createSignal('')
+  const [sent, setSent] = createSignal<Array<{token: string; at?: string}>>([])
   const [mine, setMine] = createSignal('')
   const [supply, setSupply] = createSignal<SupplyChain | null>(null)
   const [supplyFault, setSupplyFault] = createSignal('')
@@ -254,6 +254,7 @@ function App() {
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
+      setSent(await session.sent())
       await publishInventory(snapshot)
       await checkSupply(snapshot)
     } catch (error) {
@@ -492,32 +493,39 @@ function App() {
     setOpened(stack)
   }
 
+  /* Every handed-over token comes back from storage, not from this loop: a
+     handover that stops at the third card still shows the first two, and so
+     does the next open, until the holder says they were passed on. */
   const hand = async () => {
     if (!session) return
     const chosen = selected()
     if (!chosen.length || !recipient().trim()) return
     setBusy('Handing over')
     setFailure('')
+    let problem = ''
     try {
-      const tokens: string[] = []
       for (const id of chosen) {
         const stack = view()?.stacks.find(s => s.asset.asset_id === id)
         const item = stack?.items[0] as {proof?: {secret?: string}} | undefined
         if (!item?.proof?.secret) continue
-        const result = await session.handOver(
-          item.proof.secret,
-          recipient().trim()
-        )
-        if (result?.token) tokens.push(result.token)
+        await session.handOver(item.proof.secret, recipient().trim())
       }
-      setHandedOver(tokens.join('\n\n'))
       setSelected([])
       setSelecting(false)
-      await refresh()
+    } catch (error) {
+      problem = readable(error)
+    }
+    await refresh()
+    if (problem) setFailure(problem)
+  }
+
+  const passedOn = async () => {
+    if (!session) return
+    try {
+      await session.passedOn(sent().map(entry => entry.token))
+      setSent(await session.sent())
     } catch (error) {
       setFailure(readable(error))
-    } finally {
-      setBusy('')
     }
   }
 
@@ -648,6 +656,19 @@ function App() {
           <p class="notice notice--good" role="status">
             {moved()}
           </p>
+        </Show>
+
+        <Show when={sent().length && !handover()}>
+          <div class="notice" role="status">
+            <p>
+              {sent().length} handed-over card
+              {sent().length === 1 ? ' is' : 's are'} waiting to be passed on.
+              The tokens stay here until you say they were.
+            </p>
+            <button class="button" onClick={() => setHandover(true)}>
+              Show them
+            </button>
+          </div>
         </Show>
 
         <Show when={view()}>
@@ -961,13 +982,7 @@ function App() {
                 <p class="collection__kicker">Handover</p>
                 <h2 class="sheet__title">Hand over cards</h2>
               </div>
-              <button
-                class="button"
-                onClick={() => {
-                  setHandover(false)
-                  setHandedOver('')
-                }}
-              >
+              <button class="button" onClick={() => setHandover(false)}>
                 Close
               </button>
             </div>
@@ -1000,15 +1015,31 @@ function App() {
               </p>
             </Show>
 
-            <Show when={handedOver()}>
-              <p class="collection__kicker">Handed over</p>
-              <textarea class="handover__token" readonly>
-                {handedOver()}
-              </textarea>
-              <p>
-                The recipient can also import this token directly if their
-                wallet asks for one.
+            <Show when={sent().length}>
+              <p class="collection__kicker">
+                Handed over, waiting to be passed on
               </p>
+              <textarea
+                class="handover__token"
+                readonly
+                value={sent()
+                  .map(entry => entry.token)
+                  .join('\n\n')}
+              />
+              <p>
+                Give these tokens to the recipient. Each one is the only way to
+                claim its card, so they stay here, closed or not, until you say
+                they were passed on.
+              </p>
+              <div class="actions">
+                <button
+                  class="button"
+                  disabled={Boolean(busy())}
+                  onClick={passedOn}
+                >
+                  They were passed on
+                </button>
+              </div>
             </Show>
           </div>
         </div>
