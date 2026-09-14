@@ -1,10 +1,12 @@
 import {describe, expect, it} from 'vitest'
 import {
   INVENTORY_CONVENTION,
+  INVENTORY_STORAGE_KEY,
   MAX_INVENTORY_CARDS,
   buildInventory,
   isInventoryRequest,
-  parseInventory
+  parseInventory,
+  publishInventory
 } from './inventory'
 import type {Inventory} from './inventory'
 import type {CollectionEdition} from './bootstrap'
@@ -222,7 +224,7 @@ describe('parseInventory', () => {
 
   it('rejects ids that are not strings or are too long', () => {
     expect(() => parseInventory(variant(c => (c.edition = 7)))).toThrow(
-      /"edition" must be a string/
+      /"edition" must be 1 to 64 letters/
     )
     expect(() =>
       parseInventory(
@@ -233,7 +235,7 @@ describe('parseInventory', () => {
             ))
         )
       )
-    ).toThrow(/"asset_id" must be a string of 1 to 64/)
+    ).toThrow(/"asset_id" must be 1 to 64 letters/)
     expect(() => parseInventory(variant(c => (c.collection_id = '')))).toThrow(
       /"collection_id"/
     )
@@ -263,6 +265,113 @@ describe('parseInventory', () => {
   it('rejects things that are not objects', () => {
     for (const bad of [null, 'inventory', [], 1, undefined])
       expect(() => parseInventory(bad)).toThrow(/expected an object/)
+  })
+
+  it('takes ids only in the shape the host takes them', () => {
+    for (const id of [
+      'E1 001',
+      'E1/001',
+      '-E1',
+      '.E1',
+      '_E1',
+      'E1-00é',
+      'x'.repeat(65)
+    ])
+      expect(() =>
+        parseInventory(
+          variant(
+            c => ((c.cards as Record<string, unknown>[])[0].asset_id = id)
+          )
+        )
+      ).toThrow(/"asset_id" must be 1 to 64 letters/)
+    for (const id of ['E1-001', 'e1.v2_x', '0', 'A'.repeat(64)])
+      expect(
+        parseInventory(
+          variant(c => {
+            ;(c.cards as Record<string, unknown>[])[0].asset_id = id
+            ;(c.cards as unknown[]).splice(1)
+          })
+        ).cards[0].asset_id
+      ).toBe(id)
+    expect(() => parseInventory(variant(c => (c.edition = '600b e1')))).toThrow(
+      /"edition"/
+    )
+  })
+
+  it('takes only an https mint, and an https or empty catalogue', () => {
+    for (const mint of [
+      'http://mint.example/e1',
+      'mint.example/e1',
+      '',
+      'https://user:pw@mint.example/e1'
+    ])
+      expect(() => parseInventory(variant(c => (c.mint = mint)))).toThrow(
+        /"mint" must be an https URL/
+      )
+    for (const uri of ['http://mint.example/catalog', 'ftp://x', 'catalog'])
+      expect(() => parseInventory(variant(c => (c.catalog_uri = uri)))).toThrow(
+        /"catalog_uri" must be empty or an https URL/
+      )
+    expect(parseInventory(variant(c => (c.catalog_uri = ''))).catalog_uri).toBe(
+      ''
+    )
+  })
+})
+
+describe('publishInventory', () => {
+  const outlet = (options: {remove?: boolean; refuse?: boolean} = {}) => {
+    const stored = new Map<string, string>([
+      [INVENTORY_STORAGE_KEY, '{"an":"older inventory"}']
+    ])
+    const emitted: unknown[] = []
+    return {
+      stored,
+      emitted,
+      storage: {
+        setItem: async (key: string, value: string) => {
+          if (options.refuse && value) throw new Error('storage refused')
+          stored.set(key, value)
+        },
+        ...(options.remove === false
+          ? {}
+          : {
+              removeItem: async (key: string) => {
+                stored.delete(key)
+              }
+            })
+      },
+      inc: {emit: (_topic: string, payload: unknown) => emitted.push(payload)}
+    }
+  }
+  const good = snapshot([held('E1-001')])
+  const bad = snapshot([held('E1 001')])
+
+  it('stores and announces an inventory that reads back strictly', async () => {
+    const o = outlet()
+    const published = await publishInventory(o, EDITION, good, NOW)
+    expect(published?.cards).toEqual([{asset_id: 'E1-001', count: 1}])
+    expect(JSON.parse(o.stored.get(INVENTORY_STORAGE_KEY)!)).toEqual(published)
+    expect(o.emitted).toEqual([published])
+  })
+
+  it('takes the stored inventory away when the new one cannot be built', async () => {
+    const o = outlet()
+    expect(await publishInventory(o, EDITION, bad, NOW)).toBeNull()
+    expect(o.stored.has(INVENTORY_STORAGE_KEY)).toBe(false)
+    expect(o.emitted).toEqual([])
+  })
+
+  it('empties it where the shell cannot remove a key', async () => {
+    const o = outlet({remove: false})
+    expect(await publishInventory(o, EDITION, bad, NOW)).toBeNull()
+    expect(o.stored.get(INVENTORY_STORAGE_KEY)).toBe('')
+  })
+
+  it('withdraws rather than leaving an older one when the store refuses', async () => {
+    const o = outlet({refuse: true})
+    expect(await publishInventory(o, EDITION, good, NOW)).toBeNull()
+    expect(o.stored.has(INVENTORY_STORAGE_KEY)).toBe(false)
+    expect(o.emitted).toEqual([])
   })
 })
 

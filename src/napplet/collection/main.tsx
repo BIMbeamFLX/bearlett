@@ -10,13 +10,11 @@ import type {CardAsset, CardStack, CollectionView, Snapshot} from './cards'
 import {issuedCounts, loadSupply} from './supply'
 import type {SupplyChain} from './supply'
 import {createFaceCache} from './faces'
-import type {AsyncStore} from './bootstrap'
 import {EDITIONS} from './editions'
 import {
   INVENTORY_CONVENTION,
-  INVENTORY_STORAGE_KEY,
-  buildInventory,
-  isInventoryRequest
+  isInventoryRequest,
+  publishInventory
 } from './inventory'
 import type {Inventory} from './inventory'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
@@ -158,7 +156,7 @@ function App() {
 
   let session: CollectionSession | null = null
   let opening: Opening | null = null
-  let storage: AsyncStore | null = null
+  let storage: WalletHost['storage'] | null = null
   let inc: WalletHost['inc'] = undefined
   let inventory: Inventory | null = null
   let requests: {close(): void} | undefined
@@ -226,24 +224,19 @@ function App() {
     }
   }
 
-  /* What other napplets may know: counts per card, never a proof. The last
-     inventory is kept by the shell so the host can answer for this napplet
-     while it is closed, and announced so an open one hears it at once. A
-     fault here must not blank the cards, which are already on screen. */
-  const publishInventory = async (snapshot: Snapshot) => {
-    try {
-      const built = buildInventory(
-        EDITION,
-        snapshot,
-        Math.floor(Date.now() / 1000)
-      )
-      inventory = built
-      await storage?.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(built))
-      inc?.emit(INVENTORY_CONVENTION, built)
-    } catch {
-      /* The collection is shown regardless; nobody is told an inventory
-         that could not be built. */
-    }
+  /* What other napplets may know: counts per card, never a proof. Kept by the
+     shell so the host can answer for this napplet while it is closed, and
+     announced so an open one hears it at once. An inventory that cannot be
+     built or stored is withdrawn rather than left standing, and a fault here
+     never blanks the cards already on screen. */
+  const shareInventory = async (snapshot: Snapshot) => {
+    if (!storage) return
+    inventory = await publishInventory(
+      {storage, inc},
+      EDITION,
+      snapshot,
+      Math.floor(Date.now() / 1000)
+    )
   }
 
   const refresh = async () => {
@@ -255,7 +248,7 @@ function App() {
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
       setSent(await session.sent())
-      await publishInventory(snapshot)
+      await shareInventory(snapshot)
       await checkSupply(snapshot)
     } catch (error) {
       setFailure(readable(error))

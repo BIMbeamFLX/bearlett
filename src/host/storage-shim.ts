@@ -55,6 +55,9 @@ export function walletStorage(parentWindow: Window): WalletHost['storage'] {
     async setItem(key, value) {
       await request('storage.set', {key, value})
     },
+    async removeItem(key) {
+      await request('storage.remove', {key})
+    },
     async keys() {
       const reply = await request('storage.keys')
       if (

@@ -4,7 +4,10 @@ import {walletStorage} from '../host/storage-shim'
 
 export type WalletHost = {
   cashu?: CashuHost
-  storage: Pick<typeof storage, 'getItem' | 'setItem' | 'keys'>
+  /* `removeItem` is optional: the collection withdraws a stale inventory with
+     it and falls back to an empty value where a host has none. */
+  storage: Pick<typeof storage, 'getItem' | 'setItem' | 'keys'> &
+    Partial<Pick<typeof storage, 'removeItem'>>
   resource: Pick<typeof resource, 'bytes'>
   /** `emit` as well as `on`: the collection answers requests on its topic. */
   inc?: Pick<typeof inc, 'on' | 'emit'>
