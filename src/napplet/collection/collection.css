@@ -519,6 +519,10 @@ label.collection__kicker {
   margin-top: 16px;
 }
 
+label.collection__kicker + .handover__token {
+  margin-top: 0;
+}
+
 /* The address a sender needs, and a way to take it with you. */
 .address {
   display: flex;
@@ -541,6 +545,8 @@ label.collection__kicker {
 }
 
 .handover__token {
+  /* Its padding and border stay inside the sheet, not past its edge. */
+  box-sizing: border-box;
   width: 100%;
   min-height: 132px;
   margin-top: 12px;
