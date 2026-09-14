@@ -4,7 +4,7 @@ import {getWalletHost} from '../host'
 import type {WalletHost} from '../host'
 import {installNutftShim} from '../../host/nutft-shim'
 import {startCollectionWallet} from './bootstrap'
-import type {NutFTWalletApi} from './bootstrap'
+import type {CollectionSession, Opening} from './session'
 import {buildCollectionView, filterStacks, scarcityRatio} from './cards'
 import type {CardAsset, CardStack, CollectionView, Snapshot} from './cards'
 import {issuedCounts, loadSupply} from './supply'
@@ -123,8 +123,12 @@ function App() {
   const [mine, setMine] = createSignal('')
   const [supply, setSupply] = createSignal<SupplyChain | null>(null)
   const [supplyFault, setSupplyFault] = createSignal('')
+  const [started, setStarted] = createSignal(false)
+  const [checked, setChecked] = createSignal(0)
+  const [restored, setRestored] = createSignal('')
 
-  let wallet: NutFTWalletApi | null = null
+  let session: CollectionSession | null = null
+  let opening: Opening | null = null
   let storage: AsyncStore | null = null
   let inc: WalletHost['inc'] = undefined
   let inventory: Inventory | null = null
@@ -214,10 +218,10 @@ function App() {
   }
 
   const refresh = async () => {
-    if (!wallet) return
+    if (!session) return
     setBusy('Reading the mint')
     try {
-      const snapshot = (await wallet.snapshot(EDITION.mint)) as Snapshot
+      const snapshot = await session.snapshot()
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
@@ -249,10 +253,11 @@ function App() {
       })
       shim = installNutftShim()
       /* One collection is open in one window. The lease is taken before any
-         card is read, so a second window is told plainly instead of racing. */
-      await shim.acquire()
-      const fetcher = {current: null as typeof fetch | null}
-      wallet = await startCollectionWallet(EDITION, {
+         card is read, so a second window is told plainly instead of racing.
+         It may carry the account's seed, and a malformed one stops here: the
+         acquire refuses it and no wallet starts. */
+      const lease = await shim.acquire()
+      session = await startCollectionWallet(EDITION, {
         storage: host.storage,
         nutft: shim,
         resource: host.resource,
@@ -264,19 +269,56 @@ function App() {
             import('@scure/bip32')
           ])
           return {...bip39, wordlist: english.wordlist, HDKey: bip32.HDKey}
-        })()
+        })(),
+        seed: lease.seed,
+        /* A restore asks the mint about a hundred card slots at a time. */
+        observe: operation => {
+          if (operation === 'restore') setChecked(count => count + 100)
+        }
       })
+      setStarted(true)
       /* The bootstrap replaced the global fetch with the collection router;
          the face cache goes through the same door as everything else. */
-      fetcher.current = globalThis.fetch
-      faces = createFaceCache({fetch: fetcher.current})
-      setMine(String(await wallet.destination()))
-      await refresh()
+      faces = createFaceCache({fetch: globalThis.fetch})
+      await begin()
     } catch (error) {
       setFailure(readable(error))
       setBusy('')
     }
   })
+
+  /* Which wallet to show, and whether the account's cards have to come back
+     from the mint first. Nothing here ever shows a word of the seed. "Try
+     again" runs it once more until the collection is on screen. */
+  const begin = async () => {
+    if (!session) return
+    setFailure('')
+    try {
+      if (!opening) {
+        setBusy('Opening the collection')
+        opening = await session.open()
+      }
+      if (opening.active === 'host' && opening.restore) {
+        setChecked(0)
+        setBusy('Restoring your cards from the mint')
+        const found = await session.restore()
+        opening = {...opening, restore: false}
+        if (found !== null)
+          setRestored(
+            found
+              ? `Restored ${found} card${found === 1 ? '' : 's'} from the mint.`
+              : 'Nothing to restore: this account holds no cards at this mint yet.'
+          )
+      }
+      setMine(await session.destination())
+      await refresh()
+    } catch (error) {
+      setFailure(readable(error))
+      setBusy('')
+    }
+  }
+
+  const retry = () => (mine() ? refresh() : begin())
 
   onCleanup(() => {
     requests?.close()
@@ -298,7 +340,7 @@ function App() {
   }
 
   const hand = async () => {
-    if (!wallet) return
+    if (!session) return
     const chosen = selected()
     if (!chosen.length || !recipient().trim()) return
     setBusy('Handing over')
@@ -309,11 +351,10 @@ function App() {
         const stack = view()?.stacks.find(s => s.asset.asset_id === id)
         const item = stack?.items[0] as {proof?: {secret?: string}} | undefined
         if (!item?.proof?.secret) continue
-        const result = (await wallet.tradeProof(
-          EDITION.mint,
+        const result = await session.handOver(
           item.proof.secret,
           recipient().trim()
-        )) as {token?: string}
+        )
         if (result?.token) tokens.push(result.token)
       }
       setHandedOver(tokens.join('\n\n'))
@@ -389,15 +430,27 @@ function App() {
         <Show when={failure()}>
           <div class="notice notice--bad" role="alert">
             <p>{failure()}</p>
-            <button class="button" onClick={refresh} disabled={Boolean(busy())}>
-              Try again
-            </button>
+            <Show when={started()}>
+              <button class="button" onClick={retry} disabled={Boolean(busy())}>
+                Try again
+              </button>
+            </Show>
           </div>
         </Show>
 
         <Show when={busy()}>
           <p class="notice" role="status">
-            {busy()}…
+            {busy()}
+            <Show when={busy().startsWith('Restoring') && checked()}>
+              , {checked()} card slots checked
+            </Show>
+            …
+          </p>
+        </Show>
+
+        <Show when={restored()}>
+          <p class="notice notice--good" role="status">
+            {restored()}
           </p>
         </Show>
 

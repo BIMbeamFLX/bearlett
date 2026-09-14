@@ -1,7 +1,14 @@
 import {sealSigner} from './no-signer'
 import {createCollectionFetch} from './transport'
 import type {ResourceBytes} from './transport'
-import type {NutftHost} from '../../host/nutft-contract'
+import {UnsafeLease, isHostSeed} from '../../host/nutft-contract'
+import type {NutftHost, NutftOperation} from '../../host/nutft-contract'
+import {openSession} from './session'
+import type {CollectionSession, TokenTools} from './session'
+import type {SeedCrypto} from './seed'
+import {createWalletSlots, createWalletStore, storageKeyFor} from './wallets'
+
+export {storageKeyFor}
 
 /**
  * Everything the vendored card wallet needs before it may run.
@@ -41,19 +48,9 @@ export type BootstrapDeps = {
   cashu: object
   /** `{...bip39, wordlist, HDKey}`, the shape the library merges itself. */
   walletCrypto: object
+  /** Told the name of each mint operation as it starts. Never its body. */
+  observe?: (operation: NutftOperation) => void
 }
-
-/**
- * The wallet's storage key.
- *
- * A shell scopes storage per napplet, so two collections would not collide even
- * under one key. The key is namespaced anyway, because that assumption belongs
- * to the shell rather than to this wallet, and a shell that scoped per origin
- * instead would silently merge two collections into one wallet. Choosing now
- * costs nothing; no cards are stored under any other key yet.
- */
-export const storageKeyFor = (edition: Pick<CollectionEdition, 'id'>): string =>
-  `bearlett:nutft:${edition.id}`
 
 export class CollectionNotReady extends Error {
   constructor(message: string) {
@@ -139,42 +136,67 @@ export function prepareCollectionGlobals(
     mint: edition.mint,
     nutft: deps.nutft,
     resource: deps.resource,
-    mirrors: edition.mirrors
+    mirrors: edition.mirrors,
+    observe: deps.observe
   })
 
   scope.__bearlettCollection = edition.id
 }
 
-/** What the vendored library publishes. Only what this napplet actually calls. */
+/**
+ * What the vendored library publishes, with the signatures it really has. Only
+ * what this napplet calls. Every card operation names its mint first: the
+ * library compares a token's mint string with it exactly.
+ */
 export type NutFTWalletApi = {
   read(): Promise<unknown>
   snapshot(mintUrl: string): Promise<unknown>
   snapshotMany(mintUrls: readonly string[]): Promise<unknown>
   destination(): Promise<unknown>
-  importToken(token: string): Promise<unknown>
-  tradeProof(...args: readonly unknown[]): Promise<unknown>
+  importToken(mintUrl: string, token: string): Promise<unknown>
+  tradeProof(
+    mintUrl: string,
+    secret: string,
+    recipientPubkey: string
+  ): Promise<unknown>
+  recoverPending(): Promise<unknown>
+  restoreSeed(mintUrl: string, phrase: string): Promise<unknown>
   encodeToken(...args: readonly unknown[]): unknown
   exportBackup(): Promise<unknown>
   restoreBackup(text: string): Promise<unknown>
   outgoing(): Promise<unknown>
-  forgetOutgoing(...args: readonly unknown[]): Promise<unknown>
+  forgetOutgoing(token: string): Promise<unknown>
   hex(bytes: Uint8Array): string
   bytes(value: string): Uint8Array
 }
 
 /**
- * Prepare the global object and load the wallet. Resolves to the library's own
- * export, so nothing else in the napplet has to reach for a global.
+ * Prepare the global object, load the wallet and open the collection.
+ *
+ * A seed from the lease is checked before anything is touched: a seed that is
+ * present but not 64 lowercase hex stops here, with no global prepared and no
+ * wallet loaded, rather than falling back to a random wallet.
  */
 export async function startCollectionWallet(
   edition: CollectionEdition,
-  deps: BootstrapDeps
-): Promise<NutFTWalletApi> {
+  deps: BootstrapDeps & {seed?: string}
+): Promise<CollectionSession> {
+  if (deps.seed !== undefined && !isHostSeed(deps.seed)) throw new UnsafeLease()
   const scope = globalThis as unknown as Record<string, unknown>
-  prepareCollectionGlobals(scope, edition, deps)
+  const store = createWalletStore(deps.storage)
+  const slots = createWalletSlots(store, storageKeyFor(edition))
+  prepareCollectionGlobals(scope, edition, {...deps, storage: slots.port})
   await import('./vendor/nutft-wallet.js')
   const wallet = scope.NutFTWallet as NutFTWalletApi | undefined
   if (!wallet || typeof wallet.read !== 'function')
     throw new CollectionNotReady('The card wallet did not load.')
-  return wallet
+  return openSession({
+    edition,
+    store,
+    slots,
+    wallet,
+    cashu: deps.cashu as TokenTools,
+    crypto: deps.walletCrypto as SeedCrypto,
+    seed: deps.seed
+  })
 }

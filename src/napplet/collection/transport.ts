@@ -29,6 +29,11 @@ export type CollectionTransportOptions = {
   mirrors: readonly string[]
   /** Card faces are capped by the wallet at 3 MB; the host caps them too. */
   maxBytes?: number
+  /**
+   * Told the name of each mint operation as it is sent, for progress on long
+   * work such as a restore. Never the body, the parameter or the reply.
+   */
+  observe?: (operation: NutftOperation) => void
 }
 
 type Route =
@@ -136,14 +141,19 @@ export function createCollectionFetch(
           ? undefined
           : String(init.body)
 
-    const reply = await serialised(() =>
-      options.nutft.request({
+    const reply = await serialised(() => {
+      try {
+        options.observe?.(route.operation)
+      } catch {
+        /* Progress is a courtesy; it never stops a mint call. */
+      }
+      return options.nutft.request({
         mint,
         operation: route.operation,
         ...(route.parameter !== undefined ? {parameter: route.parameter} : {}),
         ...(body !== undefined ? {body} : {})
       })
-    )
+    })
     return new Response(reply.body, {
       status: reply.status,
       headers: {'content-type': 'application/json'}

@@ -2,7 +2,7 @@ import {readNutftLease} from './nutft-contract'
 import type {NutftHost, NutftLease} from './nutft-contract'
 
 /** Inject only when the shell grants NutFT. Replies must originate from this iframe's parent. */
-export function installNutftShim(): NutftHost & {
+export function installNutftShim(): Omit<NutftHost, 'acquire'> & {
   acquire(): Promise<NutftLease>
   dispose(): void
 } {

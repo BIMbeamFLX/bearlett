@@ -215,6 +215,29 @@ describe('createCollectionFetch', () => {
     await expect(big(url)).rejects.toThrow(/larger than this wallet accepts/)
   })
 
+  it('names each mint operation to an observer, and nothing more', async () => {
+    const seen: unknown[][] = []
+    const fetcher = createCollectionFetch({
+      mint: MINT,
+      nutft: host(),
+      resource: {bytes: vi.fn(async () => new Blob(['face']))},
+      mirrors: MIRRORS,
+      observe: (...args: unknown[]) => {
+        seen.push(args)
+        throw new Error('an observer that fails')
+      }
+    })
+    await fetcher(`${MINT}/v1/restore`, {
+      method: 'POST',
+      body: '{"outputs":[]}'
+    })
+    await fetcher(`${MINT}/nutft/reveal?payment_hash=abc`)
+    await fetcher(`https://nostr.download/${SHA}.webp`)
+    /* A mirror fetch is not a mint operation, and a failing observer does not
+       stop the call it was told about. */
+    expect(seen).toEqual([['restore'], ['reveal']])
+  })
+
   it('never lets an unknown address reach either channel', async () => {
     const nutft = host()
     const bytes = vi.fn()

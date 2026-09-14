@@ -353,6 +353,10 @@
   border-color: rgba(255, 106, 0, 0.5);
 }
 
+.notice--good {
+  border-color: rgba(110, 231, 168, 0.5);
+}
+
 .notice p {
   margin: 0 0 6px;
 }
