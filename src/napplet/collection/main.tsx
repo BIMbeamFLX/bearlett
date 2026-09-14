@@ -20,6 +20,13 @@ import {
 } from './inventory'
 import type {Inventory} from './inventory'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
+import {
+  RECEIVE_CONVENTION,
+  ReceiveProblem,
+  readCardToken,
+  receiveIntentToken,
+  receiveProblem
+} from './receive'
 import './collection.css'
 
 /**
@@ -135,6 +142,19 @@ function App() {
   const [elsewhere, setElsewhere] = createSignal(false)
   const [moving, setMoving] = createSignal('')
   const [moved, setMoved] = createSignal('')
+  /* Receiving. The token lives in this signal and the field it fills, and is
+     cleared the moment Redeem takes it. */
+  const [receiving, setReceiving] = createSignal(false)
+  const [token, setToken] = createSignal('')
+  const [received, setReceived] = createSignal<{
+    good: boolean
+    text: string
+  } | null>(null)
+  const [copied, setCopied] = createSignal('')
+  let tokenField: HTMLTextAreaElement | undefined
+  let addressField: HTMLInputElement | undefined
+  let receives: {close(): void} | undefined
+  let tools: Promise<typeof import('@cashu/cashu-ts')> | null = null
 
   let session: CollectionSession | null = null
   let opening: Opening | null = null
@@ -260,6 +280,13 @@ function App() {
           /* ignored on purpose */
         }
       })
+      const cashuModule = import('@cashu/cashu-ts')
+      tools = cashuModule
+      /* Another napplet may hand a card over. It is checked, then put in the
+         field for the holder; nothing is redeemed until they press Redeem. */
+      receives = inc?.on(RECEIVE_CONVENTION, event => {
+        void stageReceive(event.payload)
+      })
       shim = installNutftShim()
       /* One collection is open in one window. The lease is taken before any
          card is read, so a second window is told plainly instead of racing.
@@ -270,7 +297,7 @@ function App() {
         storage: host.storage,
         nutft: shim,
         resource: host.resource,
-        cashu: await import('@cashu/cashu-ts'),
+        cashu: await cashuModule,
         walletCrypto: await (async () => {
           const [bip39, english, bip32] = await Promise.all([
             import('@scure/bip39'),
@@ -369,9 +396,88 @@ function App() {
 
   onCleanup(() => {
     requests?.close()
+    receives?.close()
     faces?.dispose()
     shim?.dispose()
   })
+
+  const focusToken = () => queueMicrotask(() => tokenField?.focus())
+
+  const openReceive = () => {
+    setReceived(null)
+    setReceiving(true)
+    focusToken()
+  }
+
+  const closeReceive = () => {
+    setReceiving(false)
+    setToken('')
+    setReceived(null)
+    setCopied('')
+  }
+
+  /* A delivered card gets the same offline checks as a pasted one, and a card
+     already waiting in the field is never replaced by the next one. */
+  const stageReceive = async (payload: unknown) => {
+    try {
+      if (!tools) throw new ReceiveProblem('failed')
+      const card = readCardToken(
+        receiveIntentToken(payload),
+        EDITION,
+        await tools
+      )
+      if (token().trim()) throw new ReceiveProblem('waiting')
+      setToken(card.token)
+      setReceived(null)
+    } catch (error) {
+      setReceived({good: false, text: receiveProblem(error).message})
+    }
+    setReceiving(true)
+    focusToken()
+  }
+
+  const redeem = async () => {
+    const text = token()
+    /* Cleared before anything can fail, whatever the outcome. */
+    setToken('')
+    if (tokenField) tokenField.value = ''
+    setReceived(null)
+    if (!session) return
+    setBusy('Redeeming the card')
+    try {
+      const count = await session.receive(text)
+      setReceived({
+        good: true,
+        text: `Received ${count} card${count === 1 ? '' : 's'}.`
+      })
+      setBusy('')
+      await refresh()
+    } catch (error) {
+      setReceived({good: false, text: receiveProblem(error).message})
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const copyAddress = async () => {
+    const address = mine()
+    if (!address) return
+    try {
+      await navigator.clipboard.writeText(address)
+      setCopied('Copied')
+    } catch {
+      /* A sandboxed frame is often refused the clipboard. The address is
+         selected instead, so it can still be copied by hand. */
+      addressField?.select()
+      let done = false
+      try {
+        done = document.execCommand('copy')
+      } catch {
+        /* selected is the fallback */
+      }
+      setCopied(done ? 'Copied' : 'Selected')
+    }
+  }
 
   const toggle = (stack: CardStack) => {
     const id = stack.asset.asset_id
@@ -599,7 +705,7 @@ function App() {
                 >
                   Hand over{selected().length ? ` (${selected().length})` : ''}
                 </button>
-                <button class="button" onClick={() => setHandover(true)}>
+                <button class="button" onClick={openReceive}>
                   Receive
                 </button>
               </div>
@@ -763,18 +869,97 @@ function App() {
         )}
       </Show>
 
+      <Show when={receiving()}>
+        <div
+          class="sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Receive a card"
+        >
+          <div class="sheet__panel">
+            <div class="sheet__head">
+              <div>
+                <p class="collection__kicker">Receive</p>
+                <h2 class="sheet__title">Receive a card</h2>
+              </div>
+              <button class="button" onClick={closeReceive}>
+                Close
+              </button>
+            </div>
+
+            <label class="collection__kicker" for="collection-address">
+              Your address in this collection
+            </label>
+            <div class="address">
+              <input
+                id="collection-address"
+                ref={addressField}
+                class="address__value"
+                readonly
+                value={mine() || 'not ready'}
+              />
+              <button class="button" disabled={!mine()} onClick={copyAddress}>
+                {copied() || 'Copy'}
+              </button>
+            </div>
+            <p>
+              Give this to whoever is sending you a card. It names this wallet
+              at this mint and nothing else.
+            </p>
+
+            <label class="collection__kicker" for="collection-token">
+              Card token
+            </label>
+            <textarea
+              id="collection-token"
+              ref={tokenField}
+              class="handover__token"
+              placeholder="cashuB…"
+              autocomplete="off"
+              spellcheck={false}
+              value={token()}
+              onInput={event => {
+                setToken(event.currentTarget.value)
+                setReceived(null)
+              }}
+            />
+            <div class="actions">
+              <button
+                class="button button--go"
+                disabled={Boolean(busy()) || !started() || !token().trim()}
+                onClick={redeem}
+              >
+                Redeem
+              </button>
+            </div>
+            <Show when={received()}>
+              {note => (
+                <p
+                  class={
+                    note().good ? 'notice notice--good' : 'notice notice--bad'
+                  }
+                  role={note().good ? 'status' : 'alert'}
+                >
+                  {note().text}
+                </p>
+              )}
+            </Show>
+          </div>
+        </div>
+      </Show>
+
       <Show when={handover()}>
         <div
           class="sheet"
           role="dialog"
           aria-modal="true"
-          aria-label="Handover"
+          aria-label="Hand over"
         >
           <div class="sheet__panel">
             <div class="sheet__head">
               <div>
                 <p class="collection__kicker">Handover</p>
-                <h2 class="sheet__title">Give and receive</h2>
+                <h2 class="sheet__title">Hand over cards</h2>
               </div>
               <button
                 class="button"
@@ -786,13 +971,6 @@ function App() {
                 Close
               </button>
             </div>
-
-            <p class="collection__kicker">Your address in this collection</p>
-            <p class="mono">{mine() || 'not ready'}</p>
-            <p>
-              Give this to whoever is sending you a card. It names this wallet
-              at this mint and nothing else.
-            </p>
 
             <Show when={selected().length}>
               <p class="collection__kicker">

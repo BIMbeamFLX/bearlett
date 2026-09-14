@@ -57,7 +57,8 @@ export default defineConfig(({mode}) => {
           requires: ['storage', 'resource', 'inc'],
           archetypes: [
             {slug: 'collection', convention: 'napplet:collection/open'},
-            {slug: 'collection', convention: 'napplet:collection/inventory'}
+            {slug: 'collection', convention: 'napplet:collection/inventory'},
+            {slug: 'collection', convention: 'napplet:collection/receive'}
           ]
         })
       ],

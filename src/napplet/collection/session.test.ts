@@ -14,6 +14,7 @@ import {prepareCollectionGlobals} from './bootstrap'
 import type {NutFTWalletApi} from './bootstrap'
 import {TestNutftMint} from './fixture'
 import {MigrationStopped} from './migration'
+import {ReceiveProblem} from './receive'
 import {sealedWith} from './sealed'
 import {STILL_RESTORING, openSession} from './session'
 import {
@@ -356,6 +357,68 @@ describe('a card re-issued to itself when the answer was lost', () => {
     expect(state.pending).toBeFalsy()
     expect(state.outgoing).toEqual([])
     expect(state.tokens).toHaveLength(1)
+  })
+})
+
+describe('receiving a card', () => {
+  const said = (error: unknown) =>
+    `${(error as Error).message} ${(error as Error).stack}`
+
+  it('redeems a card sent to this address, and refuses the rest before the mint', async () => {
+    const mint = new TestNutftMint()
+    const {session} = device(mint).open()
+    await session.open()
+    const address = await session.destination()
+    const asked = () => mint.calls.length
+
+    const before = asked()
+    const foreign = new TestNutftMint({url: 'https://other.test/e1'}).issue(
+      address
+    )
+    const other = await session.receive(foreign).catch(error => error)
+    expect(other).toBeInstanceOf(ReceiveProblem)
+    expect(other.message).toBe('This card belongs to a different mint.')
+    expect(said(other)).not.toContain(foreign.slice(0, 30))
+
+    const theirs = mint.issue(addressOf(ACCOUNT_B).pubkey, 2)
+    const locked = await session.receive(theirs).catch(error => error)
+    expect(locked.reason).toBe('locked')
+    expect(said(locked)).not.toContain(theirs.slice(0, 30))
+    /* Neither refusal reached the mint. */
+    expect(asked()).toBe(before)
+
+    const card = mint.issue(address, 2)
+    expect(await session.receive(`  ${card}\n`)).toBe(1)
+    expect((await session.snapshot()).owned).toHaveLength(1)
+
+    /* The imported proof was re-issued, so the same token is spent now. */
+    const again = await session.receive(card).catch(error => error)
+    expect(again.reason).toBe('spent')
+    expect(said(again)).not.toContain(card.slice(0, 30))
+  })
+
+  it('says the mint could not be reached without saying the token', async () => {
+    const mint = new TestNutftMint()
+    const {session} = device(mint).open()
+    await session.open()
+    const card = mint.issue(await session.destination(), 1)
+    mint.before = 'checkstate'
+    const outcome = await session.receive(card).catch(error => error)
+    expect(outcome).toBeInstanceOf(ReceiveProblem)
+    expect(said(outcome)).not.toContain(card.slice(0, 30))
+    expect((await session.snapshot()).owned).toEqual([])
+  })
+
+  it('waits for an account wallet to finish restoring', async () => {
+    const mint = new TestNutftMint()
+    const {session} = device(mint).open(ACCOUNT_A)
+    await session.open()
+    const card = mint.issue(addressOf(ACCOUNT_A).pubkey, 1)
+    const outcome = await session.receive(card).catch(error => error)
+    expect(outcome.reason).toBe('restoring')
+    expect(mint.calls.filter(call => call.operation === 'checkstate')).toEqual(
+      []
+    )
   })
 })
 

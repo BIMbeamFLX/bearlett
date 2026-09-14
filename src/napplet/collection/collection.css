@@ -514,6 +514,32 @@
   margin-top: 16px;
 }
 
+label.collection__kicker {
+  display: block;
+  margin-top: 16px;
+}
+
+/* The address a sender needs, and a way to take it with you. */
+.address {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.address__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+}
+
 .handover__token {
   width: 100%;
   min-height: 132px;

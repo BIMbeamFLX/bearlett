@@ -9,6 +9,13 @@ import {
   runMigration
 } from './migration'
 import type {MigrationCard, MigrationJournal, MigrationOps} from './migration'
+import {
+  ReceiveProblem,
+  checkLockedTo,
+  readCardToken,
+  receiveProblem
+} from './receive'
+import type {CardToken} from './receive'
 import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
 import type {KeyTools, SeedCrypto, SeededWallet} from './seed'
@@ -498,6 +505,32 @@ export function openSession(deps: SessionDeps) {
       }),
 
     snapshot: (): Promise<Snapshot> => on(activeKey(), snapshotHere),
+
+    /**
+     * Redeem a card token into the wallet on screen. Everything that can be
+     * refused without the mint is refused first; every refusal, the mint's
+     * included, is a `ReceiveProblem` that never carries the token.
+     */
+    receive: (text: string): Promise<number> => {
+      let card: CardToken
+      try {
+        card = readCardToken(text, edition, cashu)
+      } catch (error) {
+        return Promise.reject(receiveProblem(error))
+      }
+      return on(activeKey(), async () => {
+        if (
+          active === 'host' &&
+          (await readWallet(store, account!.key))?.restore === 'pending'
+        )
+          throw new ReceiveProblem('restoring')
+        /* A random wallet gets its key on first use; the check needs it. */
+        await wallet.destination()
+        const state = (await wallet.read()) as StoredWallet
+        checkLockedTo(card, state.privateKey, cashu)
+        return Number(await wallet.importToken(edition.mint, card.token))
+      }).catch(error => Promise.reject(receiveProblem(error)))
+    },
 
     handOver: (secret: string, recipient: string): Promise<{token?: string}> =>
       on(activeKey(), async () => {
