@@ -101,8 +101,12 @@ const NOT_OPEN = 'The collection is not open yet.'
 const NO_ACCOUNT =
   'Cards can only be moved once the collection is opened from your account.'
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : ''
+/* Read as a property: the card library may run in another realm, where its
+   errors are not instances of this realm's Error. */
+const messageOf = (error: unknown): string => {
+  const message = (error as {message?: unknown} | null)?.message
+  return typeof message === 'string' ? message : ''
+}
 
 /* The binding and asset of a card, read from its proof secret. */
 const tagOf = (secret: string): {binding: string; asset_id: string} | null => {

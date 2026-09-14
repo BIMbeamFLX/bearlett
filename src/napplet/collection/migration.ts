@@ -178,8 +178,12 @@ const heldBy = (cards: readonly MigrationCard[]): Record<string, string[]> => {
   return held
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : ''
+/* Read as a property: the card library may run in another realm, where its
+   errors are not instances of this realm's Error. */
+const messageOf = (error: unknown): string => {
+  const message = (error as {message?: unknown} | null)?.message
+  return typeof message === 'string' ? message : ''
+}
 
 /**
  * Run a journal to the end, or stop with a fixed sentence.

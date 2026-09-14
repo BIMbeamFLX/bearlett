@@ -1,4 +1,5 @@
 import {describe, expect, it} from 'vitest'
+import vm from 'node:vm'
 import {
   MigrationStopped,
   parseMigrationJournal,
@@ -230,6 +231,26 @@ describe('runMigration', () => {
     const again = lastSaved(w)
     expect(again.steps[0].state).toBe('importing')
     expect(await runMigration(again, w.ops)).toEqual({moved: 1, gone: 0})
+  })
+
+  it('recognises the library refusal when it comes from another realm', async () => {
+    const w = world([card(1)])
+    await runMigration(planMigration(DESTINATION, w.old.cards), w.ops)
+    const again = lastSaved(w)
+    expect(again.steps[0].state).toBe('importing')
+    /* The card library runs in its own realm in tests, and its errors are
+       not instances of this realm's Error. */
+    const foreign = vm.runInContext(
+      'new Error("token is already in this wallet")',
+      vm.createContext({})
+    )
+    expect(foreign instanceof Error).toBe(false)
+    const importCard = w.ops.importCard
+    w.ops.importCard = async () => {
+      throw foreign
+    }
+    expect(await runMigration(again, w.ops)).toEqual({moved: 1, gone: 0})
+    w.ops.importCard = importCard
   })
 
   it('refuses to finish while a card is not confirmed under the account', async () => {
