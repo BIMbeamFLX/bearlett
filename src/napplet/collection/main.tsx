@@ -126,6 +126,15 @@ function App() {
   const [started, setStarted] = createSignal(false)
   const [checked, setChecked] = createSignal(0)
   const [restored, setRestored] = createSignal('')
+  /* The device's cards and the account: a move offered, or one that stopped
+     and continues. Null when there is nothing to move. */
+  const [move, setMove] = createSignal<{
+    cards: number
+    resume: boolean
+  } | null>(null)
+  const [elsewhere, setElsewhere] = createSignal(false)
+  const [moving, setMoving] = createSignal('')
+  const [moved, setMoved] = createSignal('')
 
   let session: CollectionSession | null = null
   let opening: Opening | null = null
@@ -297,6 +306,12 @@ function App() {
       if (!opening) {
         setBusy('Opening the collection')
         opening = await session.open()
+        setElsewhere(opening.migration === 'elsewhere')
+        if (opening.migration === 'offer' || opening.migration === 'resume')
+          setMove({
+            cards: opening.cards,
+            resume: opening.migration === 'resume'
+          })
       }
       if (opening.active === 'host' && opening.restore) {
         setChecked(0)
@@ -312,6 +327,8 @@ function App() {
       }
       setMine(await session.destination())
       await refresh()
+      /* A move the holder already started carries on without asking twice. */
+      if (opening.migration === 'resume' && move()) await moveCards()
     } catch (error) {
       setFailure(readable(error))
       setBusy('')
@@ -319,6 +336,36 @@ function App() {
   }
 
   const retry = () => (mine() ? refresh() : begin())
+
+  /* One button, pressed on purpose. The wallet on screen changes only once
+     the session says every card is confirmed under the account's key. */
+  const moveCards = async () => {
+    if (!session || busy()) return
+    setFailure('')
+    setBusy('Moving your cards to your account')
+    try {
+      const result = await session.migrate((done, total) =>
+        setMoving(`${done} of ${total}`)
+      )
+      setMove(null)
+      opening = {active: 'host', restore: false, migration: 'none', cards: 0}
+      setMoved(
+        `Moved ${result.moved} card${result.moved === 1 ? '' : 's'} to your account.` +
+          (result.gone
+            ? ` ${result.gone} had already left this device and could not be moved.`
+            : '')
+      )
+      setMine(await session.destination())
+      setBusy('')
+      await refresh()
+    } catch (error) {
+      setMove(current => current && {...current, resume: true})
+      setFailure(readable(error))
+    } finally {
+      setBusy('')
+      setMoving('')
+    }
+  }
 
   onCleanup(() => {
     requests?.close()
@@ -444,6 +491,9 @@ function App() {
             <Show when={busy().startsWith('Restoring') && checked()}>
               , {checked()} card slots checked
             </Show>
+            <Show when={busy().startsWith('Moving') && moving()}>
+              , {moving()}
+            </Show>
             …
           </p>
         </Show>
@@ -451,6 +501,46 @@ function App() {
         <Show when={restored()}>
           <p class="notice notice--good" role="status">
             {restored()}
+          </p>
+        </Show>
+
+        <Show when={move()}>
+          {offer => (
+            <div
+              class="notice notice--move"
+              role="region"
+              aria-label="Move your cards to your account"
+            >
+              <p>
+                <strong>Move your cards to your account.</strong>
+              </p>
+              <p>
+                {offer().resume
+                  ? 'Moving your cards to your account did not finish. It continues where it stopped; nothing is lost in between.'
+                  : `This device holds ${offer().cards} card${offer().cards === 1 ? '' : 's'} in a wallet of its own. Moving them binds each card to your account, so your account brings them back on any device.`}
+              </p>
+              <button
+                class="button button--go"
+                disabled={Boolean(busy())}
+                onClick={moveCards}
+              >
+                {offer().resume ? 'Finish moving' : 'Move cards'}
+              </button>
+            </div>
+          )}
+        </Show>
+
+        <Show when={elsewhere()}>
+          <p class="notice" role="status">
+            Some cards on this device are being moved to another account. Open
+            this collection from that account to finish; nothing here touches
+            them.
+          </p>
+        </Show>
+
+        <Show when={moved()}>
+          <p class="notice notice--good" role="status">
+            {moved()}
           </p>
         </Show>
 

@@ -357,6 +357,15 @@
   border-color: rgba(110, 231, 168, 0.5);
 }
 
+/* The one decision the collection asks a holder to make. */
+.notice--move {
+  border-color: var(--ember);
+}
+
+.notice .button {
+  margin-top: 8px;
+}
+
 .notice p {
   margin: 0 0 6px;
 }

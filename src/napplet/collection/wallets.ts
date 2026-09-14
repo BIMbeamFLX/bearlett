@@ -38,6 +38,10 @@ export const hostWalletKey = (
   fingerprint: string
 ): string => `${storageKeyFor(edition)}:${fingerprint}`
 
+/** The journal of a move from the random wallet to an account. */
+export const migrationKey = (edition: Pick<CollectionEdition, 'id'>): string =>
+  `${storageKeyFor(edition)}:migration`
+
 /** A wallet state as the card library stores it, plus two fields of ours. */
 export type StoredWallet = {
   privateKey: string

@@ -13,6 +13,7 @@ import type {NutftOperation} from '../../host/nutft-contract'
 import {prepareCollectionGlobals} from './bootstrap'
 import type {NutFTWalletApi} from './bootstrap'
 import {TestNutftMint} from './fixture'
+import {MigrationStopped} from './migration'
 import {sealedWith} from './sealed'
 import {STILL_RESTORING, openSession} from './session'
 import {
@@ -44,7 +45,11 @@ const addressOf = (seed: string) => {
   const key = HDKey.fromMasterSeed(bip39.mnemonicToSeedSync(words)).derive(
     "m/129373'/10'/0'/0'/0"
   ).privateKey!
-  return {words, pubkey: bytesToHex(cashu.getPubKeyFromPrivKey(key))}
+  return {
+    words,
+    privateKey: bytesToHex(key),
+    pubkey: bytesToHex(cashu.getPubKeyFromPrivKey(key))
+  }
 }
 
 /* Every console method: nothing on these paths may write to any of them. */
@@ -351,5 +356,197 @@ describe('a card re-issued to itself when the answer was lost', () => {
     expect(state.pending).toBeFalsy()
     expect(state.outgoing).toEqual([])
     expect(state.tokens).toHaveLength(1)
+  })
+})
+
+/* A device that has used the collection before account seeds existed. */
+const deviceWithCards = async (mint: TestNutftMint, cards: number[]) => {
+  const phone = device(mint)
+  const old = phone.open()
+  await old.session.open()
+  const address = await old.session.destination()
+  for (const card of cards)
+    await old.wallet.importToken(mint.url, mint.issue(address, card))
+  return {phone, address}
+}
+
+/* The account wallet as a device that already restored it would hold it. */
+const restoredAccount = async (
+  phone: ReturnType<typeof device>,
+  seed: string
+) => {
+  const {words, pubkey, privateKey} = addressOf(seed)
+  await phone.store(
+    accountKey(seed),
+    {
+      privateKey,
+      pubkey,
+      seedPhrase: words,
+      counters: {},
+      tokens: [],
+      outgoing: [],
+      pending: null,
+      seedSource: 'host'
+    },
+    seed
+  )
+}
+
+const MIGRATION_KEY = `${RANDOM_KEY}:migration`
+
+describe('moving the device cards to the account', () => {
+  it('moves them, switches after confirming, and a new device restores them', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1, 3])
+
+    /* Record the order of journal writes and mint trades. */
+    const order: string[] = []
+    const write = phone.storage.setItem
+    phone.storage.setItem = async (key, value) => {
+      if (key === MIGRATION_KEY) order.push('journal')
+      return write(key, value)
+    }
+    const ask = mint.request.bind(mint)
+    mint.request = async request => {
+      if (request.operation === 'trade') order.push('trade')
+      return ask(request)
+    }
+
+    const {session} = phone.open(ACCOUNT_A)
+    expect(await session.open()).toEqual({
+      active: 'random',
+      restore: true,
+      migration: 'offer',
+      cards: 2
+    })
+    const progress: string[] = []
+    expect(
+      await session.migrate((done, total) => progress.push(`${done}/${total}`))
+    ).toEqual({moved: 2, gone: 0, restored: 0})
+    expect(progress).toEqual(['1/2', '2/2'])
+    expect(session.active).toBe('host')
+    expect(order[0]).toBe('journal')
+    expect(order.indexOf('journal')).toBeLessThan(order.indexOf('trade'))
+
+    expect(await session.destination()).toBe(addressOf(ACCOUNT_A).pubkey)
+    expect((await session.snapshot()).owned).toHaveLength(2)
+    expect((await phone.state(RANDOM_KEY)).tokens).toEqual([])
+    /* A finished move leaves no journal and no token behind. */
+    expect(JSON.parse(phone.storage.map.get(MIGRATION_KEY)!)).toEqual({
+      v: 1,
+      to: fingerprint(ACCOUNT_A),
+      finished: true
+    })
+
+    /* The next open shows the account wallet and offers nothing. */
+    const again = phone.open(ACCOUNT_A)
+    expect(await again.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+
+    /* And the account's key image brings the moved cards back elsewhere. */
+    const laptop = device(mint)
+    const elsewhere = laptop.open(ACCOUNT_A)
+    await elsewhere.session.open()
+    expect(await elsewhere.session.restore()).toBe(2)
+  }, 60000)
+
+  it('resumes a move that stopped when the window closed', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [0, 2])
+    await restoredAccount(phone, ACCOUNT_A)
+
+    const first = phone.open(ACCOUNT_A)
+    expect(await first.session.open()).toMatchObject({migration: 'offer'})
+    /* The first trade commits at the mint; its answer never arrives. */
+    mint.lost = 'trade'
+    const stopped = await first.session.migrate().catch(error => error)
+    expect(stopped).toBeInstanceOf(MigrationStopped)
+    expect(stopped.message).not.toMatch(/cashu|nonce|P2PK/)
+    expect(first.session.active).toBe('random')
+    /* The journal names the account, and keeps the rest sealed. */
+    const record = JSON.parse(phone.storage.map.get(MIGRATION_KEY)!)
+    expect(record.to).toBe(fingerprint(ACCOUNT_A))
+    expect(record.box).not.toMatch(/cashu|trading|nonce/)
+
+    const second = phone.open(ACCOUNT_A)
+    expect(await second.session.open()).toEqual({
+      active: 'random',
+      restore: false,
+      migration: 'resume',
+      cards: 2
+    })
+    expect(await second.session.migrate()).toEqual({
+      moved: 2,
+      gone: 0,
+      restored: null
+    })
+    expect((await second.session.snapshot()).owned).toHaveLength(2)
+    expect((await phone.state(RANDOM_KEY)).tokens).toEqual([])
+  })
+
+  it('never moves one account wallet into another', async () => {
+    const mint = new TestNutftMint()
+    const phone = device(mint)
+    await restoredAccount(phone, ACCOUNT_A)
+    const a = phone.open(ACCOUNT_A)
+    await a.session.open()
+    const addressA = await a.session.destination()
+    await a.wallet.importToken(mint.url, mint.issue(addressA, 1))
+    const before = phone.storage.map.get(accountKey(ACCOUNT_A))
+
+    await restoredAccount(phone, ACCOUNT_B)
+    const b = phone.open(ACCOUNT_B)
+    expect(await b.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+    expect(await b.session.migrate()).toEqual({
+      moved: 0,
+      gone: 0,
+      restored: null
+    })
+    expect(phone.storage.map.get(accountKey(ACCOUNT_A))).toBe(before)
+    expect((await b.session.snapshot()).owned).toEqual([])
+    expect(mint.calls.filter(call => call.operation === 'trade')).toHaveLength(
+      1
+    )
+  })
+
+  it('leaves a move toward another account alone', async () => {
+    const mint = new TestNutftMint()
+    const {phone, address} = await deviceWithCards(mint, [1, 2])
+    await restoredAccount(phone, ACCOUNT_A)
+    const a = phone.open(ACCOUNT_A)
+    await a.session.open()
+    mint.before = 'trade'
+    await expect(a.session.migrate()).rejects.toThrow(MigrationStopped)
+    const journal = phone.storage.map.get(MIGRATION_KEY)
+    const random = phone.storage.map.get(RANDOM_KEY)
+
+    const b = phone.open(ACCOUNT_B)
+    expect(await b.session.open()).toEqual({
+      active: 'host',
+      restore: true,
+      migration: 'elsewhere',
+      cards: 0
+    })
+    await expect(b.session.migrate()).rejects.toThrow(/another account/)
+    expect(phone.storage.map.get(MIGRATION_KEY)).toBe(journal)
+    expect(phone.storage.map.get(RANDOM_KEY)).toBe(random)
+
+    /* Without any seed the device wallet stays on screen, and says why the
+       move is not offered. */
+    const none = phone.open()
+    expect(await none.session.open()).toMatchObject({
+      active: 'random',
+      migration: 'elsewhere'
+    })
+    expect(await none.session.destination()).toBe(address)
   })
 })
