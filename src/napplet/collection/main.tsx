@@ -248,6 +248,14 @@ function App() {
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
       setSent(await session.sent())
+      /* While the device's own wallet is on screen, the offer counts what it
+         holds now, after a card came in or went out. */
+      if (session.active === 'random')
+        setMove(offer =>
+          offer && !offer.resume
+            ? {...offer, cards: snapshot.owned.length}
+            : offer
+        )
       await shareInventory(snapshot)
       await checkSupply(snapshot)
     } catch (error) {
@@ -633,7 +641,9 @@ function App() {
               <p>
                 {offer().resume
                   ? 'Moving your cards to your account did not finish. It continues where it stopped; nothing is lost in between.'
-                  : `This device holds ${offer().cards} card${offer().cards === 1 ? '' : 's'} in a wallet of its own. Moving them binds each card to your account, so your account brings them back on any device.`}
+                  : offer().cards
+                    ? `This device holds ${offer().cards} card${offer().cards === 1 ? '' : 's'} in a wallet of its own. Moving them binds each card to your account, so your account brings them back on any device.`
+                    : "This device's own wallet holds no cards now. Moving switches the collection to your account's wallet."}
               </p>
               <button
                 class="button button--go"
