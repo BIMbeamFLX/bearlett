@@ -285,8 +285,17 @@ function App() {
       /* One collection is open in one window. The lease is taken before any
          card is read, so a second window is told plainly instead of racing.
          It may carry the account's seed, and a malformed one stops here: the
-         acquire refuses it and no wallet starts. */
-      const lease = await shim.acquire()
+         acquire refuses it and no wallet starts. A shell without the NutFT
+         capability never answers at all, and is told so in those words
+         rather than as a stored operation to reconcile. */
+      const lease = await shim.acquire().catch((error: unknown) => {
+        if (/timed out/i.test(error instanceof Error ? error.message : ''))
+          throw new Error(
+            "This shell did not answer the collection's mint capability " +
+              '(nutft). Open the collection in a shell that offers it.'
+          )
+        throw error
+      })
       session = await startCollectionWallet(EDITION, {
         storage: host.storage,
         nutft: shim,
