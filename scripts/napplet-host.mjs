@@ -10,6 +10,14 @@ const bundled = await build({
   output: {format: 'iife', name: 'BearlettPreview'}
 })
 const cashuBundle = bundled.output.find(item => item.type === 'chunk').code
+const collectionBundle = (
+  await build({
+    input: 'scripts/collection-preview.ts',
+    platform: 'browser',
+    write: false,
+    output: {format: 'iife', name: 'BearlettCollectionPreview'}
+  })
+).output.find(item => item.type === 'chunk').code
 
 // Local preview/test shell only. It never reaches a live mint or Nostr relay.
 const prelude = readFileSync(
@@ -18,10 +26,13 @@ const prelude = readFileSync(
 )
 const appFlag = process.argv.indexOf('--app')
 const onlyApp = appFlag < 0 ? undefined : process.argv[appFlag + 1]
-if (appFlag >= 0 && !['wallet', 'notes'].includes(onlyApp)) {
-  throw new Error('Use --app wallet or --app notes.')
+if (appFlag >= 0 && !['wallet', 'notes', 'collection'].includes(onlyApp)) {
+  throw new Error('Use --app wallet, --app notes or --app collection.')
 }
-const port = Number(process.env.PORT ?? (onlyApp === 'notes' ? 4187 : 4186))
+const port = Number(
+  process.env.PORT ??
+    (onlyApp === 'notes' ? 4187 : onlyApp === 'collection' ? 4188 : 4186)
+)
 const appSource = app =>
   readFileSync(
     app === 'wallet' ? 'dist-napplet/index.html' : 'dist-notes/index.html',
@@ -142,10 +153,91 @@ if(app==='wallet'){
 open();
 </script></body></html>`
 
+/*
+ * The collection, in the same kind of sandboxed srcdoc frame a shell uses, with
+ * the reference NutFT service in front of a fixture mint. The mint is whatever
+ * address the build compiled in, answered here in the page: nothing reaches a
+ * network. `window.reloadNapplet({seed})` reopens the frame with a seed from
+ * the service's hook, and `window.collectionMint.issue(address)` makes a card.
+ */
+const COLLECTION_DIST = 'dist-collection-600b-e1/index.html'
+const collectionPreview = () => {
+  const source = readFileSync(COLLECTION_DIST, 'utf8')
+  const mint =
+    process.env.BEARLETT_MINT ??
+    source.match(
+      /\{id:[`"']600b-e1[`"'],mint:[`"'](https:\/\/[^`"']+)[`"']/
+    )?.[1]
+  if (!mint)
+    throw new Error(
+      'The collection build does not show its mint; pass BEARLETT_MINT.'
+    )
+  return String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Bearlett Collection · local preview</title><style>
+body{margin:0;background:#09080b;font-family:system-ui;color:#f4eefb}.shell{display:flex;gap:12px;padding:8px 20px;background:#1f1a27;align-items:center;font-size:12px}iframe{display:block;width:100%;height:calc(100vh - 36px);border:0}
+</style></head><body><div class="shell"><strong>COLLECTION PREVIEW</strong><span>Test mint answered in this page · no real cards</span></div><div id="frames"></div><script>
+const prelude=${scriptValue(prelude)};
+${collectionBundle.replaceAll('</script', '<\\/script')}
+const source=${scriptValue(source)};
+const mint=new BearlettCollectionPreview.TestNutftMint({url:${scriptValue(mint)}});
+const store=new Map();const topics=new Set();let pending=[];let frame=null;
+window.collectionMint=mint;window.hostStore=store;window.hostCalls=[];window.previewSeed=undefined;
+const service=BearlettCollectionPreview.createNutftService({
+ scope:key=>key==='collection'?'preview-collection':undefined,
+ allowed:(key,url)=>key==='collection'&&url===mint.url,
+ seed:()=>window.previewSeed,
+ fetch:async(url,init)=>{
+  const route=BearlettCollectionPreview.routeRequest(url,init.method,{mint:mint.url,mirrors:[]});
+  const reply=await mint.request({mint:mint.url,operation:route.operation,...(route.parameter===undefined?{}:{parameter:route.parameter}),...(init.body===undefined?{}:{body:init.body})});
+  return new Response(reply.body,{status:reply.status});
+ }});
+const send=msg=>frame?.contentWindow.postMessage(msg,'*');
+function open(){
+ frame=document.createElement('iframe');frame.id='collection';frame.title='collection napplet';frame.sandbox='allow-scripts';
+ const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; connect-src \'none\'; font-src \'none\'">';
+ const injected='<script>'+prelude+'\n;NappletShimPrelude.install({domains:["storage","resource","inc"]});</'+'script>';
+ frame.srcdoc=source.replace('<head>','<head>'+policy+injected);document.getElementById('frames').append(frame);
+}
+window.reloadNapplet=({seed}={})=>{window.previewSeed=seed;frame?.remove();frame=null;topics.clear();pending=[];service.onWindowDestroyed('collection');open()};
+window.deliverNapplet=(topic,payload,sender='preview-sender')=>{const msg={type:'inc.event',topic,payload,sender};if(topics.has(topic))send(msg);else pending.push(msg)};
+addEventListener('message',event=>{
+ if(!frame||event.source!==frame.contentWindow)return;
+ const msg=event.data;if(!msg||typeof msg.type!=='string')return;
+ if(msg.type.startsWith('nutft.')){window.hostCalls.push({type:msg.type,operation:msg.request?.operation});service.handleMessage('collection',msg,send);return}
+ window.hostCalls.push({type:msg.type,topic:msg.topic});
+ const result={type:msg.type+'.result',id:msg.id};
+ try{
+  if(msg.type==='storage.get'){result.value=store.get(msg.key)??null;result.ok=true}
+  else if(msg.type==='storage.set'){store.set(msg.key,msg.value);result.ok=true}
+  else if(msg.type==='storage.remove'){store.delete(msg.key);result.ok=true}
+  else if(msg.type==='storage.keys'){result.keys=[...store.keys()];result.ok=true}
+  else if(msg.type==='inc.subscribe'){topics.add(msg.topic);setTimeout(()=>{for(const value of pending.filter(v=>v.topic===msg.topic))send(value);pending=pending.filter(v=>v.topic!==msg.topic)},10)}
+  else if(msg.type==='inc.unsubscribe'){topics.delete(msg.topic);return}
+  else if(msg.type==='inc.emit')return;
+  else if(msg.type==='resource.bytes')throw new Error('The preview serves no card faces.');
+  else if(msg.type==='resource.cancel')return;
+  else return;
+ }catch(error){result.error=error.message;if(msg.type==='resource.bytes')result.type='resource.bytes.error'}
+ send(result);
+});
+open();
+</script></body></html>`
+}
+
 createServer((request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
   const app = path === '/' ? (onlyApp ?? 'wallet') : path.slice(1)
-  if (path === '/raw-wallet' && onlyApp !== 'notes') {
+  if (app === 'collection' && (!onlyApp || onlyApp === 'collection')) {
+    try {
+      response
+        .writeHead(200, {
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-store'
+        })
+        .end(collectionPreview())
+    } catch (error) {
+      response.writeHead(404).end(String(error.message))
+    }
+  } else if (path === '/raw-wallet' && onlyApp !== 'notes') {
     response
       .writeHead(200, {'Content-Type': 'text/html'})
       .end(appSource('wallet'))

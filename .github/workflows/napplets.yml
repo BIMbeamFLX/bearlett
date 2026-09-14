@@ -22,6 +22,11 @@ jobs:
       - run: npm test
       - run: npm run build:napplet
       - run: npm run build:notes
+      # The browser tests answer the compiled mint with a fixture in the page;
+      # nothing reaches this address during the run.
+      - run: npm run build:collection
+        env:
+          BEARLETT_MINT: https://tcg.nappelin.com
       - run: npx playwright install --with-deps chromium
       - run: npm run test:napplet:browser
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
