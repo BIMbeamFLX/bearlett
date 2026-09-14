@@ -1,9 +1,26 @@
-import {NUTFT_OPERATIONS, nutftMintUrl} from './nutft-contract'
-import type {NutftRequest, NutftResponse} from './nutft-contract'
+import {
+  NUTFT_OPERATIONS,
+  UNSAFE_OPEN_MESSAGE,
+  UnsafeLease,
+  isHostSeed,
+  nutftMintUrl
+} from './nutft-contract'
+import type {NutftLease, NutftRequest, NutftResponse} from './nutft-contract'
 
 export type NutftServiceOptions = {
   allowed(windowId: string, mint: string): boolean | Promise<boolean>
   scope(windowId: string): string | undefined
+  /**
+   * The collection wallet's seed for the account behind this window, when the
+   * shell derives one: 32 bytes of BIP39 entropy as 64 lowercase hex. Asked
+   * only for the window that holds the lease, and the value goes nowhere but
+   * that window's acquire result. `undefined` means the shell derives none.
+   * Anything else, a rejection included, refuses the acquire.
+   */
+  seed?(
+    windowId: string,
+    scope: string
+  ): string | undefined | Promise<string | undefined>
   fetch?: typeof fetch
   timeoutMs?: number
 }
@@ -84,10 +101,16 @@ export function nutftEndpoint(request: NutftRequest): {
   return {url: mint + spec.path, method: 'POST'}
 }
 
+/** Errors a napplet may read verbatim. Every other reason is redacted. */
+const SAYABLE = new Set([
+  'This collection is already open in another window.',
+  UNSAFE_OPEN_MESSAGE
+])
+
 /**
  * The reference NutFT service. Source-bound like the Cashu one: one writer per
  * storage scope, one request in flight per window, fixed endpoints, and errors
- * that never carry a bearer payload or the mint's address.
+ * that never carry a bearer payload, a seed or the mint's address.
  */
 export function createNutftService(options: NutftServiceOptions) {
   const scopes = new Map<string, string>()
@@ -100,6 +123,28 @@ export function createNutftService(options: NutftServiceOptions) {
     if (owner && owner !== windowId)
       throw new Error('This collection is already open in another window.')
     scopes.set(scope, windowId)
+  }
+
+  /* The lease comes first, so a second window hears that the collection is
+     busy and the seed hook is never asked on its behalf. A refused seed gives
+     back a lease this acquire took, and the reason sent is one fixed sentence
+     whatever the hook returned or threw: its value, and its error text, stay
+     here. */
+  const acquire = async (windowId: string): Promise<NutftLease | undefined> => {
+    const scope = options.scope(windowId)
+    const held = Boolean(scope) && scopes.get(scope!) === windowId
+    claim(windowId)
+    if (!options.seed) return undefined
+    try {
+      const seed: unknown = await options.seed(windowId, scope!)
+      if (seed !== undefined && !isHostSeed(seed)) throw new UnsafeLease()
+      /* The window may have closed while the shell derived the seed. */
+      if (scopes.get(scope!) !== windowId) throw new UnsafeLease()
+      return isHostSeed(seed) ? {seed} : undefined
+    } catch {
+      if (!held && scopes.get(scope!) === windowId) scopes.delete(scope!)
+      throw new UnsafeLease()
+    }
   }
 
   const request = async (
@@ -172,6 +217,7 @@ export function createNutftService(options: NutftServiceOptions) {
       version: '1.0.0',
       description: 'Bearlett NutFT mint transport (experimental extension)'
     },
+    acquire,
     request,
     handleMessage(
       windowId: string,
@@ -188,11 +234,10 @@ export function createNutftService(options: NutftServiceOptions) {
         return
       void (async () => {
         try {
-          claim(windowId)
           const result =
             msg.type === 'nutft.request'
               ? await request(windowId, msg.request!)
-              : undefined
+              : await acquire(windowId)
           send({type: msg.type + '.result', id: msg.id, ok: true, result})
         } catch (error) {
           send({
@@ -200,9 +245,7 @@ export function createNutftService(options: NutftServiceOptions) {
             id: msg.id,
             ok: false,
             error:
-              error instanceof Error &&
-              error.message ===
-                'This collection is already open in another window.'
+              error instanceof Error && SAYABLE.has(error.message)
                 ? error.message
                 : 'Mint request unavailable, denied, or interrupted. Check the stored operation before retrying.'
           })

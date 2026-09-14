@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest'
 import {createNutftService, nutftEndpoint} from './nutft-service'
-import {nutftMintUrl} from './nutft-contract'
+import type {NutftServiceOptions} from './nutft-service'
+import {UNSAFE_OPEN_MESSAGE, nutftMintUrl} from './nutft-contract'
 
 const MINT = 'https://tcg.example/g'
 
@@ -240,5 +241,146 @@ describe('createNutftService', () => {
     )
     nutft.handleMessage('win-1', {type: 'nutft.request'}, m => sent.push(m))
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('the account seed in the acquire result', () => {
+  const SEED = '7f3a'.repeat(16)
+  const service = (seed: NutftServiceOptions['seed']) =>
+    createNutftService({
+      scope: () => 'scope:600b-e1',
+      allowed: () => true,
+      fetch: vi.fn(
+        async () => new Response('{}', {status: 200})
+      ) as unknown as typeof fetch,
+      seed
+    })
+
+  /* What the napplet actually receives: the reply to its message. */
+  const acquire = async (
+    nutft: ReturnType<typeof createNutftService>,
+    windowId = 'win-1'
+  ) => {
+    const sent: Array<Record<string, unknown>> = []
+    nutft.handleMessage(windowId, {type: 'nutft.acquire', id: 'lease'}, m =>
+      sent.push(m as Record<string, unknown>)
+    )
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    return sent[0]
+  }
+
+  /* Every console method, so a value that reaches any of them is caught. */
+  const watchConsole = () => {
+    const spies = (
+      ['log', 'info', 'warn', 'error', 'debug', 'trace'] as const
+    ).map(method => vi.spyOn(console, method).mockImplementation(() => {}))
+    return {
+      calls: () => spies.reduce((n, spy) => n + spy.mock.calls.length, 0),
+      restore: () => spies.forEach(spy => spy.mockRestore())
+    }
+  }
+
+  it('hands a valid seed to the window that holds the lease', async () => {
+    const hook = vi.fn(async () => SEED)
+    const reply = await acquire(service(hook))
+    expect(reply).toEqual({
+      type: 'nutft.acquire.result',
+      id: 'lease',
+      ok: true,
+      result: {seed: SEED}
+    })
+    expect(hook).toHaveBeenCalledWith('win-1', 'scope:600b-e1')
+  })
+
+  it('keeps the result it always had when there is no seed', async () => {
+    expect((await acquire(service(undefined))).result).toBeUndefined()
+    const reply = await acquire(service(() => undefined))
+    expect(reply.ok).toBe(true)
+    expect(reply.result).toBeUndefined()
+  })
+
+  it('never asks for the seed of a window that cannot take the lease', async () => {
+    const hook = vi.fn(() => SEED)
+    const nutft = service(hook)
+    await acquire(nutft, 'win-1')
+    const busy = await acquire(nutft, 'win-2')
+    expect(busy.ok).toBe(false)
+    expect(busy.error).toMatch(/already open in another window/)
+    expect(JSON.stringify(busy)).not.toContain(SEED)
+    expect(hook).toHaveBeenCalledTimes(1)
+    expect(hook).toHaveBeenCalledWith('win-1', 'scope:600b-e1')
+  })
+
+  it('never puts the seed into a mint reply', async () => {
+    const nutft = service(() => SEED)
+    await acquire(nutft)
+    const reply = await nutft.request('win-1', {mint: MINT, operation: 'info'})
+    expect(JSON.stringify(reply)).not.toContain(SEED)
+  })
+
+  const refused: Array<[string, () => unknown]> = [
+    ['an empty string', () => ''],
+    ['63 characters', () => SEED.slice(1)],
+    ['65 characters', () => SEED + 'a'],
+    ['uppercase hex', () => SEED.toUpperCase()],
+    ['mixed-case hex', () => 'Ab'.repeat(32)],
+    ['non-hex characters', () => 'zq'.repeat(32)],
+    ['a trailing newline', () => SEED + '\n'],
+    ['surrounding spaces', () => ` ${SEED} `],
+    ['a mnemonic', () => 'abandon '.repeat(23) + 'art'],
+    ['null', () => null],
+    ['a number', () => 4242424242],
+    ['an object', () => ({seed: SEED})],
+    [
+      'a throw that names the seed',
+      () => {
+        throw new Error(`derivation failed for ${SEED}`)
+      }
+    ],
+    ['a rejection', () => Promise.reject(new Error(SEED))]
+  ]
+
+  for (const [name, value] of refused)
+    it(`refuses the acquire when the hook gives ${name}`, async () => {
+      const seen = watchConsole()
+      try {
+        const nutft = service(value as NutftServiceOptions['seed'])
+        const reply = await acquire(nutft)
+        expect(reply.ok).toBe(false)
+        expect(reply.result).toBeUndefined()
+        expect(reply.error).toBe(UNSAFE_OPEN_MESSAGE)
+        const text = JSON.stringify(reply)
+        for (const secret of [SEED, SEED.toUpperCase(), 'zq'.repeat(32)])
+          expect(text).not.toContain(secret)
+        expect(text).not.toContain('abandon')
+        expect(text).not.toContain('4242424242')
+        expect(seen.calls()).toBe(0)
+
+        /* The refused acquire gives the lease back, so the next window is
+           not told the collection is open somewhere it is not. */
+        const next = await acquire(nutft, 'win-2')
+        expect(next.error).not.toMatch(/already open in another window/)
+      } finally {
+        seen.restore()
+      }
+    })
+
+  it('refuses a seed for a window that closed while it was derived', async () => {
+    let asked = false
+    let finish: (value: string) => void = () => {}
+    const nutft = service(() => {
+      asked = true
+      return new Promise<string>(resolve => (finish = resolve))
+    })
+    const sent: Array<Record<string, unknown>> = []
+    nutft.handleMessage('win-1', {type: 'nutft.acquire', id: 'late'}, m =>
+      sent.push(m as Record<string, unknown>)
+    )
+    await vi.waitFor(() => expect(asked).toBe(true))
+    nutft.onWindowDestroyed('win-1')
+    finish(SEED)
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].ok).toBe(false)
+    expect(JSON.stringify(sent[0])).not.toContain(SEED)
   })
 })

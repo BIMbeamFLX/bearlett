@@ -93,9 +93,55 @@ export type NutftResponse = {
   retryAfterMs?: number
 }
 
+/**
+ * What `nutft.acquire` resolves to.
+ *
+ * A shell that derives the collection wallet from the account hands over
+ * `seed`: 32 bytes of BIP39 entropy as exactly 64 lowercase hex characters.
+ * Never a mnemonic, and never something the napplet has to tidy up first. A
+ * shell that does not derive one leaves the field out, and the napplet keeps
+ * generating its own random mnemonic.
+ */
+export type NutftLease = {seed?: string}
+
 export type NutftHost = {
-  acquire?(): Promise<void>
+  acquire?(): Promise<NutftLease | void>
   request(request: NutftRequest): Promise<NutftResponse>
+}
+
+/** What a holder is told when a seed is wrong. It never names the value. */
+export const UNSAFE_OPEN_MESSAGE =
+  'This collection could not be opened safely. Close it and try again.'
+
+/** Exactly 64 lowercase hex characters, as sent. Nothing is trimmed or folded. */
+export const isHostSeed = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+
+export class UnsafeLease extends Error {
+  constructor() {
+    super(UNSAFE_OPEN_MESSAGE)
+    this.name = 'UnsafeLease'
+  }
+}
+
+/**
+ * Read an acquire result, failing closed.
+ *
+ * Absent means no `seed` field, or `seed: undefined`. Anything else is
+ * present, and a present seed must already be a host seed: an empty string,
+ * `null`, a number, a mnemonic or mixed-case hex is refused rather than
+ * repaired, because a repaired seed opens a different wallet. A result that is
+ * not an object at all is refused for the same reason: a bare string there is
+ * most likely a seed sent in the wrong place.
+ */
+export function readNutftLease(result: unknown): NutftLease {
+  if (result === undefined || result === null) return {}
+  if (typeof result !== 'object' || Array.isArray(result))
+    throw new UnsafeLease()
+  const seed = (result as {seed?: unknown}).seed
+  if (seed === undefined) return {}
+  if (!isHostSeed(seed)) throw new UnsafeLease()
+  return {seed}
 }
 
 /**
