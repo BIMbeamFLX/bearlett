@@ -63,6 +63,36 @@ export class CollectionNotReady extends Error {
 }
 
 /**
+ * Take the Web Locks API away from the library.
+ *
+ * A napplet runs in a `sandbox="allow-scripts"` frame with an opaque origin,
+ * and Chromium answers `navigator.locks.request` there with a SecurityError,
+ * so the first wallet operation fails before storage is even read. The library
+ * already has an in-window queue for a browser without locks, and the shell's
+ * lease (`nutft.acquire`) is what keeps one collection to one window, so the
+ * lock adds nothing here but the failure.
+ *
+ * Only `locks` is shadowed, as an own property of the navigator object;
+ * everything else on `navigator` stays exactly as the platform provides it.
+ */
+function hideWebLocks(scope: Record<string, unknown>): void {
+  const navigator = scope.navigator
+  if (!navigator || typeof navigator !== 'object') return
+  try {
+    Object.defineProperty(navigator, 'locks', {
+      value: undefined,
+      configurable: true
+    })
+  } catch {
+    /* Checked below: what matters is what the library will read. */
+  }
+  if ((navigator as {locks?: unknown}).locks !== undefined)
+    throw new CollectionNotReady(
+      'This collection cannot run beside a lock service it is not allowed to use.'
+    )
+}
+
+/**
  * Install the globals, in the order the library reads them.
  *
  * Separated from the import so it can be tested against a scope that is not the
@@ -86,6 +116,7 @@ export function prepareCollectionGlobals(
 
   /* First, before any of the rest can matter. */
   sealSigner(scope)
+  hideWebLocks(scope)
 
   /* Read while the library evaluates. */
   scope.NUTFT_STORE = storageKeyFor(edition)

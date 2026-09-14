@@ -94,6 +94,39 @@ describe('prepareCollectionGlobals', () => {
     expect('NUTFT_UNITS' in scope).toBe(false)
   })
 
+  it('hides Web Locks from the library, and nothing else on navigator', () => {
+    /* Shaped like the platform: accessors on a prototype, not own values. */
+    class SandboxedNavigator {
+      get locks() {
+        return {
+          request: () => {
+            throw new DOMException(
+              'Access to the Locks API is denied in this context.',
+              'SecurityError'
+            )
+          }
+        }
+      }
+      get userAgent() {
+        return 'sandboxed'
+      }
+    }
+    const navigator = new SandboxedNavigator()
+    const scope: Record<string, unknown> = {navigator}
+    prepareCollectionGlobals(scope, edition, deps())
+    expect((scope.navigator as {locks?: unknown}).locks).toBeUndefined()
+    expect((scope.navigator as {userAgent: string}).userAgent).toBe('sandboxed')
+    /* The same object, so code outside the library keeps its navigator. */
+    expect(scope.navigator).toBe(navigator)
+  })
+
+  it('refuses to start when the lock cannot be hidden', () => {
+    const navigator = Object.freeze({locks: {request: vi.fn()}})
+    expect(() =>
+      prepareCollectionGlobals({navigator}, edition, deps())
+    ).toThrow(CollectionNotReady)
+  })
+
   it('refuses a second preparation rather than nesting two routers', () => {
     const scope: Record<string, unknown> = {}
     prepareCollectionGlobals(scope, edition, deps())
@@ -198,6 +231,21 @@ describe('the vendored library, actually running', () => {
     /* A fresh realm over the same store: this is a reload of the napplet. */
     expect(await walletIn(realm(store)).destination()).toBe(pubkey)
     expect(store.map.size).toBe(1)
+  })
+
+  it('runs where the Web Locks API refuses an opaque origin', async () => {
+    const refused = vi.fn(() => {
+      throw new DOMException(
+        'Access to the Locks API is denied in this context.',
+        'SecurityError'
+      )
+    })
+    const store = memoryStore()
+    const wallet = walletIn(
+      realm(store, {navigator: {locks: {request: refused}}})
+    )
+    expect(await wallet.destination()).toMatch(/^[0-9a-f]{66}$/)
+    expect(refused).not.toHaveBeenCalled()
   })
 
   it('never reaches a signer, even though the library would look for one', () => {
