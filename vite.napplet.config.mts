@@ -49,7 +49,11 @@ export default defineConfig(({mode}) => {
           description: `Hold, inspect and hand over the ${title} cards you own.`,
           artifactMode: 'single-file',
           /* No `storage`-free variant: a collection that cannot persist its
-             key is not a collection, it is a fresh wallet on every open. */
+             key is not a collection, it is a fresh wallet on every open.
+             The mint capability, `nutft`, is required too but cannot be
+             declared here: the plugin keeps only registered NAP domains and
+             drops any other name without a word, as it does for the sats
+             wallet's `cashu`. docs/NAPPLETS.md says so for a shell author. */
           requires: ['storage', 'resource', 'inc'],
           archetypes: [
             {slug: 'collection', convention: 'napplet:collection/open'},

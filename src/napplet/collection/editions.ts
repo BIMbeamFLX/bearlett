@@ -64,6 +64,45 @@ export class MintNotConfigured extends Error {
   }
 }
 
+export class InvalidMint extends Error {
+  constructor(reason: string) {
+    super(`BEARLETT_MINT ${reason}`)
+    this.name = 'InvalidMint'
+  }
+}
+
+/**
+ * Check the mint address exactly as it will be compiled in.
+ *
+ * Nothing is normalised. The card wallet compares a token's mint string with
+ * this one character for character, so a trailing slash or a capital letter
+ * here would refuse every card the mint issues, and the napplet would say the
+ * cards belong to another mint. The build stops instead and says what to write.
+ */
+export function checkMintAddress(mint: string): string {
+  let url: URL
+  try {
+    url = new URL(mint)
+  } catch {
+    throw new InvalidMint('is not a URL.')
+  }
+  if (url.protocol !== 'https:') throw new InvalidMint('must use https.')
+  if (url.username || url.password)
+    throw new InvalidMint('must not carry credentials.')
+  if (url.search || url.hash || /[?#]/.test(mint))
+    throw new InvalidMint('must not carry a query or a fragment.')
+  if (mint.endsWith('/'))
+    throw new InvalidMint(
+      `must not end with a slash: use ${mint.replace(/\/+$/, '')}.`
+    )
+  const canonical = url.href.replace(/\/$/, '')
+  if (canonical !== mint)
+    throw new InvalidMint(
+      `must be written as the mint writes it: ${canonical}.`
+    )
+  return mint
+}
+
 /**
  * Bind an edition to the mint that issues it.
  *
@@ -79,6 +118,7 @@ export function resolveEdition(
   const edition = editionById(id)
   if (!edition) throw new UnknownEdition(id)
   if (!mint) throw new MintNotConfigured(id)
+  checkMintAddress(mint)
   return {
     id: edition.id,
     mint,
