@@ -1,6 +1,7 @@
 import {UnsafeLease, isHostSeed} from '../../host/nutft-contract'
 import type {CollectionEdition, NutFTWalletApi} from './bootstrap'
 import type {Snapshot} from './cards'
+import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
 import type {KeyTools, SeedCrypto, SeededWallet} from './seed'
 import {
@@ -102,6 +103,9 @@ export function openSession(deps: SessionDeps) {
     seed === undefined
       ? null
       : {key: hostWalletKey(edition, seedFingerprint(seed))}
+  /* Sealed from the first write: the account wallet is never stored in the
+     clear, and a clear value found under its key is refused, not read. */
+  if (account) store.protect(account.key, sealedWith(seed!))
 
   let words: string | null = null
   let derived: SeededWallet | null = null

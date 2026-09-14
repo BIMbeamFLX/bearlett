@@ -13,8 +13,14 @@ import type {NutftOperation} from '../../host/nutft-contract'
 import {prepareCollectionGlobals} from './bootstrap'
 import type {NutFTWalletApi} from './bootstrap'
 import {TestNutftMint} from './fixture'
+import {sealedWith} from './sealed'
 import {STILL_RESTORING, openSession} from './session'
-import {createWalletSlots, createWalletStore, storageKeyFor} from './wallets'
+import {
+  WalletUnreadable,
+  createWalletSlots,
+  createWalletStore,
+  storageKeyFor
+} from './wallets'
 
 const VENDOR = fileURLToPath(
   new URL('./vendor/nutft-wallet.js', import.meta.url)
@@ -120,18 +126,24 @@ const device = (
       session: openSession({edition, store, slots, wallet, cashu, crypto, seed})
     }
   },
-  state(key: string) {
+  /** A stored wallet, opened with the account's seed when it is sealed. */
+  async state(key: string, seed?: string) {
     const text = storage.map.get(key)
-    return text ? JSON.parse(text) : null
+    if (!text) return null
+    return JSON.parse(seed ? await sealedWith(seed).open(text, key) : text)
+  },
+  async store(key: string, value: unknown, seed?: string) {
+    const text = JSON.stringify(value)
+    storage.map.set(key, seed ? await sealedWith(seed).seal(text, key) : text)
   }
 })
 
 /* An account wallet at a mint that has never seen it has nothing to restore;
    the tests that are not about restoring skip that minute of arithmetic. */
-const markRestored = (phone: ReturnType<typeof device>, seed: string) => {
-  const {restore, ...state} = phone.state(accountKey(seed))
+const markRestored = async (phone: ReturnType<typeof device>, seed: string) => {
+  const {restore, ...state} = await phone.state(accountKey(seed), seed)
   expect(restore).toBe('pending')
-  phone.storage.map.set(accountKey(seed), JSON.stringify(state))
+  await phone.store(accountKey(seed), state, seed)
 }
 
 describe('a collection without an account seed', () => {
@@ -146,7 +158,7 @@ describe('a collection without an account seed', () => {
       cards: 0
     })
     const address = await session.destination()
-    const stored = phone.state(RANDOM_KEY)
+    const stored = await phone.state(RANDOM_KEY)
     expect(stored.pubkey).toBe(address)
     expect(stored.seedSource).toBe('random')
     expect(stored.seedPhrase.split(' ')).toHaveLength(12)
@@ -165,8 +177,8 @@ describe('a collection with an account seed', () => {
       migration: 'none',
       cards: 0
     })
-    const {pubkey} = addressOf(ACCOUNT_A)
-    expect(phone.state(accountKey(ACCOUNT_A))).toMatchObject({
+    const {pubkey, words} = addressOf(ACCOUNT_A)
+    expect(await phone.state(accountKey(ACCOUNT_A), ACCOUNT_A)).toMatchObject({
       pubkey,
       seedSource: 'host',
       restore: 'pending',
@@ -175,6 +187,22 @@ describe('a collection with an account seed', () => {
     expect(await session.destination()).toBe(pubkey)
     /* No random wallet is made, and no key names the seed. */
     expect([...phone.storage.map.keys()]).toEqual([accountKey(ACCOUNT_A)])
+    /* At rest the account wallet is sealed: no key, no word, no seed. */
+    const sealed = phone.storage.map.get(accountKey(ACCOUNT_A))!
+    for (const secret of [pubkey, ACCOUNT_A, words.split(' ')[0] + ' '])
+      expect(sealed).not.toContain(secret)
+    expect(JSON.parse(sealed)).toMatchObject({v: 1, alg: 'A256GCM'})
+  })
+
+  it('refuses an account wallet stored in the clear', async () => {
+    const mint = new TestNutftMint()
+    const phone = device(mint)
+    const first = phone.open(ACCOUNT_A)
+    await first.session.open()
+    const clear = await phone.state(accountKey(ACCOUNT_A), ACCOUNT_A)
+    await phone.store(accountKey(ACCOUNT_A), clear)
+    const {session} = phone.open(ACCOUNT_A)
+    await expect(session.open()).rejects.toThrow(WalletUnreadable)
   })
 
   it('restores the account cards on a new device, words never shown', async () => {
@@ -182,7 +210,7 @@ describe('a collection with an account seed', () => {
     const first = device(mint)
     const one = first.open(ACCOUNT_A)
     await one.session.open()
-    markRestored(first, ACCOUNT_A)
+    await markRestored(first, ACCOUNT_A)
     const address = await one.session.destination()
     /* Imported cards are re-issued to the account's own deterministic
        outputs, which is what makes them restorable from the seed. */
@@ -208,7 +236,7 @@ describe('a collection with an account seed', () => {
     expect(
       operations.filter(name => name === 'restore').length
     ).toBeGreaterThan(2)
-    const restored = second.state(accountKey(ACCOUNT_A))
+    const restored = await second.state(accountKey(ACCOUNT_A), ACCOUNT_A)
     /* The library derived the key again on its own and landed on ours. */
     expect(restored.pubkey).toBe(address)
     expect(restored.seedSource).toBe('host')
@@ -222,7 +250,7 @@ describe('a collection with an account seed', () => {
     const phone = device(mint)
     const a = phone.open(ACCOUNT_A)
     await a.session.open()
-    markRestored(phone, ACCOUNT_A)
+    await markRestored(phone, ACCOUNT_A)
     const addressA = await a.session.destination()
     await a.wallet.importToken(mint.url, mint.issue(addressA, 1))
     const before = phone.storage.map.get(accountKey(ACCOUNT_A))
@@ -236,7 +264,13 @@ describe('a collection with an account seed', () => {
     })
     expect(await b.session.destination()).toBe(addressOf(ACCOUNT_B).pubkey)
     expect(phone.storage.map.get(accountKey(ACCOUNT_A))).toBe(before)
-    expect(phone.state(accountKey(ACCOUNT_B)).tokens).toEqual([])
+    expect(
+      (await phone.state(accountKey(ACCOUNT_B), ACCOUNT_B)).tokens
+    ).toEqual([])
+    /* Account B cannot even open account A's wallet. */
+    await expect(phone.state(accountKey(ACCOUNT_A), ACCOUNT_B)).rejects.toThrow(
+      WalletUnreadable
+    )
   })
 
   it('keeps the random wallet on screen while it still holds cards', async () => {
@@ -264,16 +298,17 @@ describe('a collection with an account seed', () => {
     const mint = new TestNutftMint()
     const phone = device(mint)
     const other = addressOf(ACCOUNT_B)
-    phone.storage.map.set(
+    await phone.store(
       accountKey(ACCOUNT_A),
-      JSON.stringify({
+      {
         privateKey: '77'.repeat(32),
         pubkey: other.pubkey,
         seedPhrase: other.words,
         counters: {},
         tokens: [],
         seedSource: 'host'
-      })
+      },
+      ACCOUNT_A
     )
     const {session} = phone.open(ACCOUNT_A)
     await expect(session.open()).rejects.toThrow(UNSAFE_OPEN_MESSAGE)
@@ -308,11 +343,11 @@ describe('a card re-issued to itself when the answer was lost', () => {
     /* The re-issue trade commits at the mint and its answer never arrives. */
     mint.lost = 'trade'
     expect(await wallet.importToken(mint.url, mint.issue(address, 1))).toBe(1)
-    expect(phone.state(RANDOM_KEY).pending).toBeTruthy()
+    expect((await phone.state(RANDOM_KEY)).pending).toBeTruthy()
 
     const snapshot = await session.snapshot()
     expect(snapshot.owned).toHaveLength(1)
-    const state = phone.state(RANDOM_KEY)
+    const state = await phone.state(RANDOM_KEY)
     expect(state.pending).toBeFalsy()
     expect(state.outgoing).toEqual([])
     expect(state.tokens).toHaveLength(1)
