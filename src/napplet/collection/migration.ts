@@ -97,7 +97,9 @@ const SAID = {
   damaged:
     'The record of an unfinished move cannot be read. Nothing was changed. Ask for help before trying again.',
   elsewhere:
-    'Some cards are being moved to another account. Open this collection from that account to finish the move.'
+    'Some cards are being moved to another account. Open this collection from that account to finish the move.',
+  foreign:
+    'The wallet on this device is not the one your cards were moved from, so nothing is moved from it.'
 } as const
 
 /** A move that stopped, in a fixed sentence: never a token, secret or seed. */

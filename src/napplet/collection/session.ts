@@ -577,11 +577,16 @@ export function openSession(deps: SessionDeps) {
     ).length
 
   /* The wallets whose sent transfers are this holder's: the one on screen,
-     and, under an account, the device's own wallet too. */
+     and, under an account, the device's own wallet unless it is not the one
+     this account's cards were moved from. */
   const listed = async (): Promise<string[]> => {
     if (active !== 'host') return [randomKey]
+    const host = await readWallet(store, account!.key)
     const device = await readWallet(store, randomKey)
-    return device?.privateKey ? [account!.key, randomKey] : [account!.key]
+    return device?.privateKey &&
+      (!host?.movedFrom || device.pubkey === host.movedFrom)
+      ? [account!.key, randomKey]
+      : [account!.key]
   }
 
   const moveOps: MigrationOps = {
@@ -677,6 +682,8 @@ export function openSession(deps: SessionDeps) {
     const restored = await serial(restoreHere)
     const host = (await serial(accountWallet)) as StoredWallet
     const device = await readWallet(store, randomKey)
+    if (host.movedFrom && device && device.pubkey !== host.movedFrom)
+      throw new MigrationStopped('foreign')
     let journal = record ? await readJournal(record) : null
     if (journal && journal.destination !== host.pubkey)
       throw new MigrationStopped('damaged')
@@ -705,6 +712,17 @@ export function openSession(deps: SessionDeps) {
         if (!moveOps.cardOf(token)?.toDestination) continue
         await on(randomKey, () => wallet.forgetOutgoing(token))
       }
+    /* The account remembers which device wallet its cards came from, so a
+       different wallet written there later is never shown in its place. */
+    if (device?.pubkey)
+      await serial(async () => {
+        const current = await readWallet(store, account.key)
+        if (current && current.movedFrom !== device.pubkey)
+          await writeWallet(store, account.key, {
+            ...current,
+            movedFrom: device.pubkey
+          })
+      })
     await store.setItem(
       journalKey,
       JSON.stringify({
@@ -749,10 +767,14 @@ export function openSession(deps: SessionDeps) {
           if (!record) {
             /* Cards still in the device's random wallet keep it on screen
                until they are moved on purpose, and a transfer it has in
-               flight is finished first. */
+               flight is finished first. After a finished move the account's
+               wallet stays on screen, and a device wallet other than the one
+               the cards came from is not offered at all. */
             const random = await readWallet(store, randomKey)
+            const ours =
+              random && (!host?.movedFrom || random.pubkey === host.movedFrom)
             if (
-              random &&
+              ours &&
               (random.tokens.length || random.pending || toAccount(random))
             ) {
               await point(randomKey)
@@ -762,7 +784,12 @@ export function openSession(deps: SessionDeps) {
               const cards =
                 owned + toAccount(await readWallet(store, randomKey))
               if (cards)
-                return {active: 'random', restore, migration: 'offer', cards}
+                return {
+                  active: host?.movedFrom ? 'host' : 'random',
+                  restore,
+                  migration: 'offer',
+                  cards
+                }
             }
           }
           /* No move for this account. A move toward another account stays

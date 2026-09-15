@@ -702,6 +702,69 @@ describe('a move and the wallets around it', () => {
     expect(await ui.session.moveUnfinished()).toBe(false)
   })
 
+  it('keeps the account on screen when the device wallet gets a card after a move', async () => {
+    const mint = new TestNutftMint()
+    const {phone, address} = await deviceWithCards(mint, [1])
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    await ui.session.migrate()
+    const device = await phone.state(RANDOM_KEY)
+    expect(
+      (await phone.state(accountKey(ACCOUNT_A), ACCOUNT_A)).movedFrom
+    ).toBe(device.pubkey)
+
+    const none = phone.open()
+    await none.session.open()
+    expect(await none.session.receive(mint.issue(address, 2))).toBe(1)
+
+    const back = phone.open(ACCOUNT_A)
+    expect(await back.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'offer',
+      cards: 1
+    })
+    expect(await back.session.migrate()).toEqual({
+      moved: 1,
+      gone: 0,
+      restored: null
+    })
+    expect((await back.session.snapshot()).owned).toHaveLength(2)
+  })
+
+  it('never offers, lists or moves another device wallet after a move', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    await ui.session.migrate()
+
+    /* Another wallet, with cards and a handover, is written in its place. */
+    const {phone: other} = await deviceWithCards(mint, [2, 3])
+    const o = other.open()
+    await o.session.open()
+    const [card] = (await o.session.snapshot()).owned
+    await o.session.handOver(secretOf(card), FRIEND)
+    phone.storage.map.set(RANDOM_KEY, other.storage.map.get(RANDOM_KEY)!)
+
+    const again = phone.open(ACCOUNT_A)
+    expect(await again.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+    expect(await again.session.sent()).toEqual([])
+    const refused = await again.session.migrate().catch(error => error)
+    expect(refused).toBeInstanceOf(MigrationStopped)
+    expect(refused.reason).toBe('foreign')
+    expect(phone.storage.map.get(RANDOM_KEY)).toBe(
+      other.storage.map.get(RANDOM_KEY)
+    )
+  })
+
   it('finishes a device handover whose answer was lost, and lists it under the account', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1])

@@ -61,6 +61,12 @@ export type StoredWallet = {
    * Written before the card is imported, and cleared once its proof is spent.
    */
   reissue?: string[]
+  /**
+   * On an account wallet: the public key of the device wallet its cards were
+   * moved from. After a move only that device wallet's sent transfers are
+   * shown beside the account's, and no other device wallet is ever offered.
+   */
+  movedFrom?: string
 }
 
 export class WalletUnreadable extends Error {
@@ -95,7 +101,10 @@ export const isStoredWallet = (value: unknown): value is StoredWallet =>
   (value.restore === undefined || value.restore === 'pending') &&
   (value.reissue === undefined ||
     (Array.isArray(value.reissue) &&
-      value.reissue.every(secret => typeof secret === 'string')))
+      value.reissue.every(secret => typeof secret === 'string'))) &&
+  (value.movedFrom === undefined ||
+    (typeof value.movedFrom === 'string' &&
+      /^0[23][0-9a-f]{64}$/.test(value.movedFrom)))
 
 /** Read a wallet without the library. Absent is `null`; damaged throws. */
 export async function readWallet(
