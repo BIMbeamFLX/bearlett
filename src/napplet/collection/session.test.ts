@@ -13,6 +13,7 @@ import {
   addressOf,
   device,
   fingerprint,
+  intercept,
   rateLimit,
   refuseJournalAfterTrade,
   secretOf,
@@ -827,5 +828,49 @@ describe('a move and the wallets around it', () => {
       restored: null
     })
     expect((await ui.session.sent()).map(entry => entry.token)).toEqual([token])
+  })
+})
+
+describe('a restore that stopped partway', () => {
+  it('resumes from its checkpoint instead of starting from the first slot', async () => {
+    const mint = new TestNutftMint()
+    const first = device(mint)
+    await restoredAccount(first, ACCOUNT_A)
+    const one = first.open(ACCOUNT_A)
+    await one.session.open()
+    const address = await one.session.destination()
+    for (const card of [0, 1, 3])
+      await one.wallet.importToken(mint.url, mint.issue(address, card))
+
+    /* The first batch is answered; the mint then refuses outright. */
+    let restores = 0
+    let refusing = true
+    intercept(mint, async request => {
+      if (request.operation !== 'restore') return undefined
+      restores += 1
+      return refusing && restores > 1
+        ? {status: 400, body: '{"error":"not now"}'}
+        : undefined
+    })
+    const laptop = device(mint)
+    const two = laptop.open(ACCOUNT_A)
+    await two.session.open()
+    await expect(two.session.restore()).rejects.toThrow(/continues/)
+    const scratch = await laptop.state(
+      `${accountKey(ACCOUNT_A)}:restore`,
+      ACCOUNT_A
+    )
+    expect(scratch.restoring).toMatchObject({next: 100})
+    expect(scratch.tokens.length).toBeGreaterThan(0)
+
+    refusing = false
+    restores = 0
+    expect(await two.session.restore()).toBe(3)
+    /* Two more batches past the checkpoint; slot 0 is never asked again. */
+    expect(restores).toBe(2)
+    expect((await two.session.snapshot()).owned).toHaveLength(3)
+    expect(
+      (await laptop.state(`${accountKey(ACCOUNT_A)}:restore`, ACCOUNT_A)).tokens
+    ).toEqual([])
   })
 })

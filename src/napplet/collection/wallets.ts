@@ -55,6 +55,16 @@ export type StoredWallet = {
   seedSource?: SeedSource
   /** Present until an account wallet has been restored from the mint. */
   restore?: 'pending'
+  /** The card library's checkpoint of a restore that has not finished. */
+  restoring?: {
+    key: string
+    next: number
+    empty: number
+    found?: number
+    gapSlots?: number
+  }
+  /** The card library's list of held cards not yet on this wallet's outputs. */
+  unmoved?: Array<{mint: string; secret: string}>
   /**
    * Proof secrets received here that still wait to be re-issued to this
    * wallet's own outputs, the only outputs a restore from its seed can find.

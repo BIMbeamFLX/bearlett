@@ -519,7 +519,11 @@ export function openSession(deps: SessionDeps) {
 
   /* NUT-09 restore from the seed alone, into a slot of its own, so that a card
      received while the restore still waits is neither blocked nor overwritten:
-     the restored cards join the wallet beside it. */
+     the restored cards join the wallet beside it.
+
+     The card library checkpoints a restore after every batch in that slot. A
+     slot holding this seed's checkpoint is resumed, and one holding this seed's
+     finished restore is merged as it is; only anything else is emptied first. */
   const restoreHere = async (): Promise<number | null> => {
     const host = await accountWallet()
     if (host.restore !== 'pending') return null
@@ -528,14 +532,21 @@ export function openSession(deps: SessionDeps) {
         await point(account!.key)
         await wallet.recoverPending()
       }
-      await writeWallet(store, account!.restoreKey, EMPTY)
-      await point(account!.restoreKey)
-      await wallet.restoreSeed(edition.mint, mnemonic())
+      const scratch = await readWallet(store, account!.restoreKey).catch(
+        () => null
+      )
+      const ours = scratch?.pubkey === seeded().pubkey
+      const unfinished = ours && Boolean(scratch?.restoring)
+      if (!ours) await writeWallet(store, account!.restoreKey, EMPTY)
+      if (!ours || unfinished) {
+        await point(account!.restoreKey)
+        await wallet.restoreSeed(edition.mint, mnemonic())
+      }
     } catch {
       throw new SessionProblem(RESTORE_WAITING)
     }
     const restored = await readWallet(store, account!.restoreKey)
-    if (!restored || restored.pubkey !== seeded().pubkey)
+    if (!restored || restored.pubkey !== seeded().pubkey || restored.restoring)
       throw new SessionProblem(RESTORE_WAITING)
     const current = await readWallet(store, account!.key)
     if (!current) throw new SessionProblem(RESTORE_WAITING)
