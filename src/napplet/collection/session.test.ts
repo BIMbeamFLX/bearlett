@@ -1,4 +1,4 @@
-import {afterEach, beforeEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import vm from 'node:vm'
 import {UNSAFE_OPEN_MESSAGE} from '../../host/nutft-contract'
 import type {NutftOperation} from '../../host/nutft-contract'
@@ -25,6 +25,10 @@ import {ReceiveProblem} from './receive'
 import {MOVE_OPEN, NOT_A_HANDOVER} from './session'
 import {decodeCards, encodeCards} from './tokens'
 import {WalletUnreadable} from './wallets'
+
+/* Restores and moves do real curve arithmetic on every card slot, which a
+   shared CI runner takes well past the default five seconds for. */
+vi.setConfig({testTimeout: 120_000})
 
 /* Every console method: nothing on these paths may write to any of them. */
 let heard: ReturnType<typeof watchConsole>
