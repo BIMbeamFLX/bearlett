@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest'
 import {
   EDITIONS,
+  InvalidAccountWallets,
   InvalidMint,
   MintNotConfigured,
   UnknownEdition,
@@ -51,8 +52,27 @@ describe('resolveEdition', () => {
       id: '600b-g',
       mint: 'https://tcg.example/g',
       units: ['600B-G'],
-      mirrors: EDITIONS['600b-g'].mirrors
+      mirrors: EDITIONS['600b-g'].mirrors,
+      accountWallets: false
     })
+  })
+
+  it('leaves account wallets out unless the build turns them on', () => {
+    for (const value of [undefined, '', '0'])
+      expect(
+        resolveEdition('600b-e1', 'https://tcg.nappelin.com', value)
+          .accountWallets
+      ).toBe(false)
+    expect(
+      resolveEdition('600b-e1', 'https://tcg.nappelin.com', '1').accountWallets
+    ).toBe(true)
+  })
+
+  it('stops the build on a flag value it does not know', () => {
+    for (const value of ['true', 'yes', 'on', ' 1', '01', 'false'])
+      expect(() =>
+        resolveEdition('600b-e1', 'https://tcg.nappelin.com', value)
+      ).toThrow(InvalidAccountWallets)
   })
 
   it('pins the unit to the collection id the mint signs with', () => {

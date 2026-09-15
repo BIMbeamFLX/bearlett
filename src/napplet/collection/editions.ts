@@ -103,6 +103,28 @@ export function checkMintAddress(mint: string): string {
   return mint
 }
 
+export class InvalidAccountWallets extends Error {
+  constructor() {
+    super(
+      'BEARLETT_ACCOUNT_WALLETS must be 1 to build account wallets in, or 0 ' +
+        'or unset to leave them out.'
+    )
+    this.name = 'InvalidAccountWallets'
+  }
+}
+
+/**
+ * Whether a build opens account wallets and offers to move a device's cards.
+ *
+ * Off unless the build says `1`, and a value that is neither `0` nor `1` stops
+ * the build: `true` or `yes` meaning off would be the silent kind of wrong.
+ */
+export function accountWalletsFrom(value: string | undefined): boolean {
+  if (value === undefined || value === '' || value === '0') return false
+  if (value === '1') return true
+  throw new InvalidAccountWallets()
+}
+
 /**
  * Bind an edition to the mint that issues it.
  *
@@ -110,10 +132,14 @@ export function checkMintAddress(mint: string): string {
  * default. A napplet that pointed at the wrong mint would show an empty
  * collection and blame the wallet, and a guessed address checked into a
  * repository is exactly how that happens. Failing the build is louder.
+ *
+ * Account wallets are a build input too, and off by default: the alpha build
+ * opens the device's own wallet whatever seed the shell sends.
  */
 export function resolveEdition(
   id: string,
-  mint: string | undefined
+  mint: string | undefined,
+  accountWallets?: string
 ): CollectionEdition {
   const edition = editionById(id)
   if (!edition) throw new UnknownEdition(id)
@@ -123,7 +149,8 @@ export function resolveEdition(
     id: edition.id,
     mint,
     units: [edition.collectionId],
-    mirrors: edition.mirrors
+    mirrors: edition.mirrors,
+    accountWallets: accountWalletsFrom(accountWallets)
   }
 }
 

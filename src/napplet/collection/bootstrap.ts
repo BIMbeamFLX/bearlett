@@ -32,6 +32,12 @@ export type CollectionEdition = {
   units: readonly string[]
   /** Blossom origins allowed to serve card faces and catalogue blobs. */
   mirrors: readonly string[]
+  /**
+   * Open the account's own wallet from the lease's seed, restore it and offer
+   * to move the device's cards into it. A build flag, off unless the build
+   * turned it on: without it a valid seed is checked and then left unused.
+   */
+  accountWallets?: boolean
 }
 
 /** An asynchronous key/value store. The shape the library's port expects. */

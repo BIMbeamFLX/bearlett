@@ -154,8 +154,11 @@ export type CollectionSession = ReturnType<typeof openSession>
 
 export function openSession(deps: SessionDeps) {
   const {edition, store, slots, wallet, cashu, crypto} = deps
+  /* A seed is checked whether or not this build uses it: a malformed one
+     refuses to open in the alpha build exactly as it would with account
+     wallets on. Only a build with account wallets goes on to use it. */
   if (deps.seed !== undefined && !isHostSeed(deps.seed)) throw new UnsafeLease()
-  const seed = deps.seed
+  const seed = edition.accountWallets === true ? deps.seed : undefined
   const randomKey = storageKeyFor(edition)
   const journalKey = migrationKey(edition)
   const account =

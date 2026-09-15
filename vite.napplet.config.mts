@@ -26,7 +26,11 @@ export default defineConfig(({mode}) => {
     )
 
   if (edition) {
-    const collection = resolveEdition(edition, process.env.BEARLETT_MINT)
+    const collection = resolveEdition(
+      edition,
+      process.env.BEARLETT_MINT,
+      process.env.BEARLETT_ACCOUNT_WALLETS
+    )
     const title = editionById(edition)!.title
     return {
       mode,
@@ -63,7 +67,9 @@ export default defineConfig(({mode}) => {
         })
       ],
       build: {
-        outDir: `dist-collection-${edition}`,
+        /* A build with account wallets lands beside the alpha build, never
+           over it, so the two artifacts cannot be mistaken for each other. */
+        outDir: `dist-collection-${edition}${collection.accountWallets ? '-accounts' : ''}`,
         target: 'esnext',
         assetsInlineLimit: 1000000
       }

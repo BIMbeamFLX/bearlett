@@ -39,6 +39,7 @@ declare const __COLLECTION__: {
   mint: string
   units: string[]
   mirrors: string[]
+  accountWallets: boolean
 }
 
 const EDITION = __COLLECTION__

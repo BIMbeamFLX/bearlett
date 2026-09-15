@@ -93,7 +93,8 @@ const memory = () => {
 const device = (
   mint: TestNutftMint,
   storage = memory(),
-  observe?: (operation: NutftOperation) => void
+  observe?: (operation: NutftOperation) => void,
+  accountWallets = true
 ) => ({
   storage,
   open(seed?: string) {
@@ -101,7 +102,8 @@ const device = (
       id: '600b-e1',
       mint: mint.url,
       units: [mint.unit],
-      mirrors: []
+      mirrors: [],
+      accountWallets
     }
     const store = createWalletStore(storage)
     const slots = createWalletSlots(store, storageKeyFor(edition))
@@ -151,6 +153,46 @@ const markRestored = async (phone: ReturnType<typeof device>, seed: string) => {
   expect(restore).toBe('pending')
   await phone.store(accountKey(seed), state, seed)
 }
+
+describe('a build without account wallets', () => {
+  const alpha = (mint: TestNutftMint) =>
+    device(mint, memory(), undefined, false)
+
+  it('opens the device wallet for a valid seed, and creates nothing for the account', async () => {
+    const mint = new TestNutftMint()
+    const phone = alpha(mint)
+    const first = phone.open()
+    await first.session.open()
+    const address = await first.session.destination()
+    await first.wallet.importToken(mint.url, mint.issue(address, 2))
+    const before = new Map(phone.storage.map)
+
+    const {session} = phone.open(ACCOUNT_A)
+    expect(await session.open()).toEqual({
+      active: 'random',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+    expect(await session.restore()).toBeNull()
+    expect(await session.destination()).toBe(address)
+    expect((await session.snapshot()).owned).toHaveLength(1)
+    await expect(session.migrate()).rejects.toThrow(/opened from your account/)
+    /* No account key, no sealed state, no journal: only the device wallet. */
+    const keys = [...phone.storage.map.keys()]
+    expect(keys.filter(key => key.startsWith(RANDOM_KEY))).toEqual([RANDOM_KEY])
+    expect(keys.some(key => key.includes(fingerprint(ACCOUNT_A)))).toBe(false)
+    expect(phone.storage.map.get(RANDOM_KEY)).toBe(before.get(RANDOM_KEY))
+  })
+
+  it('still refuses a malformed seed with the fixed sentence', () => {
+    const mint = new TestNutftMint()
+    const phone = alpha(mint)
+    for (const seed of ['', ACCOUNT_A.toUpperCase(), ACCOUNT_A.slice(1)])
+      expect(() => phone.open(seed)).toThrow(UNSAFE_OPEN_MESSAGE)
+    expect(phone.storage.map.size).toBe(0)
+  })
+})
 
 describe('a collection without an account seed', () => {
   it('keeps the random wallet, and records that it is random', async () => {
