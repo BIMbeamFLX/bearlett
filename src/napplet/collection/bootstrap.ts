@@ -55,7 +55,9 @@ export type BootstrapDeps = {
   /** `{...bip39, wordlist, HDKey}`, the shape the library merges itself. */
   walletCrypto: object
   /** Told the name of each mint operation as it starts. Never its body. */
-  observe?: (operation: NutftOperation) => void
+  observe?: (operation: NutftOperation, detail?: {retryInMs?: number}) => void
+  /** How the transport waits before asking the mint again. Tests pass a fake. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export class CollectionNotReady extends Error {

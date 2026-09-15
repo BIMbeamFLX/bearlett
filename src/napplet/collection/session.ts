@@ -88,6 +88,8 @@ export type SessionDeps = {
   wallet: NutFTWalletApi
   cashu: TokenTools
   crypto: SeedCrypto
+  /** The collection's router to its mint, the same door the library uses. */
+  fetch?: typeof fetch
   /** The account's seed from the lease, already checked. */
   seed?: string
 }
