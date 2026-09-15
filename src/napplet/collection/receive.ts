@@ -1,5 +1,8 @@
+import {nutftMintUrl} from '../../host/nutft-contract'
 import type {CollectionEdition} from './bootstrap'
 import type {TokenTools} from './session'
+import {decodeCards, encodeCards} from './tokens'
+import type {TokenCodec} from './tokens'
 
 /**
  * Taking a card in.
@@ -60,20 +63,22 @@ export type CardToken = {
 /**
  * Read a pasted or delivered token, offline.
  *
- * The mint must match this edition's mint character for character, because
- * that is how the card library compares them when it imports. Anything short
- * of that is another mint as far as this collection can take it.
+ * A token's mint is this edition's mint when both name the same mint, the way
+ * `nutftMintUrl` spells it: a trailing slash does not make another mint. The
+ * card library compares the two strings exactly when it imports, so a token
+ * that spells the mint differently is written out again under this edition's
+ * spelling, its proofs untouched. Any other mint is refused here.
  */
 export function readCardToken(
   input: unknown,
   edition: Pick<CollectionEdition, 'mint' | 'units'>,
-  tools: Pick<TokenTools, 'getTokenMetadata'>
+  tools: Pick<TokenTools, 'getTokenMetadata'> & TokenCodec
 ): CardToken {
   if (typeof input !== 'string' || input.length > MAX_TOKEN_LENGTH)
     throw new ReceiveProblem('not-a-token')
   const text = input.trim()
   if (!text) throw new ReceiveProblem('empty')
-  const token = text.startsWith('cashu:') ? text.slice('cashu:'.length) : text
+  let token = text.startsWith('cashu:') ? text.slice('cashu:'.length) : text
   if (!/^cashu[AB][A-Za-z0-9_+/=-]+$/.test(token))
     throw new ReceiveProblem('not-a-token')
   let read: ReturnType<TokenTools['getTokenMetadata']>
@@ -82,7 +87,13 @@ export function readCardToken(
   } catch {
     throw new ReceiveProblem('not-a-token')
   }
-  if (read.mint !== edition.mint) throw new ReceiveProblem('other-mint')
+  let mint = ''
+  try {
+    mint = nutftMintUrl(read.mint)
+  } catch {
+    throw new ReceiveProblem('other-mint')
+  }
+  if (mint !== edition.mint) throw new ReceiveProblem('other-mint')
   if (edition.units.length && !edition.units.includes(read.unit))
     throw new ReceiveProblem('other-collection')
   const proofs = read.incompleteProofs
@@ -97,6 +108,15 @@ export function readCardToken(
     )
   )
     throw new ReceiveProblem('not-a-card')
+  if (read.mint !== edition.mint)
+    try {
+      token = encodeCards(
+        {...decodeCards(token, tools), mint: edition.mint},
+        tools
+      )
+    } catch {
+      throw new ReceiveProblem('not-a-token')
+    }
   return {
     token,
     proofs: proofs.map(({secret, p2pk_e}) => ({secret, p2pk_e: p2pk_e!}))

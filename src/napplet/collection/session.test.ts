@@ -7,6 +7,7 @@ import {
   RANDOM_KEY,
   TestNutftMint,
   accountKey,
+  cashu,
   addressOf,
   device,
   fingerprint,
@@ -16,6 +17,7 @@ import {
 import {MigrationStopped} from './migration'
 import {ReceiveProblem} from './receive'
 import {STILL_RESTORING} from './session'
+import {decodeCards, encodeCards} from './tokens'
 import {WalletUnreadable} from './wallets'
 
 /* Every console method: nothing on these paths may write to any of them. */
@@ -318,6 +320,19 @@ describe('receiving a card', () => {
     const again = await session.receive(card).catch(error => error)
     expect(again.reason).toBe('spent')
     expect(said(again)).not.toContain(card.slice(0, 30))
+  })
+
+  it('redeems a token that spells the mint with a trailing slash', async () => {
+    const mint = new TestNutftMint()
+    const {session} = device(mint).open()
+    await session.open()
+    const issued = mint.issue(await session.destination(), 3)
+    const slashed = encodeCards(
+      {...decodeCards(issued, cashu), mint: `${mint.url}/`},
+      cashu
+    )
+    expect(await session.receive(slashed)).toBe(1)
+    expect((await session.snapshot()).owned).toHaveLength(1)
   })
 
   it('says the mint could not be reached without saying the token', async () => {

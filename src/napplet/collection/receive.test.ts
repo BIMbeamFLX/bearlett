@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest'
 import * as cashu from '@cashu/cashu-ts'
 import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
 import {TestNutftMint} from './fixture'
+import {decodeCards, encodeCards} from './tokens'
 import {
   MAX_TOKEN_LENGTH,
   RECEIVE_CONVENTION,
@@ -53,12 +54,39 @@ describe('readCardToken', () => {
     expect(new ReceiveProblem('other-mint').message).toBe(
       'This card belongs to a different mint.'
     )
-    /* The card library compares mints exactly, so a spelling is not waved
-       through here only to be refused at import. */
-    const slash = new TestNutftMint({url: `${mint.url}/`})
-    expect(
-      reason(() => readCardToken(slash.issue(pubkeyOf(MINE)), edition, cashu))
-    ).toBe('other-mint')
+    for (const url of [
+      `${mint.url}2`,
+      'https://mint.test/e2',
+      'https://mint.test'
+    ])
+      expect(
+        reason(() =>
+          readCardToken(
+            encodeCards(
+              {...decodeCards(mint.issue(pubkeyOf(MINE)), cashu), mint: url},
+              cashu
+            ),
+            edition,
+            cashu
+          )
+        )
+      ).toBe('other-mint')
+  })
+
+  it('takes a trailing slash as this mint, and writes the token under its spelling', () => {
+    const issued = mint.issue(pubkeyOf(MINE), 2)
+    const slashed = encodeCards(
+      {...decodeCards(issued, cashu), mint: `${mint.url}/`},
+      cashu
+    )
+    const card = readCardToken(slashed, edition, cashu)
+    /* The card library compares mints exactly when it imports. */
+    expect(cashu.getTokenMetadata(card.token).mint).toBe(mint.url)
+    expect(cashu.getDecodedToken(card.token, [mint.id]).proofs).toEqual(
+      cashu.getDecodedToken(issued, [mint.id]).proofs
+    )
+    /* A token already spelt this way is passed on exactly as it came. */
+    expect(readCardToken(issued, edition, cashu).token).toBe(issued)
   })
 
   it('refuses another collection on the same mint', () => {

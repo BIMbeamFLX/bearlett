@@ -19,6 +19,7 @@ import type {CardToken} from './receive'
 import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
 import type {KeyTools, SeedCrypto, SeededWallet} from './seed'
+import type {TokenCodec} from './tokens'
 import {
   WalletUnreadable,
   hostWalletKey,
@@ -63,21 +64,22 @@ export type Opening = {
 }
 
 /** The parts of cashu-ts a session reads tokens with. */
-export type TokenTools = KeyTools & {
-  getTokenMetadata(token: string): {
-    mint: string
-    unit: string
-    incompleteProofs: ReadonlyArray<{
-      secret: string
-      amount: unknown
-      p2pk_e?: string
-    }>
+export type TokenTools = KeyTools &
+  TokenCodec & {
+    getTokenMetadata(token: string): {
+      mint: string
+      unit: string
+      incompleteProofs: ReadonlyArray<{
+        secret: string
+        amount: unknown
+        p2pk_e?: string
+      }>
+    }
+    maybeDeriveP2BKPrivateKeys(
+      privateKey: string,
+      proof: {secret: string; p2pk_e?: string}
+    ): string[]
   }
-  maybeDeriveP2BKPrivateKeys(
-    privateKey: string,
-    proof: {secret: string; p2pk_e?: string}
-  ): string[]
-}
 
 export type SessionDeps = {
   edition: CollectionEdition
