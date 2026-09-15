@@ -47,10 +47,9 @@ describe('regression: a refused re-issue during a move (S1)', () => {
 
 describe('regression: two devices on one account seed (B2)', () => {
   /* The card library derives the same NUT-13 output on both devices, and only
-     a NUT-09 probe before every self re-issue can skip it. That probe is being
-     added upstream, on TCG600nap branch fix/referee-rate-limits; this test is
-     switched on when the library is vendored again from there. */
-  it.skip('keeps each device on its own output (waits for the NUT-09 probe from TCG600nap fix/referee-rate-limits)', async () => {
+     a NUT-09 probe before every self re-issue can skip it. The library has that
+     probe since BIMbeamFLX/600BillionTimelockTCG@0d05c73. */
+  it('keeps each device on its own output', async () => {
     const mint = new TestNutftMint()
     const phone = device(mint)
     const laptop = device(mint)

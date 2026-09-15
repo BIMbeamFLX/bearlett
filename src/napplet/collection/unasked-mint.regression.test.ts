@@ -6,7 +6,7 @@ import {
   RANDOM_KEY,
   TestNutftMint,
   deviceWithCards,
-  rateLimit,
+  intercept,
   restoredAccount,
   unreachable
 } from './harness'
@@ -67,9 +67,15 @@ describe('regression: a mint that could not be asked', () => {
     await restoredAccount(phone, ACCOUNT_A)
     const ui = phone.open(ACCOUNT_A)
     await ui.session.open()
-    /* A rate limiter refuses the first trade with a JSON body: the library
-       drops the pending, and the step stays trading. */
-    const limiter = rateLimit(mint, 'trade', 1)
+    /* The mint refuses the first trade before changing anything, with a
+       verdict: the library drops the pending, and the step stays trading. (A
+       429 is no verdict any more; the library keeps the pending for it.) */
+    let trades = 0
+    const limiter = intercept(mint, async request =>
+      request.operation === 'trade' && ++trades === 1
+        ? {status: 400, body: '{"error":"not now"}'}
+        : undefined
+    )
     await expect(ui.session.migrate()).rejects.toBeInstanceOf(MigrationStopped)
     limiter()
     expect((await phone.state(RANDOM_KEY)).pending).toBeFalsy()

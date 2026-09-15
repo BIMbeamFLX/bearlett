@@ -267,9 +267,16 @@ describe('a card re-issued to itself when the answer was lost', () => {
     const {session, wallet} = phone.open()
     await session.open()
     const address = await session.destination()
-    /* The re-issue trade commits at the mint and its answer never arrives. */
+    /* The re-issue trade commits at the mint and its answer never arrives.
+       The library stores the card and says it is not yet moved. */
     mint.lost = 'trade'
-    expect(await wallet.importToken(mint.url, mint.issue(address, 1))).toBe(1)
+    const waiting = (await wallet
+      .importToken(mint.url, mint.issue(address, 1))
+      .catch(error => error)) as {message: string; imported: number}
+    expect(waiting.message).toMatch(
+      /^not yet moved under this wallet's recovery phrase/
+    )
+    expect(waiting.imported).toBe(1)
     expect((await phone.state(RANDOM_KEY)).pending).toBeTruthy()
 
     const snapshot = await session.snapshot()
