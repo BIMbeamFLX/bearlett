@@ -141,4 +141,54 @@ describe('readNutftLease', () => {
     for (const seed of [SEED.toUpperCase(), ` ${SEED}`, SEED.slice(0, 62)])
       expect(() => readNutftLease({seed})).toThrow(UNSAFE_OPEN_MESSAGE)
   })
+
+  it('reads only undefined, null or a plain object holding at most a seed', () => {
+    expect(readNutftLease(undefined)).toEqual({})
+    expect(readNutftLease(null)).toEqual({})
+    expect(readNutftLease({})).toEqual({})
+    expect(readNutftLease({seed: undefined})).toEqual({})
+    expect(readNutftLease({seed: SEED})).toEqual({seed: SEED})
+    expect(readNutftLease(JSON.parse(`{"seed":"${SEED}"}`))).toEqual({
+      seed: SEED
+    })
+  })
+
+  /* Each of these is a seed in the wrong place, not the absence of one. Read
+     as "no seed", it would open a random wallet instead of the account's. */
+  const shapes: Array<[string, () => unknown]> = [
+    ['32 bytes', () => new Uint8Array(32)],
+    [
+      'the seed as bytes',
+      () => Uint8Array.from(SEED.match(/../g)!, byte => parseInt(byte, 16))
+    ],
+    ['a String object', () => new String(SEED)],
+    ['a Map', () => new Map([['seed', SEED]])],
+    ['a seed under seedHex', () => ({seedHex: SEED})],
+    ['a mnemonic field', () => ({mnemonic: 'abandon '.repeat(23) + 'art'})],
+    ['a nested lease', () => ({lease: {seed: SEED}})],
+    ['a seed on the prototype', () => ({__proto__: {seed: SEED}})],
+    ['a seed beside another key', () => ({seed: SEED, account: 'a'})],
+    ['an empty lease with another key', () => ({extra: true})],
+    [
+      'an object without a prototype',
+      () => Object.assign(Object.create(null), {seed: SEED})
+    ],
+    ['a symbol key', () => ({[Symbol('seed')]: SEED})],
+    ['a class instance', () => new (class Lease {})()],
+    ['a date', () => new Date()],
+    ['a number', () => 42],
+    ['a boolean', () => true]
+  ]
+
+  for (const [name, shape] of shapes)
+    it(`refuses ${name}`, () => {
+      let said = ''
+      try {
+        readNutftLease(shape())
+        said = 'accepted'
+      } catch (error) {
+        said = String((error as Error).message)
+      }
+      expect(said).toBe(UNSAFE_OPEN_MESSAGE)
+    })
 })

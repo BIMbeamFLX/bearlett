@@ -127,18 +127,29 @@ export class UnsafeLease extends Error {
 /**
  * Read an acquire result, failing closed.
  *
- * Absent means no `seed` field, or `seed: undefined`. Anything else is
- * present, and a present seed must already be a host seed: an empty string,
- * `null`, a number, a mnemonic or mixed-case hex is refused rather than
- * repaired, because a repaired seed opens a different wallet. A result that is
- * not an object at all is refused for the same reason: a bare string there is
- * most likely a seed sent in the wrong place.
+ * Only three shapes are a lease: `undefined`, `null`, and a plain object whose
+ * own keys are at most `seed`. Absent means no such key, or `seed: undefined`.
+ * A present seed must already be a host seed: an empty string, `null`, a
+ * number, a mnemonic or mixed-case hex is refused rather than repaired, because
+ * a repaired seed opens a different wallet.
+ *
+ * Every other shape is refused, not read as "no seed": a bare string, bytes, a
+ * `String` object, a `Map`, an object with a prototype of its own or with a
+ * seed under another name (`seedHex`, `mnemonic`, `lease.seed`). Each of those
+ * is most likely a seed sent in the wrong place, and reading it as absent
+ * would quietly open a random wallet instead of the account's.
  */
 export function readNutftLease(result: unknown): NutftLease {
   if (result === undefined || result === null) return {}
-  if (typeof result !== 'object' || Array.isArray(result))
+  if (
+    typeof result !== 'object' ||
+    Object.getPrototypeOf(result) !== Object.prototype
+  )
     throw new UnsafeLease()
-  const seed = (result as {seed?: unknown}).seed
+  const keys = Reflect.ownKeys(result)
+  if (keys.some(key => key !== 'seed')) throw new UnsafeLease()
+  if (!Object.hasOwn(result, 'seed')) return {}
+  const seed: unknown = (result as {seed?: unknown}).seed
   if (seed === undefined) return {}
   if (!isHostSeed(seed)) throw new UnsafeLease()
   return {seed}
