@@ -159,10 +159,16 @@ open();
  * address the build compiled in, answered here in the page: nothing reaches a
  * network. `window.reloadNapplet({seed})` reopens the frame with a seed from
  * the service's hook, and `window.collectionMint.issue(address)` makes a card.
+ *
+ * `/collection` is the alpha build. `/collection-accounts` is the build with
+ * account wallets (BEARLETT_ACCOUNT_WALLETS=1), which only a test opens.
  */
-const COLLECTION_DIST = 'dist-collection-600b-e1/index.html'
-const collectionPreview = () => {
-  const source = readFileSync(COLLECTION_DIST, 'utf8')
+const COLLECTIONS = {
+  collection: 'dist-collection-600b-e1/index.html',
+  'collection-accounts': 'dist-collection-600b-e1-accounts/index.html'
+}
+const collectionPreview = dist => {
+  const source = readFileSync(dist, 'utf8')
   const mint =
     process.env.BEARLETT_MINT ??
     source.match(
@@ -180,7 +186,7 @@ ${collectionBundle.replaceAll('</script', '<\\/script')}
 const source=${scriptValue(source)};
 const mint=new BearlettCollectionPreview.TestNutftMint({url:${scriptValue(mint)}});
 const store=new Map();const topics=new Set();let pending=[];let frame=null;
-window.collectionMint=mint;window.hostStore=store;window.hostCalls=[];window.previewSeed=undefined;
+window.collectionMint=mint;window.hostStore=store;window.hostCalls=[];window.hostEmits=[];window.previewSeed=undefined;
 const service=BearlettCollectionPreview.createNutftService({
  scope:key=>key==='collection'?'preview-collection':undefined,
  allowed:(key,url)=>key==='collection'&&url===mint.url,
@@ -212,7 +218,7 @@ addEventListener('message',event=>{
   else if(msg.type==='storage.keys'){result.keys=[...store.keys()];result.ok=true}
   else if(msg.type==='inc.subscribe'){topics.add(msg.topic);setTimeout(()=>{for(const value of pending.filter(v=>v.topic===msg.topic))send(value);pending=pending.filter(v=>v.topic!==msg.topic)},10)}
   else if(msg.type==='inc.unsubscribe'){topics.delete(msg.topic);return}
-  else if(msg.type==='inc.emit')return;
+  else if(msg.type==='inc.emit'){window.hostEmits.push({topic:msg.topic,payload:msg.payload});return}
   else if(msg.type==='resource.bytes')throw new Error('The preview serves no card faces.');
   else if(msg.type==='resource.cancel')return;
   else return;
@@ -226,14 +232,17 @@ open();
 createServer((request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
   const app = path === '/' ? (onlyApp ?? 'wallet') : path.slice(1)
-  if (app === 'collection' && (!onlyApp || onlyApp === 'collection')) {
+  if (
+    Object.hasOwn(COLLECTIONS, app) &&
+    (!onlyApp || onlyApp === 'collection')
+  ) {
     try {
       response
         .writeHead(200, {
           'Content-Type': 'text/html',
           'Cache-Control': 'no-store'
         })
-        .end(collectionPreview())
+        .end(collectionPreview(COLLECTIONS[app]))
     } catch (error) {
       response.writeHead(404).end(String(error.message))
     }
