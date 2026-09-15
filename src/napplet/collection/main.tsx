@@ -15,7 +15,8 @@ import {EDITIONS} from './editions'
 import {
   INVENTORY_CONVENTION,
   isInventoryRequest,
-  publishInventory
+  publishInventory,
+  withdrawInventory
 } from './inventory'
 import type {Inventory} from './inventory'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
@@ -170,7 +171,8 @@ function App() {
   let opening: Opening | null = null
   let storage: WalletHost['storage'] | null = null
   let inc: WalletHost['inc'] = undefined
-  let inventory: Inventory | null = null
+  /* What was published, and the wallet it was counted from. */
+  let inventory: {payload: Inventory; wallet: string} | null = null
   let requests: {close(): void} | undefined
   let faces: ReturnType<typeof createFaceCache> | null = null
   let shim: ReturnType<typeof installNutftShim> | null = null
@@ -241,20 +243,33 @@ function App() {
      announced so an open one hears it at once. An inventory that cannot be
      built or stored is withdrawn rather than left standing, and a fault here
      never blanks the cards already on screen. */
-  const shareInventory = async (snapshot: Snapshot) => {
-    if (!storage) return
-    inventory = await publishInventory(
+  const shareInventory = async (snapshot: Snapshot, wallet: string) => {
+    if (!storage || !session) return
+    /* Counted from a wallet that is no longer on screen: published by no one. */
+    if (session.wallet !== wallet) return dropInventory()
+    const payload = await publishInventory(
       {storage, inc},
       EDITION,
       snapshot,
-      Math.floor(Date.now() / 1000)
+      Math.floor(Date.now() / 1000),
+      wallet
     )
+    inventory = payload && {payload, wallet}
+  }
+
+  /* Take the published inventory back until the wallet on screen has been
+     read in full again: when the collection opens, perhaps for another
+     account, when a refresh fails, and when the wallet on screen changes. */
+  const dropInventory = async () => {
+    inventory = null
+    if (storage) await withdrawInventory({storage})
   }
 
   const refresh = async () => {
     if (!session) return
     setBusy('Reading the mint')
     try {
+      const wallet = session.wallet
       const snapshot = await session.snapshot()
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
@@ -272,9 +287,10 @@ function App() {
             ? {...offer, cards: snapshot.owned.length}
             : offer
         )
-      await shareInventory(snapshot)
+      await shareInventory(snapshot, wallet)
       await checkSupply(snapshot)
     } catch (error) {
+      await dropInventory()
       setFailure(readable(error))
     } finally {
       setBusy('')
@@ -292,8 +308,12 @@ function App() {
          shell's dispatch is not the place for this napplet's errors. */
       requests = inc?.on(INVENTORY_CONVENTION, event => {
         try {
-          if (isInventoryRequest(event.payload, EDITION.id) && inventory)
-            inc?.emit(INVENTORY_CONVENTION, inventory)
+          if (
+            isInventoryRequest(event.payload, EDITION.id) &&
+            inventory &&
+            inventory.wallet === session?.wallet
+          )
+            inc?.emit(INVENTORY_CONVENTION, inventory.payload)
         } catch {
           /* ignored on purpose */
         }
@@ -357,6 +377,7 @@ function App() {
     if (!session) return
     setFailure('')
     try {
+      await dropInventory()
       if (!opening) {
         setBusy('Opening the collection')
         opening = await session.open()
@@ -436,6 +457,8 @@ function App() {
       )
       setMove(null)
       setFrozen(false)
+      /* Another wallet is on screen now; its own counts replace the old. */
+      await dropInventory()
       opening = {active: 'host', restore: false, migration: 'none', cards: 0}
       setMoved(
         `Moved ${result.moved} card${result.moved === 1 ? '' : 's'} to your account.` +

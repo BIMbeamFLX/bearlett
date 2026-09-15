@@ -16,6 +16,12 @@ export const INVENTORY_KIND = 'nutft/inventory'
 export const INVENTORY_REQUEST_KIND = 'nutft/inventory-request'
 /** Storage key the host reads the last inventory from. */
 export const INVENTORY_STORAGE_KEY = 'inventory'
+/**
+ * Storage key naming the wallet the stored inventory was counted from. The
+ * host reads only `inventory`; this one is the collection's own record, so an
+ * inventory never stands without the wallet it belongs to.
+ */
+export const INVENTORY_WALLET_KEY = 'inventory:wallet'
 export const MAX_INVENTORY_CARDS = 4096
 /* The strictest reader of this payload, the host's, takes exactly these. A
    looser writer would only find out when the host dropped the payload. */
@@ -207,41 +213,47 @@ export type InventoryOutlet = {
 
 /**
  * Take a stored inventory back, so the host never answers for this napplet
- * with counts it could not confirm. Removed where the shell can remove, and
- * emptied where it cannot; an empty value is not an inventory to anyone.
+ * with counts it could not confirm, or with another wallet's. Removed where
+ * the shell can remove, and emptied where it cannot; an empty value is not an
+ * inventory to anyone.
  */
 export async function withdrawInventory(
-  outlet: InventoryOutlet
+  outlet: Pick<InventoryOutlet, 'storage'>
 ): Promise<void> {
-  try {
-    if (!outlet.storage.removeItem) throw new Error('no remove')
-    await outlet.storage.removeItem(INVENTORY_STORAGE_KEY)
-  } catch {
+  for (const key of [INVENTORY_STORAGE_KEY, INVENTORY_WALLET_KEY])
     try {
-      await outlet.storage.setItem(INVENTORY_STORAGE_KEY, '')
+      if (!outlet.storage.removeItem) throw new Error('no remove')
+      await outlet.storage.removeItem(key)
     } catch {
-      /* Nothing more a napplet can do; the cards on screen are unaffected. */
+      try {
+        await outlet.storage.setItem(key, '')
+      } catch {
+        /* Nothing more a napplet can do; the cards on screen are unaffected. */
+      }
     }
-  }
 }
 
 /**
- * Publish what the snapshot holds, or withdraw what was published before.
+ * Publish what the snapshot of one wallet holds, or withdraw what was
+ * published before.
  *
  * The payload is stored only once it has been built and read back strictly,
- * then announced. A snapshot that does not make a valid inventory, or a store
- * that refuses it, takes the previous one away instead of leaving it standing.
+ * then announced, with the name of the wallet it was counted from written
+ * first. A snapshot that does not make a valid inventory, or a store that
+ * refuses either, takes the previous one away instead of leaving it standing.
  * Resolves to what was published, or `null`.
  */
 export async function publishInventory(
   outlet: InventoryOutlet,
   edition: CollectionEdition,
   snapshot: Snapshot,
-  now: number
+  now: number,
+  wallet: string
 ): Promise<Inventory | null> {
   let built: Inventory
   try {
     built = buildInventory(edition, snapshot, now)
+    await outlet.storage.setItem(INVENTORY_WALLET_KEY, wallet)
     await outlet.storage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(built))
   } catch {
     await withdrawInventory(outlet)

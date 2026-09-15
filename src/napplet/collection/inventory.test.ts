@@ -2,11 +2,13 @@ import {describe, expect, it} from 'vitest'
 import {
   INVENTORY_CONVENTION,
   INVENTORY_STORAGE_KEY,
+  INVENTORY_WALLET_KEY,
   MAX_INVENTORY_CARDS,
   buildInventory,
   isInventoryRequest,
   parseInventory,
-  publishInventory
+  publishInventory,
+  withdrawInventory
 } from './inventory'
 import type {Inventory} from './inventory'
 import type {CollectionEdition} from './bootstrap'
@@ -65,6 +67,7 @@ const snapshot = (owned: OwnedItem[]): Snapshot => ({
 })
 
 const NOW = 1757800000
+const WALLET = 'bearlett:nutft:600b-e1'
 
 describe('buildInventory', () => {
   /* Two copies of one card, one of another, handed in out of order. */
@@ -324,12 +327,15 @@ describe('publishInventory', () => {
       [INVENTORY_STORAGE_KEY, '{"an":"older inventory"}']
     ])
     const emitted: unknown[] = []
+    const writes: string[] = []
     return {
       stored,
       emitted,
+      writes,
       storage: {
         setItem: async (key: string, value: string) => {
           if (options.refuse && value) throw new Error('storage refused')
+          writes.push(key)
           stored.set(key, value)
         },
         ...(options.remove === false
@@ -348,30 +354,51 @@ describe('publishInventory', () => {
 
   it('stores and announces an inventory that reads back strictly', async () => {
     const o = outlet()
-    const published = await publishInventory(o, EDITION, good, NOW)
+    const published = await publishInventory(o, EDITION, good, NOW, WALLET)
     expect(published?.cards).toEqual([{asset_id: 'E1-001', count: 1}])
     expect(JSON.parse(o.stored.get(INVENTORY_STORAGE_KEY)!)).toEqual(published)
     expect(o.emitted).toEqual([published])
   })
 
+  it('names the wallet it was counted from, before the counts', async () => {
+    const o = outlet()
+    await publishInventory(o, EDITION, good, NOW, WALLET)
+    expect(o.stored.get(INVENTORY_WALLET_KEY)).toBe(WALLET)
+    expect(o.writes).toEqual([INVENTORY_WALLET_KEY, INVENTORY_STORAGE_KEY])
+  })
+
   it('takes the stored inventory away when the new one cannot be built', async () => {
     const o = outlet()
-    expect(await publishInventory(o, EDITION, bad, NOW)).toBeNull()
+    o.stored.set(
+      INVENTORY_WALLET_KEY,
+      'bearlett:nutft:600b-e1:0123456789abcdef'
+    )
+    expect(await publishInventory(o, EDITION, bad, NOW, WALLET)).toBeNull()
     expect(o.stored.has(INVENTORY_STORAGE_KEY)).toBe(false)
+    expect(o.stored.has(INVENTORY_WALLET_KEY)).toBe(false)
     expect(o.emitted).toEqual([])
   })
 
   it('empties it where the shell cannot remove a key', async () => {
     const o = outlet({remove: false})
-    expect(await publishInventory(o, EDITION, bad, NOW)).toBeNull()
+    expect(await publishInventory(o, EDITION, bad, NOW, WALLET)).toBeNull()
     expect(o.stored.get(INVENTORY_STORAGE_KEY)).toBe('')
+    expect(o.stored.get(INVENTORY_WALLET_KEY)).toBe('')
   })
 
   it('withdraws rather than leaving an older one when the store refuses', async () => {
     const o = outlet({refuse: true})
-    expect(await publishInventory(o, EDITION, good, NOW)).toBeNull()
+    expect(await publishInventory(o, EDITION, good, NOW, WALLET)).toBeNull()
     expect(o.stored.has(INVENTORY_STORAGE_KEY)).toBe(false)
+    expect(o.stored.has(INVENTORY_WALLET_KEY)).toBe(false)
     expect(o.emitted).toEqual([])
+  })
+
+  it('withdraws the counts and the wallet they belong to together', async () => {
+    const o = outlet()
+    await publishInventory(o, EDITION, good, NOW, WALLET)
+    await withdrawInventory(o)
+    expect(o.stored.size).toBe(0)
   })
 })
 

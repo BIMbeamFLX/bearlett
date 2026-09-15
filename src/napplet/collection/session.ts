@@ -740,6 +740,15 @@ export function openSession(deps: SessionDeps) {
       return active
     },
 
+    /**
+     * The storage key of the wallet on screen. It tells two wallets apart
+     * without saying anything about their seeds, so what was counted from
+     * one is never taken for the other's.
+     */
+    get wallet(): string {
+      return activeKey()
+    },
+
     /** Decide which wallet the screen shows, creating the account's if needed. */
     open: (): Promise<Opening> =>
       serial(async () => {

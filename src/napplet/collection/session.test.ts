@@ -467,12 +467,15 @@ describe('moving the device cards to the account', () => {
       migration: 'offer',
       cards: 2
     })
+    /* What the screen shows is named by its storage key, never its seed. */
+    expect(session.wallet).toBe(RANDOM_KEY)
     const progress: string[] = []
     expect(
       await session.migrate((done, total) => progress.push(`${done}/${total}`))
     ).toEqual({moved: 2, gone: 0, restored: 0})
     expect(progress).toEqual(['1/2', '2/2'])
     expect(session.active).toBe('host')
+    expect(session.wallet).toBe(accountKey(ACCOUNT_A))
     expect(order[0]).toBe('journal')
     expect(order.indexOf('journal')).toBeLessThan(order.indexOf('trade'))
 
