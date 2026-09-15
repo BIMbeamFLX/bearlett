@@ -8,7 +8,8 @@ import type {TokenCodec} from './tokens'
  * Taking a card in.
  *
  * A card arrives as a Cashu token, pasted by the holder or handed over by
- * another napplet on `napplet:collection/receive`. Everything that can be
+ * another napplet on `napplet:collection/receive`, where it waits for the
+ * holder like a pasted one. Everything that can be
  * decided without the mint is decided here first: that it is a token at all,
  * that it names this edition's mint exactly, that it is a card, and that it is
  * locked to this wallet's key. A token that fails any of that never reaches a
@@ -23,6 +24,16 @@ export const RECEIVE_CONVENTION = 'napplet:collection/receive'
 
 /** A sixty-card deck is a few dozen kilobytes; nothing needs more. */
 export const MAX_TOKEN_LENGTH = 256_000
+
+/** Cards other napplets handed over that wait their turn, at most. */
+export const MAX_WAITING_DELIVERIES = 16
+
+/**
+ * Where to get a card bought on the website into the collection. Said in the
+ * paste help, word for word as in docs/NAPPLETS.md.
+ */
+export const WEBSITE_CARDS =
+  "A card bought on tcg.nappelin.com is locked to that site's wallet: send it to your collection's address in the wallet there first, then paste the token into the collection."
 
 const SAID = {
   empty: 'Paste a card token first.',
@@ -52,6 +63,45 @@ export class ReceiveProblem extends Error {
     super(SAID[reason])
     this.name = 'ReceiveProblem'
   }
+}
+
+/* Refusals no second try can change. */
+const FINAL: ReadonlySet<ReceiveReason> = new Set([
+  'empty',
+  'not-a-token',
+  'other-mint',
+  'other-collection',
+  'not-a-card',
+  'locked',
+  'already-held',
+  'spent'
+])
+
+/**
+ * Whether a refusal is the last word on a token. Only then, or once the card
+ * is in, does the token leave the field: after any other refusal the same
+ * token may go through on the next try, and it is the card.
+ */
+export const isFinalRefusal = (problem: ReceiveProblem): boolean =>
+  FINAL.has(problem.reason)
+
+/**
+ * A card another napplet handed over joins the line of cards waiting for the
+ * holder, once. The one already in the field and the ones in line are not
+ * added twice, and a full line takes no more.
+ */
+export function queueDelivery(
+  waiting: readonly string[],
+  token: string,
+  inField: string
+): readonly string[] {
+  if (
+    token === inField.trim() ||
+    waiting.includes(token) ||
+    waiting.length >= MAX_WAITING_DELIVERIES
+  )
+    return waiting
+  return [...waiting, token]
 }
 
 /** A token read without the mint, with the proofs a lock check needs. */

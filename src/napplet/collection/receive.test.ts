@@ -5,9 +5,13 @@ import {TestNutftMint} from './fixture'
 import {decodeCards, encodeCards} from './tokens'
 import {
   MAX_TOKEN_LENGTH,
+  MAX_WAITING_DELIVERIES,
   RECEIVE_CONVENTION,
   ReceiveProblem,
+  WEBSITE_CARDS,
   checkLockedTo,
+  isFinalRefusal,
+  queueDelivery,
   readCardToken,
   receiveIntentToken,
   receiveProblem
@@ -198,7 +202,62 @@ describe('receiveIntentToken', () => {
       expect(reason(() => receiveIntentToken(payload))).toBe('not-a-token')
   })
 
-  it('names the convention the manifest declares', () => {
+  it('names the convention other napplets hand cards over on', () => {
     expect(RECEIVE_CONVENTION).toBe('napplet:collection/receive')
+  })
+})
+
+describe('a token after a refusal', () => {
+  it('stays in the field unless no second try can change the answer', () => {
+    const final = [
+      'empty',
+      'not-a-token',
+      'other-mint',
+      'other-collection',
+      'not-a-card',
+      'locked',
+      'already-held',
+      'spent'
+    ] as const
+    const retry = [
+      'unknown-card',
+      'unreachable',
+      'waiting',
+      'moving',
+      'failed'
+    ] as const
+    for (const reason of final)
+      expect(isFinalRefusal(new ReceiveProblem(reason))).toBe(true)
+    for (const reason of retry)
+      expect(isFinalRefusal(new ReceiveProblem(reason))).toBe(false)
+  })
+})
+
+describe('queueDelivery', () => {
+  it('lines up each delivered card once, oldest first', () => {
+    let waiting = queueDelivery([], 'cashuBone', '')
+    waiting = queueDelivery(waiting, 'cashuBtwo', '')
+    waiting = queueDelivery(waiting, 'cashuBone', '')
+    expect(waiting).toEqual(['cashuBone', 'cashuBtwo'])
+  })
+
+  it('never lines up the card that is already in the field', () => {
+    expect(queueDelivery([], 'cashuBone', '  cashuBone\n')).toEqual([])
+  })
+
+  it('takes no more once the line is full', () => {
+    const full = Array.from(
+      {length: MAX_WAITING_DELIVERIES},
+      (_, n) => `cashuB${n}`
+    )
+    expect(queueDelivery(full, 'cashuBmore', '')).toBe(full)
+  })
+})
+
+describe('the paste help', () => {
+  it('says where a card bought on the website goes first', () => {
+    expect(WEBSITE_CARDS).toBe(
+      "A card bought on tcg.nappelin.com is locked to that site's wallet: send it to your collection's address in the wallet there first, then paste the token into the collection."
+    )
   })
 })

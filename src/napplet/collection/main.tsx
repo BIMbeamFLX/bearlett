@@ -1,4 +1,13 @@
-import {createSignal, createMemo, For, Show, onMount, onCleanup} from 'solid-js'
+import {
+  createEffect,
+  createSignal,
+  createMemo,
+  For,
+  Show,
+  onMount,
+  onCleanup,
+  untrack
+} from 'solid-js'
 import {render} from 'solid-js/web'
 import {getWalletHost} from '../host'
 import type {WalletHost} from '../host'
@@ -22,7 +31,9 @@ import type {Inventory} from './inventory'
 import {gatedSaleMessage, isGatedSaleRefusal} from './no-signer'
 import {
   RECEIVE_CONVENTION,
-  ReceiveProblem,
+  WEBSITE_CARDS,
+  isFinalRefusal,
+  queueDelivery,
   readCardToken,
   receiveIntentToken,
   receiveProblem
@@ -153,10 +164,15 @@ function App() {
   const [frozen, setFrozen] = createSignal(false)
   const [moving, setMoving] = createSignal('')
   const [moved, setMoved] = createSignal('')
-  /* Receiving. The token lives in this signal and the field it fills, and is
-     cleared the moment Redeem takes it. */
+  /* Receiving. The token lives in this signal and the field it fills. It
+     leaves only once the card is in, after a refusal no second try can
+     change, or when the holder confirms clearing it. */
   const [receiving, setReceiving] = createSignal(false)
   const [token, setToken] = createSignal('')
+  /* Closing the receive sheet with a token still in the field asks first. */
+  const [closing, setClosing] = createSignal(false)
+  /* Cards other napplets handed over, waiting for the holder's turn. */
+  const [deliveries, setDeliveries] = createSignal<readonly string[]>([])
   const [received, setReceived] = createSignal<{
     good: boolean
     text: string
@@ -320,10 +336,10 @@ function App() {
       })
       const cashuModule = import('@cashu/cashu-ts')
       tools = cashuModule
-      /* Another napplet may hand a card over. It is checked, then put in the
-         field for the holder; nothing is redeemed until they press Redeem. */
+      /* Another napplet may hand a card over. It is checked offline and waits
+         in line; nothing is redeemed until the holder presses Redeem. */
       receives = inc?.on(RECEIVE_CONVENTION, event => {
-        void stageReceive(event.payload)
+        void deliver(event.payload)
       })
       shim = installNutftShim()
       /* One collection is open in one window. The lease is taken before any
@@ -490,49 +506,83 @@ function App() {
 
   const focusToken = () => queueMicrotask(() => tokenField?.focus())
 
-  const openReceive = () => {
+  const clearToken = () => {
+    setToken('')
+    if (tokenField) tokenField.value = ''
+  }
+
+  /* The holder is doing nothing a delivered card could get in the way of:
+     nothing running, no card or handover sheet open, no move holding the
+     wallet, and no token already in the field. */
+  const idle = () =>
+    started() &&
+    !busy() &&
+    !opened() &&
+    !handover() &&
+    !closing() &&
+    !frozen() &&
+    !token().trim()
+
+  /* The oldest waiting card goes into the field, and only while idle. */
+  const stageNext = () => {
+    const [next, ...rest] = deliveries()
+    if (!next || !idle()) return
+    setDeliveries(rest)
+    setToken(next)
     setReceived(null)
     setReceiving(true)
     focusToken()
   }
 
-  const closeReceive = () => {
-    setReceiving(false)
-    setToken('')
-    setReceived(null)
-    setCopied('')
-  }
+  createEffect(() => {
+    if (idle() && deliveries().length) untrack(stageNext)
+  })
 
-  /* A delivered card gets the same offline checks as a pasted one, and a card
-     already waiting in the field is never replaced by the next one. */
-  const stageReceive = async (payload: unknown) => {
+  /* A delivered card gets the same offline checks as a pasted one. One that
+     fails them is not the holder's business and is dropped without a word;
+     one that passes waits its turn, and never replaces a token in the field. */
+  const deliver = async (payload: unknown) => {
     try {
-      if (!tools) throw new ReceiveProblem('failed')
+      if (!tools) return
       const card = readCardToken(
         receiveIntentToken(payload),
         EDITION,
         await tools
       )
-      if (token().trim()) throw new ReceiveProblem('waiting')
-      setToken(card.token)
-      setReceived(null)
-    } catch (error) {
-      setReceived({good: false, text: receiveProblem(error).message})
+      setDeliveries(waiting => queueDelivery(waiting, card.token, token()))
+    } catch {
+      /* not a card of this collection */
     }
+  }
+
+  const openReceive = () => {
+    setReceived(null)
     setReceiving(true)
+    stageNext()
     focusToken()
+  }
+
+  /* A token in the field is a card. Closing with one there asks first. */
+  const closeReceive = (confirmed = false) => {
+    if (token().trim() && !confirmed) {
+      setClosing(true)
+      return
+    }
+    setClosing(false)
+    setReceiving(false)
+    clearToken()
+    setReceived(null)
+    setCopied('')
   }
 
   const redeem = async () => {
     const text = token()
-    /* Cleared before anything can fail, whatever the outcome. */
-    setToken('')
-    if (tokenField) tokenField.value = ''
+    if (!session || !text.trim()) return
     setReceived(null)
-    if (!session) return
     setBusy('Redeeming the card')
     try {
       const count = await session.receive(text)
+      if (token() === text) clearToken()
       setReceived({
         good: true,
         text: `Received ${count} card${count === 1 ? '' : 's'}.`
@@ -540,7 +590,11 @@ function App() {
       setBusy('')
       await refresh()
     } catch (error) {
-      setReceived({good: false, text: receiveProblem(error).message})
+      const problem = receiveProblem(error)
+      /* Kept after any refusal a second try could change: the token is the
+         card, and the holder may not have another copy. */
+      if (isFinalRefusal(problem) && token() === text) clearToken()
+      setReceived({good: false, text: problem.message})
     } finally {
       setBusy('')
     }
@@ -768,6 +822,20 @@ function App() {
           <p class="notice notice--good" role="status">
             {moved()}
           </p>
+        </Show>
+
+        <Show when={deliveries().length && !receiving()}>
+          <div class="notice" role="status">
+            <p>
+              {deliveries().length} card
+              {deliveries().length === 1 ? '' : 's'} handed over by other
+              napplets {deliveries().length === 1 ? 'waits' : 'wait'} for you to
+              redeem {deliveries().length === 1 ? 'it' : 'them'}.
+            </p>
+            <button class="button" disabled={frozen()} onClick={openReceive}>
+              Show {deliveries().length === 1 ? 'it' : 'them'}
+            </button>
+          </div>
         </Show>
 
         <Show when={sent().length && !handover()}>
@@ -1021,10 +1089,33 @@ function App() {
                 <p class="collection__kicker">Receive</p>
                 <h2 class="sheet__title">Receive a card</h2>
               </div>
-              <button class="button" onClick={closeReceive}>
+              <button class="button" onClick={() => closeReceive()}>
                 Close
               </button>
             </div>
+
+            <Show when={closing()}>
+              <div class="notice notice--bad" role="alert">
+                <p>
+                  This card token is not redeemed. Closing clears it from the
+                  collection, so keep a copy if you still want the card.
+                </p>
+                <div class="actions">
+                  <button
+                    class="button"
+                    onClick={() => {
+                      setClosing(false)
+                      focusToken()
+                    }}
+                  >
+                    Keep it
+                  </button>
+                  <button class="button" onClick={() => closeReceive(true)}>
+                    Clear and close
+                  </button>
+                </div>
+              </div>
+            </Show>
 
             <label class="collection__kicker" for="collection-address">
               Your address in this collection
@@ -1045,6 +1136,7 @@ function App() {
               Give this to whoever is sending you a card. It names this wallet
               at this mint and nothing else.
             </p>
+            <p>{WEBSITE_CARDS}</p>
 
             <label class="collection__kicker" for="collection-token">
               Card token
@@ -1056,6 +1148,7 @@ function App() {
               placeholder="cashuB…"
               autocomplete="off"
               spellcheck={false}
+              disabled={Boolean(busy())}
               value={token()}
               onInput={event => {
                 setToken(event.currentTarget.value)
@@ -1071,6 +1164,15 @@ function App() {
                 Redeem
               </button>
             </div>
+            <Show when={deliveries().length}>
+              <p class="mono">
+                {deliveries().length} more card
+                {deliveries().length === 1 ? '' : 's'} handed over by other
+                napplets{' '}
+                {deliveries().length === 1 ? 'waits its' : 'wait their'} turn
+                here.
+              </p>
+            </Show>
             <Show when={received()}>
               {note => (
                 <p
