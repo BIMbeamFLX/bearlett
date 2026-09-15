@@ -112,6 +112,8 @@ export const fakeClock = () => {
 
 export type DeviceOptions = {
   storage?: Storage
+  /** The edition this device's collection is built for; Edition One unless set. */
+  edition?: string
   observe?: (operation: NutftOperation, detail?: {retryInMs?: number}) => void
   /** On unless a test builds the alpha collection. */
   accountWallets?: boolean
@@ -125,7 +127,7 @@ export const device = (mint: TestNutftMint, options: DeviceOptions = {}) => {
     storage,
     open(seed?: string) {
       const edition: CollectionEdition = {
-        id: EDITION_ID,
+        id: options.edition ?? EDITION_ID,
         mint: mint.url,
         units: [mint.unit],
         mirrors: [],
