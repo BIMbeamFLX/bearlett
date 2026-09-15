@@ -500,24 +500,22 @@ and the holder is told to open the collection from that account to finish it.
 
 ### Known limits
 
-- **Two devices on one account seed** derive the same NUT-13 output for their next
-  copy of a card, and the mint signs it only once. The card library fixes this
-  upstream by asking `/v1/restore` before a self re-issue; until it is vendored
-  again, the mint refuses the second device's re-issue, and that card waits in
-  the re-issue list until a later try goes through at the next counter. Account
-  wallets only, so unreachable in the alpha build. Even with that fix, two
-  devices buying boosters at the same counter can still collide, because the
-  probe covers only moves to the wallet's own key.
-- **A trade the mint committed but a gateway answered with a JSON error** drops
-  the card library's pending outputs in the vendored copy, and with them the
-  card. The library keeps them upstream (only a 4xx other than 429 ends a
-  pending operation); until it is vendored again, a handover interrupted that way
-  in the alpha build can lose its card. The mint's referee must not answer a
-  committed trade with a JSON 4xx either.
-- **A restore that runs again starts from its first slot**, and one refused
-  re-issue can open a gap of counters the vendored restore stops at. Both are
-  fixed upstream (checkpoint per batch, a scan of at least 2N + 100 slots).
-  Account wallets only.
+The card library is vendored from `BIMbeamFLX/600BillionTimelockTCG@0d05c73`
+(`src/napplet/collection/vendor/README.md`). Since then a refused self re-issue
+gives its counter slots back, a second device on one seed asks `/v1/restore`
+before a self re-issue and steps past slots already signed, a trade stays
+pending after a 429, a 5xx or a lost answer whatever the body says, and a
+restore checkpoints every batch and scans at least 2N + 100 slots. What is left:
+
+- **Two devices on one account seed buying boosters** at the same counter can
+  still collide, because the `/v1/restore` probe covers only moves to the
+  wallet's own key. Account wallets only, so unreachable in the alpha build.
+- **A deep scan** for a wallet whose unsigned run is longer than the normal
+  window (`restoreSeed(mint, phrase, {gapSlots: DEEP_SCAN_SLOTS})`) is not
+  offered by the collection yet.
+- **The mint's referee** must not answer a committed trade with a JSON 4xx,
+  since a 4xx other than 429 is a verdict to the library and ends the pending
+  operation.
 - **A card handed to the device wallet's address after a move** is refused
   under the account as locked to another address. Opening the collection
   without an account receives it into the device wallet, and the account then
@@ -871,7 +869,7 @@ account, sealing, restore on a new device and under a rate limit, receiving and
 re-issuing, the move to the account including every way it can stop, and that
 nothing on those paths writes to the console. The `*.regression.test.ts` files
 are the proofs from the reviews of pull request 23, kept as tests; the ones only
-the card library can make pass are skipped with the upstream branch named.
+the card library could make pass run against the vendored copy.
 `tests/napplet/collection.spec.ts` runs both built collections in a sandboxed
 frame in Chromium. None of it is verification against the live mint.
 
