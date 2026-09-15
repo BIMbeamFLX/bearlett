@@ -315,19 +315,32 @@ never read as "no seed".
 
 **The host derives a seed per collection.** Each collection of one account
 gets a seed of its own from the host, so Edition One and the G edition never
-share a key or an address. The derivation proposed by nappelin-com-b0, and not
-final until its pull request pins a test vector, is
+share a key or an address. The Nappelin shell's derivation, pinned with test
+vectors in nappelin pull request 103 (PLAN.md, step 5), is
 
 ```text
 seed = lowercase hex of HMAC-SHA256(key = the 32-byte account secret key,
-                                    message = UTF-8 "nappelin:nutft:" + scope)
+                                    message = UTF-8("nappelin:nutft:" + scope))
 ```
 
-where `scope` is the collection's app id exactly as the host scopes the lease,
-for instance `collection-600b-e1`. A shell using the reference service must
-return that very string from `scope(windowId)`: it is the argument the seed hook
-receives, and any other spelling of it derives another seed, and so another
-wallet. The collection adds no derivation of its own.
+where `scope` is the collection's app id exactly as the host scopes the lease.
+The vectors, for the account secret key
+`0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20`:
+
+| `scope`              | `seed`                                                             |
+| -------------------- | ------------------------------------------------------------------ |
+| `collection-600b-e1` | `5ac043b3d85fb8b50ef62a914a11595b2e2333cabada9160caf054f4d4faaeed` |
+| `collection-600b-g`  | `b1e69e9b78999f8fcbd4271779eebea321a466e627f41ad7a77149fe0cb7c1ea` |
+
+A shell using the reference service must return that very string from
+`scope(windowId)`: it is the argument the seed hook receives, and any other
+spelling of it derives another seed, and so another wallet. The collection adds
+no derivation of its own; `src/napplet/collection/host-seed.contract.test.ts`
+hands both vectors to the collection through the lease and checks that each
+passes the fail-closed check and that the two collections get different
+fingerprints, different addresses and sealed states neither seed can open for
+the other. Only a build with account wallets uses them; the alpha build checks
+the seed and opens the device wallet.
 
 In the napplet (`src/host/nutft-shim.ts`, `src/napplet/collection/seed.ts`,
 `session.ts`), the seed becomes a 24-word mnemonic in memory only, with
