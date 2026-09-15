@@ -59,10 +59,13 @@ export default defineConfig(({mode}) => {
              drops any other name without a word, as it does for the sats
              wallet's `cashu`. docs/NAPPLETS.md says so for a shell author. */
           requires: ['storage', 'resource', 'inc'],
+          /* Receiving is by paste only. The collection still stages a card
+             another napplet hands over on napplet:collection/receive for the
+             holder to confirm, but no build asks a host to route one there
+             until that route is agreed with the host. */
           archetypes: [
             {slug: 'collection', convention: 'napplet:collection/open'},
-            {slug: 'collection', convention: 'napplet:collection/inventory'},
-            {slug: 'collection', convention: 'napplet:collection/receive'}
+            {slug: 'collection', convention: 'napplet:collection/inventory'}
           ]
         })
       ],
