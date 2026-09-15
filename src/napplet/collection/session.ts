@@ -130,6 +130,21 @@ const messageOf = (error: unknown): string => {
   return typeof message === 'string' ? message : ''
 }
 
+/* The card library's word for an import whose cards are stored but not all yet
+   on the wallet's own outputs: received, and waiting for the re-issue. Resolves
+   to how many cards the token held, or null for any other error. */
+const receivedButWaiting = (error: unknown): number | null => {
+  const imported = (error as {imported?: unknown} | null)?.imported
+  return /^not yet moved under this wallet's recovery phrase/.test(
+    messageOf(error)
+  ) &&
+    typeof imported === 'number' &&
+    Number.isSafeInteger(imported) &&
+    imported > 0
+    ? imported
+    : null
+}
+
 /* The binding and asset of a card, read from its proof secret. */
 const tagOf = (secret: string): {binding: string; asset_id: string} | null => {
   try {
@@ -640,9 +655,13 @@ export function openSession(deps: SessionDeps) {
           try {
             await wallet.importToken(edition.mint, token)
           } catch (error) {
-            /* Only a card this wallet already holds is passed over here. A
-               card it cannot hold is not quietly counted as moved. */
-            if (!/token is already in this wallet/.test(messageOf(error)))
+            /* Passed over only when the card is in this wallet: already held,
+               or stored with its re-issue still to come, which the check below
+               waits for. A card it cannot hold is not counted as moved. */
+            if (
+              !/token is already in this wallet/.test(messageOf(error)) &&
+              receivedButWaiting(error) === null
+            )
               throw error
           }
         /* Confirmed once the traded proof is spent, which is what the
@@ -900,12 +919,18 @@ export function openSession(deps: SessionDeps) {
         try {
           count = Number(await wallet.importToken(edition.mint, card.token))
         } catch (error) {
-          await awaiting(key, list =>
-            list.filter(
-              secret => known.has(secret) || !secrets.includes(secret)
-            )
-          ).catch(() => undefined)
-          throw error
+          /* The cards are in; only their re-issue waits, and the list written
+             above keeps it on every refresh. */
+          const waiting = receivedButWaiting(error)
+          if (waiting !== null) count = waiting
+          else {
+            await awaiting(key, list =>
+              list.filter(
+                secret => known.has(secret) || !secrets.includes(secret)
+              )
+            ).catch(() => undefined)
+            throw error
+          }
         }
         let still = secrets
         try {
