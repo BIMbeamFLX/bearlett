@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest'
 import {
   buildCollectionView,
   filterStacks,
+  isIncomplete,
   scarcityRatio,
   tierOrder
 } from './cards'
@@ -57,6 +58,36 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
   invalid: [],
   unreadable: [],
   ...over
+})
+
+describe('isIncomplete', () => {
+  it('trusts a snapshot whose rejected proofs were all judged', () => {
+    expect(isIncomplete(snapshot())).toBe(false)
+    expect(
+      isIncomplete(
+        snapshot({
+          owned: [held(GENESIS)],
+          invalid: [
+            {error: 'invalid NutFT proof'},
+            {error: 'catalog has no verified asset E1-999'},
+            {error: 'proof is not addressed to this wallet'}
+          ]
+        })
+      )
+    ).toBe(false)
+  })
+
+  it('refuses a snapshot holding cards the mint was never asked about', () => {
+    for (const error of [
+      'proof state unavailable (503)',
+      'proof state response has the wrong length',
+      'Mint request unavailable, denied, or interrupted.',
+      'catalog unavailable (502)',
+      'catalog signature or collection validation failed',
+      undefined
+    ])
+      expect(isIncomplete(snapshot({invalid: [{error}]}))).toBe(true)
+  })
 })
 
 describe('buildCollectionView', () => {

@@ -24,7 +24,7 @@ vi.setConfig({testTimeout: 120_000})
  */
 
 describe('regression: a mint that could not be asked', () => {
-  it.fails('stops open() instead of hiding the device cards', async () => {
+  it('stops open() instead of hiding the device cards', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1, 2])
     await restoredAccount(phone, ACCOUNT_A)
@@ -40,7 +40,7 @@ describe('regression: a mint that could not be asked', () => {
     })
   })
 
-  it.fails('plans no move and switches nothing', async () => {
+  it('plans no move and switches nothing', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1, 2])
     await restoredAccount(phone, ACCOUNT_A)
@@ -61,7 +61,7 @@ describe('regression: a mint that could not be asked', () => {
     })
   })
 
-  it.fails('never gives a card that is still here up as gone', async () => {
+  it('never gives a card that is still here up as gone', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1, 2])
     await restoredAccount(phone, ACCOUNT_A)

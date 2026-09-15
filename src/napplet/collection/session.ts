@@ -1,5 +1,6 @@
 import {UnsafeLease, isHostSeed} from '../../host/nutft-contract'
 import type {CollectionEdition, NutFTWalletApi} from './bootstrap'
+import {isIncomplete} from './cards'
 import type {Snapshot} from './cards'
 import {
   ALREADY_TAKEN,
@@ -108,6 +109,8 @@ export const RESTORE_FAILED =
   'Your cards could not be restored from the mint. Nothing was lost; try again.'
 export const STILL_RESTORING =
   'Your cards are still being restored. Try again once that has finished.'
+export const MINT_UNASKED =
+  'The mint could not confirm your cards just now. Nothing was changed; try again.'
 const NOT_OPEN = 'The collection is not open yet.'
 const NO_ACCOUNT =
   'Cards can only be moved once the collection is opened from your account.'
@@ -142,6 +145,12 @@ const cardsOf = (snapshot: Snapshot): MigrationCard[] =>
     const tag = typeof secret === 'string' ? tagOf(secret) : null
     return tag ? [{secret: secret as string, ...tag}] : []
   })
+
+/* A snapshot that holds cards the mint was not asked about decides nothing. */
+const complete = (snapshot: Snapshot): Snapshot => {
+  if (isIncomplete(snapshot)) throw new SessionProblem(MINT_UNASKED)
+  return snapshot
+}
 
 const tokenOf = (result: unknown): string => {
   const token = (result as {token?: unknown} | null)?.token
@@ -299,9 +308,9 @@ export function openSession(deps: SessionDeps) {
   }
 
   const snapshotHere = async (): Promise<Snapshot> => {
-    const first = (await wallet.snapshot(edition.mint)) as Snapshot
+    const first = complete((await wallet.snapshot(edition.mint)) as Snapshot)
     return (await adopt())
-      ? ((await wallet.snapshot(edition.mint)) as Snapshot)
+      ? complete((await wallet.snapshot(edition.mint)) as Snapshot)
       : first
   }
 
@@ -368,9 +377,11 @@ export function openSession(deps: SessionDeps) {
       ),
     oldWallet: () => readWallet(store, randomKey),
     oldCards: () =>
-      on(randomKey, async () =>
-        cardsOf((await wallet.snapshot(edition.mint)) as Snapshot)
-      ),
+      on(randomKey, async () => {
+        const snapshot = (await wallet.snapshot(edition.mint)) as Snapshot
+        if (isIncomplete(snapshot)) throw new MigrationStopped('failed')
+        return cardsOf(snapshot)
+      }),
     trade: (secret, destination) =>
       on(randomKey, async () =>
         tokenOf(await wallet.tradeProof(edition.mint, secret, destination))
@@ -428,8 +439,9 @@ export function openSession(deps: SessionDeps) {
             const random = await readWallet(store, randomKey)
             if (random?.tokens.length) {
               await point(randomKey)
-              const cards = ((await wallet.snapshot(edition.mint)) as Snapshot)
-                .owned.length
+              const cards = complete(
+                (await wallet.snapshot(edition.mint)) as Snapshot
+              ).owned.length
               if (cards)
                 return {active: 'random', restore, migration: 'offer', cards}
             }
