@@ -19,7 +19,7 @@ const VENDOR = fileURLToPath(
 )
 
 const UPSTREAM_SHA256 =
-  '5e73a4426b04ddecf03f9c671ec771fd1a4eb5350136624035756c1f16272572'
+  'fe1ee584e280afcbcd023fb00c0ab9e3ac15c77a22211992ed8cc456b2ecf6ce'
 
 const edition: CollectionEdition = {
   id: '600b-e1',
