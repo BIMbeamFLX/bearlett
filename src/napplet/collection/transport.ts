@@ -46,20 +46,22 @@ type Route =
 const DEFAULT_MAX_BYTES = 3 * 1024 * 1024
 
 /**
- * The operations that change nothing at the mint, and so may simply be asked
- * again. Trades, sales and possession proofs are not here: the card library
- * keeps their pending outputs and decides itself when to send them again.
+ * The reads this router asks again itself: they change nothing at the mint, and
+ * the card library sends each of them once. Two reads that change nothing are
+ * not here, `checkstate` and `restore`, because the card library waits those
+ * out itself, as often and as long as the mint's `retry-after` says; asking
+ * again here as well would multiply every wait. Trades, sales and possession
+ * proofs are not here either: the card library keeps their pending outputs and
+ * decides itself when to send them again.
  */
-const READ_ONLY: ReadonlySet<NutftOperation> = new Set([
+const RETRIED: ReadonlySet<NutftOperation> = new Set([
   'info',
   'keys',
   'keysets',
   'catalog',
   'blob',
   'state',
-  'supply',
-  'checkstate',
-  'restore'
+  'supply'
 ])
 
 /** Asked at most this often, waiting between tries as the mint asks. */
@@ -130,12 +132,14 @@ export function routeRequest(
  * at a time, and the wallet asks for `/v1/info` and `/v1/keys` together, so
  * without this queue the second of the pair would be refused as a duplicate.
  *
- * A read that the mint answers with 429 or 503, or that the shell could not
- * deliver, is asked again: after the wait the mint named, or a backoff that
- * doubles from half a second, never more than twenty seconds at a time and at
- * most four times in all. The queue waits with it, since a rate limit is on
- * this client and not on one call. What still fails after that is handed to
- * the library as it came.
+ * A read in `RETRIED` that the mint answers with 429 or 503, or that the shell
+ * could not deliver, is asked again: after the wait the mint named, or a
+ * backoff that doubles from half a second, never more than twenty seconds at a
+ * time and at most four times in all. The queue waits with it, since a rate
+ * limit is on this client and not on one call. Every other answer, and what
+ * still fails after that, is handed to the library as it came, with the mint's
+ * wait as a `retry-after` header in whole seconds, which is what the library
+ * reads when it waits for itself.
  */
 export function createCollectionFetch(
   options: CollectionTransportOptions
@@ -192,7 +196,7 @@ export function createCollectionFetch(
       ...(route.parameter !== undefined ? {parameter: route.parameter} : {}),
       ...(body !== undefined ? {body} : {})
     }
-    const retries = READ_ONLY.has(route.operation)
+    const retries = RETRIED.has(route.operation)
     const reply = await serialised(async () => {
       for (let attempt = 0; ; attempt += 1) {
         if (attempt === 0) tell(route.operation)
@@ -211,9 +215,11 @@ export function createCollectionFetch(
         await sleep(retryInMs)
       }
     })
-    return new Response(reply.body, {
-      status: reply.status,
-      headers: {'content-type': 'application/json'}
-    })
+    const headers: Record<string, string> = {
+      'content-type': 'application/json'
+    }
+    if (reply.retryAfterMs !== undefined && reply.retryAfterMs >= 0)
+      headers['retry-after'] = String(Math.ceil(reply.retryAfterMs / 1000))
+    return new Response(reply.body, {status: reply.status, headers})
   }
 }

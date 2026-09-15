@@ -410,17 +410,22 @@ ever move forward, and a card already held is not added twice. So the account
 wallet receives and hands over while its restore still waits, and a restore
 never overwrites a card that arrived meanwhile.
 
-A mint that asks the collection to wait is waited for. Every read the mint does
-not change anything with (`info`, `keys`, `checkstate`, `restore` and the
-catalogue reads) is asked again after a 429 or 503 or a lost answer: after the
-wait the mint names, or a backoff that doubles from half a second, never more
-than twenty seconds at a time and at most four times in all
-(`src/napplet/collection/transport.ts`). A restore that still stops says *Restoring
-your cards is waiting for the mint. It continues by itself, and nothing is lost
-in between.* and runs again by itself after fifteen seconds, doubling up to
-five minutes, without blocking anything else. Until the card library
-checkpoints a restore per batch, which is upstream work, a restore that runs
-again starts from its first slot.
+A mint that asks the collection to wait is waited for, by one layer per
+request. `restore` and `checkstate` are waited out by the card library: after a
+429, a 5xx or a lost answer it asks again no sooner than the mint's
+`retry-after`, doubling from a second, never more than thirty seconds at a time
+and at most eight times. The collection's router hands those answers straight
+on, with the mint's wait as `retry-after`, and never asks again itself. The
+other reads, which the library sends once (`info`, `keys` and the catalogue
+reads), are asked again by the router: after the wait the mint names, or a
+backoff doubling from half a second, never more than twenty seconds at a time
+and at most four times (`src/napplet/collection/transport.ts`). While the
+library waits, the wallet's other operations wait behind it, a few minutes at
+most. A restore that still stops says *Restoring your cards is waiting for the
+mint. It continues by itself, and nothing is lost in between.* and runs again by
+itself after fifteen seconds, doubling up to five minutes. The library
+checkpoints a restore after every batch, and the collection keeps that
+checkpoint, so a restore that runs again continues where it stopped.
 
 A card is restorable once it sits on the account's own deterministic outputs.
 Importing a card re-issues it to them, which is why a card received on one

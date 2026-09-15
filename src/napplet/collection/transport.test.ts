@@ -287,20 +287,44 @@ describe('createCollectionFetch', () => {
       ])
       const waits: number[] = []
       const seen: unknown[][] = []
-      const reply = await fetcherFor(
-        nutft,
-        waits,
-        seen
-      )(`${MINT}/v1/checkstate`, {method: 'POST', body: '{"Ys":[]}'})
+      const reply = await fetcherFor(nutft, waits, seen)(`${MINT}/v1/keys`)
       expect(reply.status).toBe(200)
       expect(nutft.calls).toHaveLength(3)
       /* The mint's own wait first, then the backoff for the second try. */
       expect(waits).toEqual([1500, 1000])
       expect(seen).toEqual([
-        ['checkstate'],
-        ['checkstate', {retryInMs: 1500}],
-        ['checkstate', {retryInMs: 1000}]
+        ['keys'],
+        ['keys', {retryInMs: 1500}],
+        ['keys', {retryInMs: 1000}]
       ])
+    })
+
+    it('leaves restore and checkstate to the library, with the wait the mint named', async () => {
+      for (const [path, body] of [
+        ['/v1/restore', '{"outputs":[]}'],
+        ['/v1/checkstate', '{"Ys":[]}']
+      ]) {
+        const nutft = scripted([
+          {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 1500},
+          new Error('never reached')
+        ])
+        const waits: number[] = []
+        const reply = await fetcherFor(nutft, waits)(`${MINT}${path}`, {
+          method: 'POST',
+          body
+        })
+        /* Handed on at once, asked once: the library waits, and only it. */
+        expect(reply.status).toBe(429)
+        expect(reply.headers.get('retry-after')).toBe('2')
+        expect(nutft.calls).toHaveLength(1)
+        expect(waits).toEqual([])
+
+        const lost = scripted([new Error('Shell request timed out.')])
+        await expect(
+          fetcherFor(lost)(`${MINT}${path}`, {method: 'POST', body})
+        ).rejects.toThrow(/timed out/)
+        expect(lost.calls).toHaveLength(1)
+      }
     })
 
     it('asks again when the shell could not deliver, then gives up with its error', async () => {
@@ -308,10 +332,7 @@ describe('createCollectionFetch', () => {
       const nutft = scripted([lost(), lost(), lost(), lost(), lost()])
       const waits: number[] = []
       await expect(
-        fetcherFor(nutft, waits)(`${MINT}/v1/restore`, {
-          method: 'POST',
-          body: '{"outputs":[]}'
-        })
+        fetcherFor(nutft, waits)(`${MINT}/nutft/catalog`)
       ).rejects.toThrow(/timed out/)
       expect(nutft.calls).toHaveLength(ATTEMPTS)
       expect(waits).toEqual([500, 1000, 2000])
