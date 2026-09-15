@@ -178,7 +178,8 @@ export function openSession(deps: SessionDeps) {
 
   let words: string | null = null
   let derived: SeededWallet | null = null
-  const mnemonic = (): string => (words ??= hostMnemonic(seed!, crypto))
+  const mnemonic = (): string =>
+    (words ??= hostMnemonic(seed!, edition.id, crypto))
   const seeded = (): SeededWallet =>
     (derived ??= seededWallet(mnemonic(), crypto, cashu))
 

@@ -4,7 +4,9 @@ import * as bip39 from '@scure/bip39'
 import {wordlist} from '@scure/bip39/wordlists/english.js'
 import {HDKey} from '@scure/bip32'
 import {getPubKeyFromPrivKey} from '@cashu/cashu-ts'
-import {bytesToHex} from '@noble/hashes/utils.js'
+import {hkdf} from '@noble/hashes/hkdf.js'
+import {sha256} from '@noble/hashes/sha2.js'
+import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {UNSAFE_OPEN_MESSAGE} from '../../host/nutft-contract'
 import {
   WALLET_KEY_PATH,
@@ -52,24 +54,47 @@ describe('seedFingerprint', () => {
 })
 
 describe('hostMnemonic', () => {
-  it('encodes 32 bytes of entropy as 24 BIP39 words', () => {
-    expect(hostMnemonic('00'.repeat(32), crypto)).toBe(
-      `${'abandon '.repeat(23)}art`
+  /* Derived here from the documented recipe, not from the module's own code. */
+  const recipe = (seed: string, editionId: string) =>
+    bip39.entropyToMnemonic(
+      hkdf(
+        sha256,
+        hexToBytes(seed),
+        utf8ToBytes('bearlett:nutft:wallet'),
+        utf8ToBytes(editionId),
+        32
+      ),
+      wordlist
     )
-    const words = hostMnemonic(SEED, crypto)
+
+  it('encodes 32 bytes of edition entropy as 24 BIP39 words', () => {
+    const words = hostMnemonic(SEED, '600b-e1', crypto)
+    expect(words).toBe(recipe(SEED, '600b-e1'))
     expect(words.split(' ')).toHaveLength(24)
     expect(bip39.validateMnemonic(words, wordlist)).toBe(true)
   })
 
+  it('gives each edition its own wallet from one account seed', () => {
+    const e1 = hostMnemonic(SEED, '600b-e1', crypto)
+    const g = hostMnemonic(SEED, '600b-g', crypto)
+    expect(e1).not.toBe(g)
+    expect(hostMnemonic(SEED, '600b-e1', crypto)).toBe(e1)
+    /* And never the seed read directly as entropy. */
+    expect(e1).not.toBe(bip39.entropyToMnemonic(hexToBytes(SEED), wordlist))
+  })
+
   it('refuses a malformed seed before any words exist', () => {
     for (const value of refused)
-      expect(() => hostMnemonic(value, crypto)).toThrow(UNSAFE_OPEN_MESSAGE)
+      expect(() => hostMnemonic(value, '600b-e1', crypto)).toThrow(
+        UNSAFE_OPEN_MESSAGE
+      )
+    expect(() => hostMnemonic(SEED, '', crypto)).toThrow(UNSAFE_OPEN_MESSAGE)
   })
 })
 
 describe('seededWallet', () => {
   it('derives the key on the card library path, with nothing held yet', () => {
-    const words = hostMnemonic(SEED, crypto)
+    const words = hostMnemonic(SEED, '600b-e1', crypto)
     const key = HDKey.fromMasterSeed(bip39.mnemonicToSeedSync(words)).derive(
       "m/129373'/10'/0'/0'/0"
     ).privateKey!

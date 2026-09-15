@@ -1,3 +1,4 @@
+import {hkdf} from '@noble/hashes/hkdf.js'
 import {sha256} from '@noble/hashes/sha2.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {UnsafeLease, isHostSeed} from '../../host/nutft-contract'
@@ -5,16 +6,19 @@ import {UnsafeLease, isHostSeed} from '../../host/nutft-contract'
 /**
  * The account's seed, once the shell has handed it over.
  *
- * The shell sends 32 bytes of BIP39 entropy and never words; `readNutftLease`
- * has already refused anything else. This module turns those bytes into the
- * three things the collection needs: the mnemonic the card library derives its
- * key and NUT-13 counters from, a fingerprint that names the wallet's storage
- * key without revealing the seed, and the wallet state the library itself
- * writes for that mnemonic.
+ * The shell sends 32 bytes and never words; `readNutftLease` has already
+ * refused anything else. This module turns those bytes into the three things
+ * the collection needs: the mnemonic the card library derives its key and
+ * NUT-13 counters from, a fingerprint that names the wallet's storage key
+ * without revealing the seed, and the wallet state the library itself writes
+ * for that mnemonic.
  *
  * None of these values is logged or put into an error. A seed that is not a
  * host seed throws the one fixed sentence the lease uses, whatever it was.
  */
+
+/** The HKDF salt that separates wallet entropy from every other use of a seed. */
+export const WALLET_SALT = 'bearlett:nutft:wallet'
 
 /** The path the card library derives its P2BK key on. */
 export const WALLET_KEY_PATH = "m/129373'/10'/0'/0'/0"
@@ -63,12 +67,32 @@ export const seedFingerprint = (seed: string): string =>
     sha256(utf8ToBytes(`bearlett:nutft:fingerprint:${checked(seed)}`))
   ).slice(0, 16)
 
-/** The 24 words the 32 bytes encode. Kept in memory, never shown. */
+/**
+ * The 24 words of one edition's wallet. Kept in memory, never shown.
+ *
+ * A shell may hand one account the same seed in every collection, so the seed
+ * is not used as the wallet's entropy directly: that would give 600B Edition
+ * One and 600B G the same key and the same address. Each edition's entropy is
+ * HKDF-SHA256 over the seed, salted with `bearlett:nutft:wallet` and bound to
+ * the edition id. The id and not the mint URL, because the id is fixed forever
+ * and the mint address is a build input that may change; a wallet derived from
+ * the address would change with it and leave the account's cards behind.
+ */
 export const hostMnemonic = (
   seed: string,
+  editionId: string,
   crypto: Pick<SeedCrypto, 'entropyToMnemonic' | 'wordlist'>
-): string =>
-  crypto.entropyToMnemonic(hexToBytes(checked(seed)), crypto.wordlist)
+): string => {
+  if (!editionId) throw new UnsafeLease()
+  const entropy = hkdf(
+    sha256,
+    hexToBytes(checked(seed)),
+    utf8ToBytes(WALLET_SALT),
+    utf8ToBytes(editionId),
+    32
+  )
+  return crypto.entropyToMnemonic(entropy, crypto.wordlist)
+}
 
 /**
  * The state the library's `restoreSeed` writes for this mnemonic before it
