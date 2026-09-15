@@ -32,7 +32,7 @@ const restoreElsewhere = async (mint: TestNutftMint) => {
 }
 
 describe('regression: every confirmed card is restorable from the seed', () => {
-  it.fails('a move whose re-issue is refused once', async () => {
+  it('a move whose re-issue is refused once', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1, 2])
     await restoredAccount(phone, ACCOUNT_A)
@@ -47,30 +47,23 @@ describe('regression: every confirmed card is restorable from the seed', () => {
     expect(await restoreElsewhere(mint)).toBe(2)
   })
 
-  it.fails(
-    'a move interrupted between the import and the re-issue',
-    async () => {
-      const mint = new TestNutftMint()
-      const {phone} = await deviceWithCards(mint, [1])
-      await restoredAccount(phone, ACCOUNT_A)
-      const ui = phone.open(ACCOUNT_A)
-      await ui.session.open()
-      /* The account wallet's write that starts the re-issue is refused once, as
+  it('a move interrupted between the import and the re-issue', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    /* The account wallet's write that starts the re-issue is refused once, as
        a full quota or a closed frame would stop it. */
-      const key = accountKey(ACCOUNT_A)
-      refuseWrite(phone.storage, key, async value =>
-        Boolean(
-          JSON.parse(await sealedWith(ACCOUNT_A).open(value, key)).pending
-        )
-      )
-      const result = await ui.session
-        .migrate()
-        .catch(() => ui.session.migrate())
-      expect(result).toEqual({moved: 1, gone: 0, restored: null})
-      expect((await ui.session.snapshot()).owned).toHaveLength(1)
-      expect(await restoreElsewhere(mint)).toBe(1)
-    }
-  )
+    const key = accountKey(ACCOUNT_A)
+    refuseWrite(phone.storage, key, async value =>
+      Boolean(JSON.parse(await sealedWith(ACCOUNT_A).open(value, key)).pending)
+    )
+    const result = await ui.session.migrate().catch(() => ui.session.migrate())
+    expect(result).toEqual({moved: 1, gone: 0, restored: null})
+    expect((await ui.session.snapshot()).owned).toHaveLength(1)
+    expect(await restoreElsewhere(mint)).toBe(1)
+  })
 
   it('a three-card token whose second re-issue answer is lost', async () => {
     const mint = new TestNutftMint()

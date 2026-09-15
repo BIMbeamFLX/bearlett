@@ -1,9 +1,11 @@
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
+import vm from 'node:vm'
 import {UNSAFE_OPEN_MESSAGE} from '../../host/nutft-contract'
 import type {NutftOperation} from '../../host/nutft-contract'
 import {
   ACCOUNT_A,
   ACCOUNT_B,
+  FRIEND,
   RANDOM_KEY,
   TestNutftMint,
   accountKey,
@@ -12,12 +14,14 @@ import {
   device,
   fingerprint,
   rateLimit,
+  refuseJournalAfterTrade,
   secretOf,
   unreachable,
   watchConsole
 } from './harness'
 import {MigrationStopped} from './migration'
 import {ReceiveProblem} from './receive'
+import {MOVE_OPEN, NOT_A_HANDOVER} from './session'
 import {decodeCards, encodeCards} from './tokens'
 import {WalletUnreadable} from './wallets'
 
@@ -559,6 +563,8 @@ describe('moving the device cards to the account', () => {
       restored: null
     })
     expect(phone.storage.map.get(accountKey(ACCOUNT_A))).toBe(before)
+    /* Nothing to move, so nothing about a move is written either. */
+    expect(phone.storage.map.has(MIGRATION_KEY)).toBe(false)
     expect((await b.session.snapshot()).owned).toEqual([])
     expect(mint.calls.filter(call => call.operation === 'trade')).toHaveLength(
       1
@@ -595,5 +601,138 @@ describe('moving the device cards to the account', () => {
       migration: 'elsewhere'
     })
     expect(await none.session.destination()).toBe(address)
+  })
+})
+
+/* An error made in another realm, the way the card library's errors reach
+   the session in a napplet. */
+const foreignError = (message: string): unknown =>
+  vm.runInContext(`new Error(${JSON.stringify(message)})`, vm.createContext({}))
+
+const tradesAt = (mint: TestNutftMint) =>
+  mint.calls.filter(call => call.operation === 'trade').length
+
+describe('a move and the wallets around it', () => {
+  it('runs one move when it is asked for twice at once', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1, 2])
+    await restoredAccount(phone, ACCOUNT_A)
+    const {session} = phone.open(ACCOUNT_A)
+    await session.open()
+    const trades = tradesAt(mint)
+    const first = session.migrate()
+    const second = session.migrate()
+    expect(second).toBe(first)
+    expect(await first).toEqual({moved: 2, gone: 0, restored: null})
+    /* Each card: one trade to the account, and its re-issue there. */
+    expect(tradesAt(mint) - trades).toBe(4)
+  })
+
+  it('takes in a card the device wallet handed to the account, and never lists it', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1, 2])
+    const old = phone.open()
+    await old.session.open()
+    const [first] = (await old.session.snapshot()).owned
+    const {token} = await old.session.handOver(
+      secretOf(first),
+      addressOf(ACCOUNT_A).pubkey
+    )
+    await restoredAccount(phone, ACCOUNT_A)
+
+    const {session} = phone.open(ACCOUNT_A)
+    expect(await session.open()).toEqual({
+      active: 'random',
+      restore: false,
+      migration: 'offer',
+      cards: 2
+    })
+    expect(await session.sent()).toEqual([])
+    await expect(session.passedOn([token!])).rejects.toThrow(NOT_A_HANDOVER)
+    expect(await session.migrate()).toEqual({
+      moved: 2,
+      gone: 0,
+      restored: null
+    })
+    expect((await session.snapshot()).owned).toHaveLength(2)
+    expect((await phone.state(RANDOM_KEY)).outgoing).toEqual([])
+  })
+
+  it('passes over a card the account already took in, told so from another realm', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    const importToken = ui.wallet.importToken
+    ui.wallet.importToken = async (mintUrl, token) => {
+      ui.wallet.importToken = importToken
+      await importToken(mintUrl, token)
+      throw foreignError('token is already in this wallet')
+    }
+    expect(await ui.session.migrate()).toEqual({
+      moved: 1,
+      gone: 0,
+      restored: null
+    })
+    expect((await ui.session.snapshot()).owned).toHaveLength(1)
+  })
+
+  it('stops instead of counting a card the account could not take in', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    const importToken = ui.wallet.importToken
+    ui.wallet.importToken = async () => {
+      ui.wallet.importToken = importToken
+      throw foreignError('token is spent or not addressed to this wallet')
+    }
+    const stopped = await ui.session.migrate().catch(error => error)
+    expect(stopped).toBeInstanceOf(MigrationStopped)
+    expect(ui.session.active).toBe('random')
+    expect(await ui.session.moveUnfinished()).toBe(true)
+
+    expect(await ui.session.migrate()).toEqual({
+      moved: 1,
+      gone: 0,
+      restored: null
+    })
+    expect(await ui.session.moveUnfinished()).toBe(false)
+  })
+
+  it('refuses to hand over, receive or pass on from the device wallet while it moves', async () => {
+    const mint = new TestNutftMint()
+    const {phone, address} = await deviceWithCards(mint, [1, 2, 3])
+    const before = phone.open()
+    await before.session.open()
+    const [first] = (await before.session.snapshot()).owned
+    const {token} = await before.session.handOver(secretOf(first), FRIEND)
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    /* The move stops after its first trade, with a card still to go. */
+    refuseJournalAfterTrade(phone.storage)
+    await expect(ui.session.migrate()).rejects.toThrow(MigrationStopped)
+    expect(await ui.session.moveUnfinished()).toBe(true)
+
+    const [left] = (await ui.session.snapshot()).owned
+    await expect(ui.session.handOver(secretOf(left), FRIEND)).rejects.toThrow(
+      MOVE_OPEN
+    )
+    const refused = await ui.session
+      .receive(mint.issue(address, 3))
+      .catch(error => error)
+    expect(refused).toBeInstanceOf(ReceiveProblem)
+    expect(refused.reason).toBe('moving')
+    expect(await ui.session.sent()).toEqual([])
+    await expect(ui.session.passedOn([token!])).rejects.toThrow(MOVE_OPEN)
+
+    expect(await ui.session.migrate()).toEqual({
+      moved: 2,
+      gone: 0,
+      restored: null
+    })
   })
 })

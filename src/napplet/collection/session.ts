@@ -9,7 +9,12 @@ import {
   runMigration
 } from './migration'
 import type {MigrationCard, MigrationJournal, MigrationOps} from './migration'
-import {checkLockedTo, readCardToken, receiveProblem} from './receive'
+import {
+  ReceiveProblem,
+  checkLockedTo,
+  readCardToken,
+  receiveProblem
+} from './receive'
 import type {CardToken} from './receive'
 import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
@@ -110,9 +115,20 @@ export const RESTORE_WAITING =
   'Restoring your cards is waiting for the mint. It continues by itself, and nothing is lost in between.'
 export const MINT_UNASKED =
   'The mint could not confirm your cards just now. Nothing was changed; try again.'
+export const MOVE_OPEN =
+  'Cards on this device are being moved to an account. Nothing here can be handed over or cleared until that move has finished.'
+export const NOT_A_HANDOVER =
+  'That token belongs to your own wallets, not to a card you handed over, so it stays.'
 const NOT_OPEN = 'The collection is not open yet.'
 const NO_ACCOUNT =
   'Cards can only be moved once the collection is opened from your account.'
+
+/* Read as a property: the card library may run in another realm, where its
+   errors are not instances of this realm's Error. */
+const messageOf = (error: unknown): string => {
+  const message = (error as {message?: unknown} | null)?.message
+  return typeof message === 'string' ? message : ''
+}
 
 /* The binding and asset of a card, read from its proof secret. */
 const tagOf = (secret: string): {binding: string; asset_id: string} | null => {
@@ -549,6 +565,17 @@ export function openSession(deps: SessionDeps) {
     }
   }
 
+  /* Whether a move of this device's cards is unfinished, for any account. */
+  const moveOpen = async (): Promise<boolean> => Boolean(await readRecord())
+
+  /* Cards the device wallet sent to the account's address and nothing took
+     in yet: a move's own token, or a handover the holder made to themselves.
+     Neither is listed as a handover, so a move takes them in. */
+  const toAccount = (state: StoredWallet | null): number =>
+    (state?.outgoing ?? []).filter(entry =>
+      lockedTo(entry.token, seeded().privateKey)
+    ).length
+
   const moveOps: MigrationOps = {
     save: async journal =>
       store.setItem(
@@ -559,13 +586,15 @@ export function openSession(deps: SessionDeps) {
           box: await account!.codec.seal(JSON.stringify(journal), journalKey)
         } satisfies JournalRecord)
       ),
-    oldWallet: () => readWallet(store, randomKey),
-    oldCards: () =>
-      on(randomKey, async () => {
-        const snapshot = (await wallet.snapshot(edition.mint)) as Snapshot
-        if (isIncomplete(snapshot)) throw new MigrationStopped('failed')
-        return cardsOf(snapshot)
-      }),
+    oldWallet: async () => {
+      const state = await readWallet(store, randomKey)
+      return {
+        held: secretsIn(state?.tokens ?? []),
+        pending: state?.pending ?? null,
+        outgoing: (state?.outgoing ?? []).map(entry => entry.token)
+      }
+    },
+    states,
     trade: (secret, destination) =>
       on(randomKey, async () =>
         tokenOf(await wallet.tradeProof(edition.mint, secret, destination))
@@ -576,17 +605,108 @@ export function openSession(deps: SessionDeps) {
       try {
         const [proof, ...more] = cashu.getTokenMetadata(token).incompleteProofs
         const tag = proof && !more.length ? tagOf(proof.secret) : null
-        return tag ? {secret: proof.secret, ...tag} : null
+        return tag
+          ? {
+              secret: proof.secret,
+              ...tag,
+              toDestination: lockedTo(token, seeded().privateKey)
+            }
+          : null
       } catch {
         return null
       }
     },
-    importCard: token =>
+    settle: token =>
       on(account!.key, async () => {
-        await wallet.importToken(edition.mint, token)
-      }),
-    newCards: () =>
-      on(account!.key, async () => cardsOf(await snapshotHere(account!.key)))
+        const card = moveOps.cardOf(token)
+        if (!card?.toDestination) throw new MigrationStopped('damaged')
+        const host = await readWallet(store, account!.key)
+        if (
+          !secretsIn(host?.tokens ?? []).has(card.secret) &&
+          (await states([card.secret])).get(card.secret) === 'UNSPENT'
+        )
+          try {
+            await wallet.importToken(edition.mint, token)
+          } catch (error) {
+            /* Only a card this wallet already holds is passed over here. A
+               card it cannot hold is not quietly counted as moved. */
+            if (!/token is already in this wallet/.test(messageOf(error)))
+              throw error
+          }
+        /* Confirmed once the traded proof is spent, which is what the
+           account's own re-issue does to it; not while the account still
+           holds the proof the device made. */
+        if ((await reissue(account!.key, [card.secret])).length)
+          throw new MigrationStopped('unconfirmed')
+      })
+  }
+
+  /* The device's cards a move starts from, from a snapshot the mint answered
+     in full. */
+  const deviceCards = (): Promise<MigrationCard[]> =>
+    on(randomKey, async () => {
+      const snapshot = (await wallet.snapshot(edition.mint)) as Snapshot
+      if (isIncomplete(snapshot)) throw new MigrationStopped('failed')
+      return cardsOf(snapshot)
+    })
+
+  let moving: Promise<{
+    moved: number
+    gone: number
+    restored: number | null
+  }> | null = null
+
+  const move = async (
+    progress?: (done: number, total: number) => void
+  ): Promise<{moved: number; gone: number; restored: number | null}> => {
+    if (!opened) throw new SessionProblem(NOT_OPEN)
+    if (!account) throw new SessionProblem(NO_ACCOUNT)
+    const record = await readRecord()
+    if (record && record.to !== account.fingerprint)
+      throw new MigrationStopped('elsewhere')
+    /* The account wallet's counters come from the mint before any card is
+       re-issued to it. */
+    const restored = await serial(restoreHere)
+    const host = (await serial(accountWallet)) as StoredWallet
+    const device = await readWallet(store, randomKey)
+    let journal = record ? await readJournal(record) : null
+    if (journal && journal.destination !== host.pubkey)
+      throw new MigrationStopped('damaged')
+    if (
+      !journal &&
+      !device?.tokens.length &&
+      !device?.pending &&
+      !toAccount(device)
+    ) {
+      /* Nothing on the device to move: nothing is written. */
+      active = 'host'
+      return {moved: 0, gone: 0, restored}
+    }
+    if (!journal) {
+      journal = planMigration(host.pubkey, await deviceCards())
+      await moveOps.save(journal)
+    }
+    const result = await runMigration(journal, moveOps, progress)
+    /* The old wallet filed each move as a card sent. They are confirmed under
+       the account now, so they are forgotten there; a token is forgotten only
+       once it is checked to be locked to the account, so a handover to
+       anyone else can never be. */
+    for (const step of journal.steps)
+      if (step.state === 'confirmed' && step.token) {
+        const token = step.token
+        if (!moveOps.cardOf(token)?.toDestination) continue
+        await on(randomKey, () => wallet.forgetOutgoing(token))
+      }
+    await store.setItem(
+      journalKey,
+      JSON.stringify({
+        v: 1,
+        to: account.fingerprint,
+        finished: true
+      } satisfies JournalRecord)
+    )
+    active = 'host'
+    return {...result, restored}
   }
 
   return {
@@ -622,11 +742,13 @@ export function openSession(deps: SessionDeps) {
             /* Cards still in the device's random wallet keep it on screen
                until they are moved on purpose. */
             const random = await readWallet(store, randomKey)
-            if (random?.tokens.length) {
+            if (random && (random.tokens.length || toAccount(random))) {
               await point(randomKey)
-              const cards = complete(
+              const owned = complete(
                 (await wallet.snapshot(edition.mint)) as Snapshot
               ).owned.length
+              const cards =
+                owned + toAccount(await readWallet(store, randomKey))
               if (cards)
                 return {active: 'random', restore, migration: 'offer', cards}
             }
@@ -662,47 +784,21 @@ export function openSession(deps: SessionDeps) {
     /**
      * Move every unspent card of the device's random wallet to the account,
      * or continue a move that stopped. Switches the screen to the account
-     * wallet only when every card is confirmed under the account's key.
+     * wallet only when every card is confirmed under the account's key. A
+     * second call while one runs gets the same move, not another.
      */
-    migrate: async (
+    migrate: (
       progress?: (done: number, total: number) => void
-    ): Promise<{moved: number; gone: number; restored: number | null}> => {
-      if (!opened) throw new SessionProblem(NOT_OPEN)
-      if (!account) throw new SessionProblem(NO_ACCOUNT)
-      const record = await readRecord()
-      if (record && record.to !== account.fingerprint)
-        throw new MigrationStopped('elsewhere')
-      /* The account wallet's counters come from the mint before any card is
-         re-issued to it. */
-      const restored = await serial(restoreHere)
-      const host = (await serial(accountWallet)) as StoredWallet
-      let journal = record ? await readJournal(record) : null
-      if (journal && journal.destination !== host.pubkey)
-        throw new MigrationStopped('damaged')
-      if (!journal) {
-        journal = planMigration(host.pubkey, await moveOps.oldCards())
-        await moveOps.save(journal)
-      }
-      const result = await runMigration(journal, moveOps, progress)
-      /* The old wallet filed each move as a card sent. They are confirmed
-         under the account now, so they are not left to look like handovers
-         still waiting to be passed on. */
-      for (const step of journal.steps)
-        if (step.token) {
-          const sent = step.token
-          await on(randomKey, () => wallet.forgetOutgoing(sent))
-        }
-      await store.setItem(
-        journalKey,
-        JSON.stringify({
-          v: 1,
-          to: account.fingerprint,
-          finished: true
-        } satisfies JournalRecord)
-      )
-      active = 'host'
-      return {...result, restored}
-    },
+    ): Promise<{moved: number; gone: number; restored: number | null}> =>
+      (moving ??= move(progress).finally(() => {
+        moving = null
+      })),
+
+    /**
+     * Whether a move of this device's cards is unfinished, toward any account.
+     * While it is, the device wallet neither hands over nor receives.
+     */
+    moveUnfinished: (): Promise<boolean> => serial(moveOpen),
 
     /** This wallet's address at this mint, for a sender to hand cards to. */
     destination: (): Promise<string> =>
@@ -742,6 +838,8 @@ export function openSession(deps: SessionDeps) {
       }
       const key = activeKey()
       return on(key, async () => {
+        if (key === randomKey && (await moveOpen()))
+          throw new ReceiveProblem('moving')
         /* A random wallet gets its key on first use; the check needs it. */
         await wallet.destination()
         const state = (await wallet.read()) as StoredWallet
@@ -777,32 +875,76 @@ export function openSession(deps: SessionDeps) {
       }).catch(error => Promise.reject(receiveProblem(error)))
     },
 
-    handOver: (secret: string, recipient: string): Promise<{token?: string}> =>
-      on(activeKey(), async () => {
+    handOver: (
+      secret: string,
+      recipient: string
+    ): Promise<{token?: string}> => {
+      const key = activeKey()
+      return on(key, async () => {
+        if (key === randomKey && (await moveOpen()))
+          throw new SessionProblem(MOVE_OPEN)
         return (await wallet.tradeProof(edition.mint, secret, recipient)) as {
           token?: string
         }
+      })
+    },
+
+    /**
+     * Cards handed over and not yet confirmed as passed on, from the wallet on
+     * screen. The card library keeps every one in storage from the moment the
+     * mint re-binds it, because the token is the only thing that can ever
+     * claim that card.
+     *
+     * Never listed: a card re-issued to its own wallet, and a token locked to
+     * the account, which is a move's own token and no handover. While a move of
+     * this device's cards is unfinished nothing is listed, since a move toward
+     * another account cannot be told apart from a handover here.
+     */
+    sent: (): Promise<Array<{token: string; at?: string}>> =>
+      serial(async () => {
+        if (!opened) throw new SessionProblem(NOT_OPEN)
+        if (await moveOpen()) return []
+        const entries: Array<{token: string; at?: string}> = []
+        for (const key of [activeKey()]) {
+          const state = await readWallet(store, key)
+          if (!state?.privateKey) continue
+          for (const {token, at} of state.outgoing ?? []) {
+            if (lockedTo(token, state.privateKey)) continue
+            if (account && lockedTo(token, seeded().privateKey)) continue
+            entries.push({token, ...(at ? {at} : {})})
+          }
+        }
+        return entries
       }),
 
     /**
-     * Cards handed over from the wallet on screen and not yet confirmed as
-     * passed on, newest first. The card library keeps every one in storage
-     * from the moment the mint re-binds it, because the token is the only
-     * thing that can ever claim that card; a handover that stopped halfway
-     * still lists every card it did hand over.
+     * Forget handed-over cards the holder says were passed on. Refused while a
+     * move is unfinished, and for any token locked to one of this holder's own
+     * wallets.
      */
-    sent: (): Promise<Array<{token: string; at?: string}>> =>
-      on(activeKey(), async () => {
-        const state = (await wallet.read()) as StoredWallet
-        return (state.outgoing ?? [])
-          .filter(entry => !lockedTo(entry.token, state.privateKey))
-          .map(({token, at}) => ({token, ...(at ? {at} : {})}))
-      }),
-
-    /** Forget handed-over cards the holder says were passed on. */
     passedOn: (tokens: readonly string[]): Promise<void> =>
-      on(activeKey(), async () => {
-        for (const token of tokens) await wallet.forgetOutgoing(token)
+      serial(async () => {
+        if (!opened) throw new SessionProblem(NOT_OPEN)
+        if (await moveOpen()) throw new SessionProblem(MOVE_OPEN)
+        const wallets = [activeKey()]
+        for (const token of tokens) {
+          if (account && lockedTo(token, seeded().privateKey))
+            throw new SessionProblem(NOT_A_HANDOVER)
+          for (const key of wallets) {
+            const state = await readWallet(store, key)
+            if (state?.privateKey && lockedTo(token, state.privateKey))
+              throw new SessionProblem(NOT_A_HANDOVER)
+          }
+        }
+        for (const key of wallets) {
+          const state = await readWallet(store, key)
+          const theirs = tokens.filter(token =>
+            (state?.outgoing ?? []).some(entry => entry.token === token)
+          )
+          if (!theirs.length) continue
+          await point(key)
+          for (const token of theirs) await wallet.forgetOutgoing(token)
+        }
       })
   }
 }

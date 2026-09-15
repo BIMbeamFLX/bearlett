@@ -4,7 +4,7 @@ import {getWalletHost} from '../host'
 import type {WalletHost} from '../host'
 import {installNutftShim} from '../../host/nutft-shim'
 import {startCollectionWallet} from './bootstrap'
-import {RESTORE_WAITING} from './session'
+import {MOVE_OPEN, RESTORE_WAITING} from './session'
 import type {CollectionSession, Opening} from './session'
 import {buildCollectionView, filterStacks, scarcityRatio} from './cards'
 import type {CardAsset, CardStack, CollectionView, Snapshot} from './cards'
@@ -147,6 +147,9 @@ function App() {
     resume: boolean
   } | null>(null)
   const [elsewhere, setElsewhere] = createSignal(false)
+  /* The device's own wallet is on screen while a move of its cards is
+     unfinished: it neither hands over nor receives until the move is done. */
+  const [frozen, setFrozen] = createSignal(false)
   const [moving, setMoving] = createSignal('')
   const [moved, setMoved] = createSignal('')
   /* Receiving. The token lives in this signal and the field it fills, and is
@@ -260,6 +263,7 @@ function App() {
         session.active === 'host' ? (snapshot.unrestorable ?? 0) : 0
       )
       setSent(await session.sent())
+      setFrozen(session.active === 'random' && (await session.moveUnfinished()))
       /* While the device's own wallet is on screen, the offer counts what it
          holds now, after a card came in or went out. */
       if (session.active === 'random')
@@ -431,6 +435,7 @@ function App() {
         setMoving(`${done} of ${total}`)
       )
       setMove(null)
+      setFrozen(false)
       opening = {active: 'host', restore: false, migration: 'none', cards: 0}
       setMoved(
         `Moved ${result.moved} card${result.moved === 1 ? '' : 's'} to your account.` +
@@ -444,6 +449,8 @@ function App() {
     } catch (error) {
       setMove(current => current && {...current, resume: true})
       setFailure(readable(error))
+      const unfinished = await session.moveUnfinished().catch(() => true)
+      setFrozen(session.active === 'random' && unfinished)
     } finally {
       setBusy('')
       setMoving('')
@@ -724,7 +731,13 @@ function App() {
           <p class="notice" role="status">
             Some cards on this device are being moved to another account. Open
             this collection from that account to finish; nothing here touches
-            them.
+            them, and cards handed over are listed again once it has finished.
+          </p>
+        </Show>
+
+        <Show when={frozen()}>
+          <p class="notice" role="status">
+            {MOVE_OPEN}
           </p>
         </Show>
 
@@ -788,6 +801,7 @@ function App() {
                 <button
                   class="button"
                   aria-pressed={selecting()}
+                  disabled={frozen()}
                   onClick={() => {
                     setSelecting(on => !on)
                     setSelected([])
@@ -797,12 +811,16 @@ function App() {
                 </button>
                 <button
                   class="button button--go"
-                  disabled={!selected().length}
+                  disabled={frozen() || !selected().length}
                   onClick={() => setHandover(true)}
                 >
                   Hand over{selected().length ? ` (${selected().length})` : ''}
                 </button>
-                <button class="button" onClick={openReceive}>
+                <button
+                  class="button"
+                  disabled={frozen()}
+                  onClick={openReceive}
+                >
                   Receive
                 </button>
               </div>
@@ -951,6 +969,7 @@ function App() {
                 </button>
                 <button
                   class="button"
+                  disabled={frozen()}
                   onClick={() => {
                     setSelecting(true)
                     setSelected([stack().asset.asset_id])
@@ -1079,7 +1098,7 @@ function App() {
               <div class="actions">
                 <button
                   class="button button--go"
-                  disabled={Boolean(busy()) || !recipient().trim()}
+                  disabled={Boolean(busy()) || frozen() || !recipient().trim()}
                   onClick={hand}
                 >
                   Hand over

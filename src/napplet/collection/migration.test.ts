@@ -1,48 +1,51 @@
 import {describe, expect, it} from 'vitest'
-import vm from 'node:vm'
 import {
   MigrationStopped,
   parseMigrationJournal,
   planMigration,
   runMigration
 } from './migration'
-import type {
-  MigrationCard,
-  MigrationJournal,
-  MigrationOps,
-  OldWallet
-} from './migration'
+import type {MigrationCard, MigrationJournal, MigrationOps} from './migration'
 
 const DESTINATION = '02' + 'ab'.repeat(32)
-const card = (n: number): MigrationCard => ({
-  secret: `["P2PK",{"nonce":"${n}"}]`,
+const card = (n: number, copy = 0): MigrationCard => ({
+  secret: `["P2PK",{"nonce":"${n}-${copy}"}]`,
   binding: n.toString(16).padStart(64, 'b'),
   asset_id: `600B-E1-00${n}`
 })
 
 /**
- * Two wallets and a mint, reduced to what a move can observe. A token here is
- * `cashuB` and the secret it carries; a fault can be set to strike once.
+ * Two wallets and a mint, reduced to what a move can observe. A token is
+ * `cashuB` followed by whom it is locked to and the proof it carries; a trade
+ * gives the card a new proof, as the mint does. A fault strikes once.
  */
 const world = (cards: MigrationCard[]) => {
-  const old: {cards: MigrationCard[]} & Required<OldWallet> = {
+  const old = {
     cards: [...cards],
-    pending: null,
-    outgoing: []
+    pending: null as {type: string; input_secret: string} | null,
+    outgoing: [] as string[]
   }
-  const account = {cards: [] as MigrationCard[], imported: new Set<string>()}
+  const account = {cards: [] as MigrationCard[]}
+  const spent = new Set<string>()
   const saved: MigrationJournal[] = []
   const calls: string[] = []
   const faults: {
     tradeLost?: string
     tradeRefused?: string
     saveAfterTrade?: boolean
-    importUnseen?: boolean
-    newCardsDown?: boolean
+    statesDown?: boolean
+    settleWaits?: number
     leak?: string
   } = {}
-  const registry = new Map(cards.map(c => [c.secret, c]))
-  const tokenFor = (secret: string) => `cashuB${secret}`
+  const registry = new Map<string, MigrationCard>()
+  const tokenOf = (to: 'account' | 'friend', moved: MigrationCard) => {
+    registry.set(moved.secret, moved)
+    return `cashuB:${to}:${moved.secret}`
+  }
+  const tradeOf = (secret: string, to: 'account' | 'friend') => {
+    const traded = cards.find(c => c.secret === secret)!
+    return tokenOf(to, {...traded, secret: `traded:${secret}`})
+  }
 
   const ops: MigrationOps = {
     save: async journal => {
@@ -56,10 +59,20 @@ const world = (cards: MigrationCard[]) => {
       }
       saved.push(structuredClone(journal))
     },
-    oldWallet: async () => ({pending: old.pending, outgoing: old.outgoing}),
-    oldCards: async () => {
-      calls.push('oldCards')
-      return [...old.cards]
+    oldWallet: async () => ({
+      held: new Set(old.cards.map(c => c.secret)),
+      pending: old.pending,
+      outgoing: [...old.outgoing]
+    }),
+    states: async secrets => {
+      calls.push(`states:${secrets.length}`)
+      if (faults.statesDown) {
+        faults.statesDown = false
+        throw new Error('mint unreachable')
+      }
+      return new Map(
+        secrets.map(secret => [secret, spent.has(secret) ? 'SPENT' : 'UNSPENT'])
+      )
     },
     trade: async (secret, destination) => {
       calls.push(`trade:${secret}`)
@@ -68,43 +81,52 @@ const world = (cards: MigrationCard[]) => {
         faults.tradeRefused = undefined
         throw new Error(`disconnected ${faults.leak ?? ''}`)
       }
+      spent.add(secret)
       old.cards = old.cards.filter(c => c.secret !== secret)
       if (faults.tradeLost === secret) {
         faults.tradeLost = undefined
         old.pending = {type: 'trade', input_secret: secret}
-        throw new Error(`answer lost for ${tokenFor(secret)}`)
+        throw new Error(`answer lost for ${tradeOf(secret, 'account')}`)
       }
-      old.outgoing = [{token: tokenFor(secret)}, ...old.outgoing]
-      return tokenFor(secret)
+      const token = tradeOf(secret, 'account')
+      old.outgoing = [token, ...old.outgoing]
+      return token
     },
     finishTrade: async () => {
       calls.push('finishTrade')
-      const secret = old.pending!.input_secret!
+      const token = tradeOf(old.pending!.input_secret, 'account')
       old.pending = null
-      old.outgoing = [{token: tokenFor(secret)}, ...old.outgoing]
-      return tokenFor(secret)
+      old.outgoing = [token, ...old.outgoing]
+      return token
     },
-    cardOf: token => registry.get(token.replace(/^cashuB/, '')) ?? null,
-    importCard: async token => {
-      calls.push(`import:${token}`)
-      if (account.imported.has(token))
-        throw new Error('token is already in this wallet')
-      account.imported.add(token)
-      if (faults.importUnseen) return
-      const moved = registry.get(token.replace(/^cashuB/, ''))!
-      /* Re-issued to the account's own outputs: a new secret, the same card. */
-      account.cards.push({...moved, secret: `reissued:${moved.secret}`})
+    cardOf: token => {
+      const [, to, secret] = token.split(/:(account|friend):/)
+      const moved = registry.get(secret)
+      return moved ? {...moved, toDestination: to === 'account'} : null
     },
-    newCards: async () => {
-      calls.push('newCards')
-      if (faults.newCardsDown) {
-        faults.newCardsDown = false
-        throw new Error('mint unreachable')
+    settle: async token => {
+      calls.push(`settle:${token}`)
+      const moved = ops.cardOf(token)!
+      if (faults.settleWaits) {
+        faults.settleWaits -= 1
+        throw new MigrationStopped('unconfirmed')
       }
-      return [...account.cards]
+      /* Re-issued to the account's own outputs: the traded proof is spent. */
+      if (!spent.has(moved.secret)) {
+        spent.add(moved.secret)
+        account.cards.push({...moved, secret: `own:${moved.secret}`})
+      }
     }
   }
-  return {old, account, saved, calls, faults, ops}
+  /* A token of the old wallet's own: a handover, or a move it made earlier. */
+  const sent = (to: 'account' | 'friend', which: MigrationCard) => {
+    spent.add(which.secret)
+    old.cards = old.cards.filter(c => c.secret !== which.secret)
+    const token = tradeOf(which.secret, to)
+    old.outgoing = [token, ...old.outgoing]
+    return token
+  }
+  return {old, account, spent, saved, calls, faults, ops, sent}
 }
 
 const lastSaved = (w: ReturnType<typeof world>) =>
@@ -126,6 +148,10 @@ describe('runMigration', () => {
       card(2).binding
     ])
     expect(progress).toEqual(['1/2', '2/2'])
+    expect(lastSaved(w).steps.map(s => s.state)).toEqual([
+      'confirmed',
+      'confirmed'
+    ])
   })
 
   it('journals each step before the mint is asked to do it', async () => {
@@ -138,7 +164,7 @@ describe('runMigration', () => {
           'trading'
         )
       }
-      if (call.startsWith('import:')) {
+      if (call.startsWith('settle:')) {
         const which = call.endsWith(card(1).secret) ? 0 : 1
         expect(w.calls[index - 1].split(':')[1].split(',')[which]).toBe(
           'importing'
@@ -159,35 +185,58 @@ describe('runMigration', () => {
     expect(lastSaved(w).steps[0].state).toBe('trading')
 
     /* The window closed; the next open reads the journal back. */
-    const trades = w.calls.filter(call => call.startsWith('trade:')).length
     expect(await runMigration(lastSaved(w), w.ops)).toEqual({
       moved: 2,
       gone: 0
     })
     expect(w.calls).toContain('finishTrade')
-    /* The first card was not traded a second time. */
     expect(
       w.calls.filter(call => call === `trade:${card(1).secret}`)
     ).toHaveLength(1)
-    expect(w.calls.filter(call => call.startsWith('trade:')).length).toBe(
-      trades + 1
-    )
   })
 
-  it('resumes from the sent transfer when the journal missed the answer', async () => {
-    const w = world([card(1)])
+  it('finds the traded card by its lock when the journal missed the answer', async () => {
+    const w = world([card(1), card(2), card(3)])
+    w.faults.saveAfterTrade = true
+    await expect(
+      runMigration(planMigration(DESTINATION, w.old.cards), w.ops)
+    ).rejects.toThrow(MigrationStopped)
+    expect(lastSaved(w).steps[0].state).toBe('trading')
+    expect(w.old.outgoing).toHaveLength(1)
+    /* Before the move resumes, the list changes: a handover of the same card's
+       binding and a move of another card land in front of the token. */
+    w.sent('friend', card(3))
+    w.old.outgoing = [`cashuB:friend:${card(1).secret}-copy`, ...w.old.outgoing]
+
+    expect(await runMigration(lastSaved(w), w.ops)).toEqual({moved: 2, gone: 1})
+    expect(
+      w.calls.filter(call => call === `trade:${card(1).secret}`)
+    ).toHaveLength(1)
+    expect(lastSaved(w).steps.map(s => s.state)).toEqual([
+      'confirmed',
+      'confirmed',
+      'gone'
+    ])
+  })
+
+  it('never takes another copy of the same card, or another step’s token', async () => {
+    const one = card(1, 1)
+    const two = card(1, 2)
+    const w = world([one, two])
     w.faults.saveAfterTrade = true
     await expect(
       runMigration(planMigration(DESTINATION, w.old.cards), w.ops)
     ).rejects.toThrow(MigrationStopped)
     const journal = lastSaved(w)
-    expect(journal.steps[0]).toMatchObject({
-      state: 'trading',
-      outgoingBefore: 0
-    })
-    expect(w.old.outgoing).toHaveLength(1)
+    expect(journal.steps.map(s => s.state)).toEqual(['trading', 'planned'])
+    /* Both copies traded before the journal caught up. */
+    const first = w.old.outgoing[0]
+    const second = w.sent('account', two)
+    journal.steps[1].state = 'trading'
 
-    expect(await runMigration(journal, w.ops)).toEqual({moved: 1, gone: 0})
+    expect(await runMigration(journal, w.ops)).toEqual({moved: 2, gone: 0})
+    const tokens = lastSaved(w).steps.map(step => step.token)
+    expect(new Set(tokens)).toEqual(new Set([first, second]))
     expect(w.calls.filter(call => call.startsWith('trade:'))).toHaveLength(1)
   })
 
@@ -204,86 +253,102 @@ describe('runMigration', () => {
     expect(w.calls.filter(call => call.startsWith('trade:'))).toHaveLength(2)
   })
 
-  it('marks a card gone only when nothing says it was traded here', async () => {
-    const w = world([card(1), card(2)])
+  it('gives a card up as gone only when it left the wallet another way', async () => {
+    const w = world([card(1), card(2), card(3)])
     const journal = planMigration(DESTINATION, w.old.cards)
-    journal.steps[0] = {
-      ...journal.steps[0],
-      state: 'trading',
-      outgoingBefore: 0
-    }
-    /* Spent elsewhere, from another copy of the old wallet. */
-    w.old.cards = [card(2)]
-    expect(await runMigration(journal, w.ops)).toEqual({moved: 1, gone: 1})
-    expect(lastSaved(w).steps.map(s => s.state)).toEqual(['gone', 'importing'])
+    journal.steps.forEach(step => (step.state = 'trading'))
+    /* Card 1 was handed to a friend; card 2 was spent from another copy of
+       this wallet and is still listed here; card 3 never left. */
+    w.sent('friend', card(1))
+    w.spent.add(card(2).secret)
+
+    expect(await runMigration(journal, w.ops)).toEqual({moved: 1, gone: 2})
+    expect(lastSaved(w).steps.map(s => s.state)).toEqual([
+      'gone',
+      'gone',
+      'confirmed'
+    ])
   })
 
-  it('counts an import that landed before the move stopped', async () => {
+  it('stops, and gives nothing up, while the mint cannot be asked', async () => {
     const w = world([card(1)])
     const journal = planMigration(DESTINATION, w.old.cards)
-    w.faults.newCardsDown = true
-    /* The baseline read fails before the first import. */
-    await expect(runMigration(journal, w.ops)).rejects.toThrow(MigrationStopped)
-    const resumed = lastSaved(w)
-    expect(resumed.steps[0].state).toBe('traded')
-    expect(await runMigration(resumed, w.ops)).toEqual({moved: 1, gone: 0})
-    /* And once more from `importing`, as after a crash right after import. */
-    const again = lastSaved(w)
-    expect(again.steps[0].state).toBe('importing')
-    expect(await runMigration(again, w.ops)).toEqual({moved: 1, gone: 0})
+    journal.steps[0].state = 'trading'
+    w.faults.statesDown = true
+    const outcome = await runMigration(journal, w.ops).catch(error => error)
+    expect(outcome).toBeInstanceOf(MigrationStopped)
+    expect(outcome.reason).toBe('failed')
+    expect(journal.steps[0].state).toBe('trading')
+    expect(w.calls.filter(call => call.startsWith('trade:'))).toEqual([])
   })
 
-  it('recognises the library refusal when it comes from another realm', async () => {
+  it('refuses a traded token that is not locked to the account', async () => {
     const w = world([card(1)])
-    await runMigration(planMigration(DESTINATION, w.old.cards), w.ops)
-    const again = lastSaved(w)
-    expect(again.steps[0].state).toBe('importing')
-    /* The card library runs in its own realm in tests, and its errors are
-       not instances of this realm's Error. */
-    const foreign = vm.runInContext(
-      'new Error("token is already in this wallet")',
-      vm.createContext({})
-    )
-    expect(foreign instanceof Error).toBe(false)
-    const importCard = w.ops.importCard
-    w.ops.importCard = async () => {
-      throw foreign
+    const trade = w.ops.trade
+    w.ops.trade = async (secret, destination) => {
+      await trade(secret, destination)
+      return `cashuB:friend:traded:${secret}`
     }
-    expect(await runMigration(again, w.ops)).toEqual({moved: 1, gone: 0})
-    w.ops.importCard = importCard
-  })
-
-  it('refuses to finish while a card is not confirmed under the account', async () => {
-    const w = world([card(1), card(2)])
-    w.faults.importUnseen = true
     const outcome = await runMigration(
       planMigration(DESTINATION, w.old.cards),
       w.ops
     ).catch(error => error)
+    expect(outcome.reason).toBe('damaged')
+    expect(w.calls.some(call => call.startsWith('settle:'))).toBe(false)
+  })
+
+  it('confirms each step on its own, and stops while one is unconfirmed', async () => {
+    const w = world([card(1), card(2)])
+    const journal = planMigration(DESTINATION, w.old.cards)
+    const outcome = await runMigration(journal, {
+      ...w.ops,
+      settle: async token => {
+        if (token.endsWith(card(2).secret)) {
+          w.calls.push(`settle:${token}`)
+          throw new MigrationStopped('unconfirmed')
+        }
+        return w.ops.settle(token)
+      }
+    }).catch(error => error)
     expect(outcome).toBeInstanceOf(MigrationStopped)
     expect(outcome.reason).toBe('unconfirmed')
     expect(lastSaved(w).steps.map(s => s.state)).toEqual([
-      'importing',
+      'confirmed',
       'importing'
     ])
-    /* The cards turn up under the account key; the move then finishes. */
-    w.account.cards.push(
-      {...card(1), secret: 'reissued-later-1'},
-      {...card(2), secret: 'reissued-later-2'}
-    )
+
+    /* The account's re-issue goes through later; the move then finishes. */
     expect(await runMigration(lastSaved(w), w.ops)).toEqual({
       moved: 2,
       gone: 0
     })
+    expect(w.calls.filter(call => call.endsWith(card(1).secret))).toHaveLength(
+      2
+    )
   })
 
-  it('does not count a card the account already held as a moved one', async () => {
-    const w = world([card(1)])
-    w.account.cards.push({...card(1), secret: 'held-before-the-move'})
-    w.faults.importUnseen = true
-    await expect(
-      runMigration(planMigration(DESTINATION, w.old.cards), w.ops)
-    ).rejects.toThrow(/not yet confirmed/)
+  it('takes in a move token that no step knows about', async () => {
+    const w = world([card(1), card(2)])
+    const journal = planMigration(DESTINATION, [card(1)])
+    w.sent('account', card(2))
+    expect(await runMigration(journal, w.ops)).toEqual({moved: 2, gone: 0})
+    expect(w.account.cards.map(c => c.binding)).toEqual([
+      card(1).binding,
+      card(2).binding
+    ])
+    expect(lastSaved(w).steps).toHaveLength(2)
+  })
+
+  it('leaves a handover to anyone else alone', async () => {
+    const w = world([card(1), card(2)])
+    const handover = w.sent('friend', card(2))
+    expect(
+      await runMigration(planMigration(DESTINATION, [card(1)]), w.ops)
+    ).toEqual({moved: 1, gone: 0})
+    expect(w.old.outgoing).toContain(handover)
+    expect(
+      w.calls.some(call => call.endsWith(`friend:${card(2).secret}`))
+    ).toBe(false)
   })
 
   it('waits while the old wallet finishes a transfer of its own', async () => {
@@ -316,9 +381,9 @@ describe('runMigration', () => {
 
 describe('parseMigrationJournal', () => {
   const journal = () => {
-    const j = planMigration(DESTINATION, [card(1), card(2)])
-    j.held = {[card(1).binding]: ['held']}
+    const j = planMigration(DESTINATION, [card(1), card(2), card(3)])
     j.steps[0] = {...j.steps[0], state: 'importing', token: 'cashuBx'}
+    j.steps[2] = {...j.steps[2], state: 'confirmed', token: 'cashuBz'}
     return JSON.parse(JSON.stringify(j))
   }
 
@@ -332,13 +397,15 @@ describe('parseMigrationJournal', () => {
       j => (j.destination = DESTINATION.toUpperCase()),
       j => (j.kind = 'bearlett/other'),
       j => (j.v = 2),
+      j => (j.steps = {}),
       j => (j.steps[1].state = 'confirmed'),
+      j => (j.steps[1].state = 'held'),
       j => (j.steps[1].token = 'cashuBy'),
       j => delete j.steps[0].token,
-      j => delete j.held,
+      j => (j.steps[2].token = 'cashuBx'),
       j => (j.steps[0].binding = 'x'.repeat(64)),
-      j => (j.steps[1].outgoingBefore = -1),
-      j => (j.held = {[card(1).binding]: [7]})
+      j => (j.steps[0].asset_id = ''),
+      j => (j.steps[0].secret = 7)
     ]
     for (const change of variants) {
       const j = journal()

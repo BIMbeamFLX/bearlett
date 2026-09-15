@@ -40,6 +40,8 @@ const SAID = {
     'The mint could not be reached, so nothing was redeemed. Try again.',
   waiting:
     'A card is already waiting here to be redeemed. Redeem or clear it first.',
+  moving:
+    'Cards on this device are still being moved to an account, so nothing can be received here until that move has finished.',
   failed: 'The card could not be redeemed. Try again.'
 } as const
 

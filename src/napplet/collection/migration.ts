@@ -8,12 +8,20 @@
  * move survives a closed window, a lost answer and a crash.
  *
  * Each card goes through the mint twice. The old wallet trades it to the
- * account's address, then the account wallet imports it, which also re-issues
- * it to the account's own deterministic outputs so NUT-09 can find it again.
- * Every step is written to the journal before the mint is asked to do it, so a
- * move that stopped is resumed from what the journal and the old wallet say,
- * never guessed. The screen switches wallets only after every card has been
- * confirmed under the account's key.
+ * account's address, then the account wallet takes it in and re-issues it to
+ * its own deterministic outputs, so NUT-09 can find it again. Every step is
+ * written to the journal before the mint is asked to do it, so a move that
+ * stopped is resumed from what the journal, the old wallet and the mint say,
+ * never guessed.
+ *
+ * A traded card is recognised by its lock, not by where it sits in a list: a
+ * one-card token in the old wallet's sent transfers, locked to the account's
+ * key, with the step's card binding, and not already another step's. A card
+ * is given up as gone only when no such token exists and the mint says its
+ * proof is spent, or the proof has left the old wallet. A step is confirmed on
+ * its own, once the mint says its traded proof is spent, which only the
+ * account's re-issue does; the screen switches wallets only after every step
+ * that is not gone is confirmed.
  *
  * Only a random wallet is ever moved, and only to the account whose seed is
  * present. Cards under one account's key are never moved to another account.
@@ -31,10 +39,8 @@ export type MigrationCard = {
 }
 
 export type MigrationStep = MigrationCard & {
-  state: 'planned' | 'trading' | 'traded' | 'importing' | 'gone'
-  /** How many sent transfers the old wallet held when this trade began. */
-  outgoingBefore?: number
-  /** The card, traded to the account's address, until it is imported. */
+  state: 'planned' | 'trading' | 'traded' | 'importing' | 'confirmed' | 'gone'
+  /** The card, traded to the account's address, once it is known. */
   token?: string
 }
 
@@ -43,40 +49,44 @@ export type MigrationJournal = {
   kind: typeof JOURNAL_KIND
   /** The account wallet's address; every trade goes there and nowhere else. */
   destination: string
-  /** Cards the account wallet held before the first import, by binding. */
-  held?: Record<string, string[]>
   steps: MigrationStep[]
 }
 
+/** The old wallet as stored, read without the mint. */
 export type OldWallet = {
+  /** Secrets of the proofs its tokens hold. */
+  held: ReadonlySet<string>
   pending?: {type?: string; input_secret?: string} | null
-  outgoing?: ReadonlyArray<{token: string}>
+  /** Its sent transfers, newest first. */
+  outgoing: readonly string[]
+}
+
+/** A one-card token, read without the mint. */
+export type TradedCard = MigrationCard & {
+  /** Locked to the account's key: a move's token, and nobody else's. */
+  toDestination: boolean
 }
 
 export type MigrationOps = {
   /** Write the journal. Called before every step that reaches the mint. */
   save(journal: MigrationJournal): Promise<void>
-  /** The old wallet as stored, without asking the mint. */
-  oldWallet(): Promise<OldWallet | null>
-  /** Cards the mint says are unspent in the old wallet. */
-  oldCards(): Promise<MigrationCard[]>
+  oldWallet(): Promise<OldWallet>
+  /** What the mint says about proofs; throws when it could not be asked. */
+  states(secrets: readonly string[]): Promise<Map<string, 'UNSPENT' | 'SPENT'>>
   /** Trade one card from the old wallet to an address; the card's token. */
   trade(secret: string, destination: string): Promise<string>
   /** Finish the old wallet's interrupted trade; the card's token. */
   finishTrade(): Promise<string>
-  /** Read a single-card token without the mint, or null. */
-  cardOf(token: string): MigrationCard | null
-  /** Import a card into the account wallet. */
-  importCard(token: string): Promise<void>
-  /** Cards the mint says are unspent under the account wallet's key. */
-  newCards(): Promise<MigrationCard[]>
+  cardOf(token: string): TradedCard | null
+  /**
+   * Take a traded card into the account wallet and onto its own outputs.
+   * Resolves once the mint says the traded proof is spent, and rejects while
+   * it is not, so the step can be tried again.
+   */
+  settle(token: string): Promise<void>
 }
 
 export const JOURNAL_KIND = 'bearlett/nutft-migration'
-
-/** The card library's words for a token it already took in. */
-export const ALREADY_TAKEN =
-  /token is already in this wallet|token is spent or not addressed to this wallet/
 
 const SAID = {
   busy: 'The device wallet is finishing another transfer. Try again in a moment.',
@@ -117,7 +127,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const HEX64 = /^[0-9a-f]{64}$/
-const STATES = ['planned', 'trading', 'traded', 'importing', 'gone']
+const STATES = [
+  'planned',
+  'trading',
+  'traded',
+  'importing',
+  'confirmed',
+  'gone'
+]
+const WITH_TOKEN = ['traded', 'importing', 'confirmed']
 
 const isStep = (value: unknown): value is MigrationStep =>
   isRecord(value) &&
@@ -130,10 +148,7 @@ const isStep = (value: unknown): value is MigrationStep =>
   value.asset_id.length > 0 &&
   value.asset_id.length <= 64 &&
   STATES.includes(value.state as string) &&
-  (value.outgoingBefore === undefined ||
-    (Number.isSafeInteger(value.outgoingBefore) &&
-      (value.outgoingBefore as number) >= 0)) &&
-  (['traded', 'importing'].includes(value.state as string)
+  (WITH_TOKEN.includes(value.state as string)
     ? typeof value.token === 'string' && value.token.length > 0
     : value.token === undefined)
 
@@ -152,44 +167,19 @@ export function parseMigrationJournal(value: unknown): MigrationJournal {
     !value.steps.every(isStep)
   )
     throw new MigrationStopped('damaged')
-  const held = value.held
-  if (
-    held !== undefined &&
-    !(
-      isRecord(held) &&
-      Object.entries(held).every(
-        ([binding, secrets]) =>
-          HEX64.test(binding) &&
-          Array.isArray(secrets) &&
-          secrets.every(secret => typeof secret === 'string')
-      )
-    )
-  )
-    throw new MigrationStopped('damaged')
-  const steps = value.steps as MigrationStep[]
-  if (held === undefined && steps.some(step => step.state === 'importing'))
+  const tokens = value.steps
+    .map(step => (step as MigrationStep).token)
+    .filter(token => token !== undefined)
+  if (new Set(tokens).size !== tokens.length)
     throw new MigrationStopped('damaged')
   return value as MigrationJournal
-}
-
-const heldBy = (cards: readonly MigrationCard[]): Record<string, string[]> => {
-  const held: Record<string, string[]> = {}
-  for (const card of cards) (held[card.binding] ??= []).push(card.secret)
-  return held
-}
-
-/* Read as a property: the card library may run in another realm, where its
-   errors are not instances of this realm's Error. */
-const messageOf = (error: unknown): string => {
-  const message = (error as {message?: unknown} | null)?.message
-  return typeof message === 'string' ? message : ''
 }
 
 /**
  * Run a journal to the end, or stop with a fixed sentence.
  *
- * Resolves only once every card that was not already gone is confirmed under
- * the account's key, which is when the caller may switch wallets.
+ * Resolves only once every step is confirmed or gone, which is when the caller
+ * may switch wallets.
  */
 export async function runMigration(
   journal: MigrationJournal,
@@ -211,18 +201,25 @@ async function run(
   ops: MigrationOps,
   progress?: (done: number, total: number) => void
 ): Promise<{moved: number; gone: number}> {
-  const total = journal.steps.length
   let done = 0
-  let stillOld: Set<string> | null = null
 
-  /* Where the trade of one card stands, and the token when it is done. `null`
-     means the card left the old wallet by some other way and cannot be moved;
-     only a card with no pending trade, no new sent transfer and no unspent
-     proof left in the old wallet is called that. */
+  /* The old wallet's sent transfers that are a move's token for this card,
+     newest first, and not already another step's. */
+  const tokenFor = (step: MigrationStep, old: OldWallet): string | null => {
+    const claimed = new Set(journal.steps.map(other => other.token))
+    for (const token of old.outgoing) {
+      if (claimed.has(token)) continue
+      const card = ops.cardOf(token)
+      if (card?.toDestination && card.binding === step.binding) return token
+    }
+    return null
+  }
+
+  /* Where the trade of one card stands, and its token once it is done. `null`
+     means the card left the old wallet some other way and cannot be moved. */
   const trade = async (step: MigrationStep): Promise<string | null> => {
     const old = await ops.oldWallet()
-    const outgoing = old?.outgoing ?? []
-    if (old?.pending) {
+    if (old.pending) {
       const ours =
         step.state === 'trading' &&
         old.pending.type === 'trade' &&
@@ -230,73 +227,77 @@ async function run(
       if (!ours) throw new MigrationStopped('busy')
       return ops.finishTrade()
     }
-    if (step.state === 'trading') {
-      const sent = outgoing[0]?.token
-      if (
-        sent &&
-        step.outgoingBefore !== undefined &&
-        outgoing.length > step.outgoingBefore &&
-        ops.cardOf(sent)?.binding === step.binding
-      )
-        return sent
-      stillOld ??= new Set((await ops.oldCards()).map(card => card.secret))
-      if (!stillOld.has(step.secret)) return null
+    const held = old.held.has(step.secret)
+    if (step.state === 'trading' || !held) {
+      /* Still held and unspent: the trade never went through, so it is asked
+         for again. Otherwise it went through, or the card went another way,
+         and only its token can tell which. */
+      const unspent =
+        held && (await ops.states([step.secret])).get(step.secret) === 'UNSPENT'
+      if (!unspent) return tokenFor(step, old)
     }
     step.state = 'trading'
-    step.outgoingBefore = outgoing.length
     await ops.save(journal)
     return ops.trade(step.secret, journal.destination)
   }
 
-  for (const step of journal.steps) {
+  const advance = async (step: MigrationStep): Promise<void> => {
     if (step.state === 'planned' || step.state === 'trading') {
       const token = await trade(step)
-      delete step.outgoingBefore
       if (token === null) {
         step.state = 'gone'
         await ops.save(journal)
-        progress?.(++done, total)
-        continue
+        return
       }
+      const card = ops.cardOf(token)
+      if (!card?.toDestination || card.binding !== step.binding)
+        throw new MigrationStopped('damaged')
       step.token = token
       step.state = 'traded'
       await ops.save(journal)
     }
     if (step.state === 'traded') {
-      journal.held ??= heldBy(await ops.newCards())
       step.state = 'importing'
       await ops.save(journal)
     }
     if (step.state === 'importing') {
-      try {
-        await ops.importCard(step.token!)
-      } catch (error) {
-        /* An import that landed before the move stopped. Confirmation below
-           counts the card either way. */
-        if (!ALREADY_TAKEN.test(messageOf(error))) throw error
-      }
+      await ops.settle(step.token!)
+      step.state = 'confirmed'
+      await ops.save(journal)
     }
-    progress?.(++done, total)
   }
 
-  const moving = journal.steps.filter(step => step.state !== 'gone')
-  if (moving.length) {
-    /* Each moved card adds exactly one unspent proof under the account's key
-       that was not there before the first import, whether it is the traded
-       proof or its re-issue. Nothing else writes to the account wallet while
-       its move is open, so fewer new proofs than moved cards means a card is
-       not confirmed, and the switch waits. */
-    const held = journal.held ?? {}
-    const fresh = new Map<string, number>()
-    for (const card of await ops.newCards())
-      if (!held[card.binding]?.includes(card.secret))
-        fresh.set(card.binding, (fresh.get(card.binding) ?? 0) + 1)
-    const wanted = new Map<string, number>()
-    for (const step of moving)
-      wanted.set(step.binding, (wanted.get(step.binding) ?? 0) + 1)
-    for (const [binding, count] of wanted)
-      if ((fresh.get(binding) ?? 0) < count)
-        throw new MigrationStopped('unconfirmed')
+  for (let index = 0; index < journal.steps.length; index += 1) {
+    await advance(journal.steps[index])
+    progress?.(++done, journal.steps.length)
   }
-  return {moved: moving.length, gone: total - moving.length}
+
+  /* A move's token that no step claims, left in the old wallet's sent
+     transfers by an earlier stop, is still a card for the account. It is taken
+     in too, rather than left where nothing would ever show it again. */
+  const claimed = new Set(journal.steps.map(step => step.token))
+  const strays = (await ops.oldWallet()).outgoing.flatMap(token => {
+    const card = claimed.has(token) ? null : ops.cardOf(token)
+    return card?.toDestination ? [{token, card}] : []
+  })
+  if (strays.length) {
+    const added: MigrationStep[] = strays.map(({token, card}) => ({
+      secret: card.secret,
+      binding: card.binding,
+      asset_id: card.asset_id,
+      state: 'importing',
+      token
+    }))
+    journal.steps.push(...added)
+    await ops.save(journal)
+    for (const step of added) {
+      await advance(step)
+      progress?.(++done, journal.steps.length)
+    }
+  }
+
+  return {
+    moved: journal.steps.filter(step => step.state === 'confirmed').length,
+    gone: journal.steps.filter(step => step.state === 'gone').length
+  }
 }
