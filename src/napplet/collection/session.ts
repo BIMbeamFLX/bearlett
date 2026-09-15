@@ -9,17 +9,12 @@ import {
   runMigration
 } from './migration'
 import type {MigrationCard, MigrationJournal, MigrationOps} from './migration'
-import {
-  ReceiveProblem,
-  checkLockedTo,
-  readCardToken,
-  receiveProblem
-} from './receive'
+import {checkLockedTo, readCardToken, receiveProblem} from './receive'
 import type {CardToken} from './receive'
 import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
 import type {KeyTools, SeedCrypto, SeededWallet} from './seed'
-import {decodeCards} from './tokens'
+import {decodeCards, encodeCards} from './tokens'
 import type {CardProof, TokenCodec} from './tokens'
 import {
   WalletUnreadable,
@@ -111,10 +106,8 @@ export class SessionProblem extends Error {
   }
 }
 
-export const RESTORE_FAILED =
-  'Your cards could not be restored from the mint. Nothing was lost; try again.'
-export const STILL_RESTORING =
-  'Your cards are still being restored. Try again once that has finished.'
+export const RESTORE_WAITING =
+  'Restoring your cards is waiting for the mint. It continues by itself, and nothing is lost in between.'
 export const MINT_UNASKED =
   'The mint could not confirm your cards just now. Nothing was changed; try again.'
 const NOT_OPEN = 'The collection is not open yet.'
@@ -157,6 +150,17 @@ const tokenOf = (result: unknown): string => {
   return token
 }
 
+/* What a restore writes into before its cards join the wallet: nothing. */
+const EMPTY: StoredWallet = {
+  privateKey: '',
+  pubkey: '',
+  seedPhrase: '',
+  counters: {},
+  tokens: [],
+  outgoing: [],
+  pending: null
+}
+
 /* What a move writes beside the wallets: whose move it is, in the clear, and
    the journal itself sealed for that account. A finished move keeps only the
    first half. */
@@ -179,15 +183,21 @@ export function openSession(deps: SessionDeps) {
       ? null
       : (() => {
           const fingerprint = seedFingerprint(seed)
+          const key = hostWalletKey(edition, fingerprint)
           return {
             fingerprint,
-            key: hostWalletKey(edition, fingerprint),
+            key,
+            /* Where a restore lands before its cards join the wallet. */
+            restoreKey: `${key}:restore`,
             codec: sealedWith(seed)
           }
         })()
   /* Sealed from the first write: the account wallet is never stored in the
      clear, and a clear value found under its key is refused, not read. */
-  if (account) store.protect(account.key, account.codec)
+  if (account) {
+    store.protect(account.key, account.codec)
+    store.protect(account.restoreKey, account.codec)
+  }
 
   let words: string | null = null
   let derived: SeededWallet | null = null
@@ -440,27 +450,69 @@ export function openSession(deps: SessionDeps) {
     return {...snapshot, unrestorable}
   }
 
-  const ready = async (): Promise<void> => {
-    if (active !== 'host') return
-    if ((await readWallet(store, account!.key))?.restore === 'pending')
-      throw new SessionProblem(STILL_RESTORING)
+  /* The restored proofs this wallet does not hold yet join it as one token;
+     counters only ever move forward. */
+  const merge = (current: StoredWallet, restored: StoredWallet) => {
+    const held = secretsIn([
+      ...current.tokens,
+      ...(current.outgoing ?? []).map(entry => entry.token)
+    ])
+    const fresh: CardProof[] = []
+    let unit = ''
+    for (const token of restored.tokens)
+      try {
+        const cards = decodeCards(token, cashu)
+        unit = cards.unit
+        for (const proof of cards.proofs)
+          if (!held.has(proof.secret)) {
+            held.add(proof.secret)
+            fresh.push(proof)
+          }
+      } catch {
+        /* the library wrote it; one it cannot read back is not added */
+      }
+    const counters = {...(current.counters ?? {})}
+    for (const [name, value] of Object.entries(restored.counters ?? {}))
+      counters[name] = Math.max(Number(counters[name] ?? 0), Number(value))
+    const {restore: _, ...rest} = current
+    const tokens = fresh.length
+      ? [
+          ...current.tokens,
+          encodeCards({mint: edition.mint, unit, proofs: fresh}, cashu)
+        ]
+      : current.tokens
+    return {
+      state: {...rest, tokens, counters, seedSource: 'host'} as StoredWallet,
+      added: fresh.length
+    }
   }
 
+  /* NUT-09 restore from the seed alone, into a slot of its own, so that a card
+     received while the restore still waits is neither blocked nor overwritten:
+     the restored cards join the wallet beside it. */
   const restoreHere = async (): Promise<number | null> => {
     const host = await accountWallet()
     if (host.restore !== 'pending') return null
-    await point(account!.key)
-    let found: number
     try {
-      found = Number(await wallet.restoreSeed(edition.mint, mnemonic()))
+      if (host.pending) {
+        await point(account!.key)
+        await wallet.recoverPending()
+      }
+      await writeWallet(store, account!.restoreKey, EMPTY)
+      await point(account!.restoreKey)
+      await wallet.restoreSeed(edition.mint, mnemonic())
     } catch {
-      throw new SessionProblem(RESTORE_FAILED)
+      throw new SessionProblem(RESTORE_WAITING)
     }
-    /* The library writes a fresh state; ours is added back to it. */
-    const restored = await readWallet(store, account!.key)
-    if (!restored || restored.restore) throw new SessionProblem(RESTORE_FAILED)
-    await writeWallet(store, account!.key, {...restored, seedSource: 'host'})
-    return found
+    const restored = await readWallet(store, account!.restoreKey)
+    if (!restored || restored.pubkey !== seeded().pubkey)
+      throw new SessionProblem(RESTORE_WAITING)
+    const current = await readWallet(store, account!.key)
+    if (!current) throw new SessionProblem(RESTORE_WAITING)
+    const {state, added} = merge(current, restored)
+    await writeWallet(store, account!.key, state)
+    await writeWallet(store, account!.restoreKey, EMPTY)
+    return added
   }
 
   const readRecord = async (): Promise<JournalRecord | null> => {
@@ -597,7 +649,9 @@ export function openSession(deps: SessionDeps) {
 
     /**
      * Restore the account's cards from the mint, NUT-09, from the seed alone.
-     * Resolves to the number found, or `null` when there was nothing to do.
+     * Resolves to the number of cards that joined the wallet, or `null` when
+     * there was nothing to do. A restore that stops says it is waiting, and
+     * runs again from the start on the next try.
      */
     restore: (): Promise<number | null> =>
       serial(async () => {
@@ -688,11 +742,6 @@ export function openSession(deps: SessionDeps) {
       }
       const key = activeKey()
       return on(key, async () => {
-        if (
-          active === 'host' &&
-          (await readWallet(store, account!.key))?.restore === 'pending'
-        )
-          throw new ReceiveProblem('restoring')
         /* A random wallet gets its key on first use; the check needs it. */
         await wallet.destination()
         const state = (await wallet.read()) as StoredWallet
@@ -730,7 +779,6 @@ export function openSession(deps: SessionDeps) {
 
     handOver: (secret: string, recipient: string): Promise<{token?: string}> =>
       on(activeKey(), async () => {
-        await ready()
         return (await wallet.tradeProof(edition.mint, secret, recipient)) as {
           token?: string
         }

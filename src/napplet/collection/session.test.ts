@@ -18,7 +18,6 @@ import {
 } from './harness'
 import {MigrationStopped} from './migration'
 import {ReceiveProblem} from './receive'
-import {STILL_RESTORING} from './session'
 import {decodeCards, encodeCards} from './tokens'
 import {WalletUnreadable} from './wallets'
 
@@ -248,16 +247,6 @@ describe('a collection with an account seed', () => {
     await expect(session.destination()).rejects.toThrow()
   })
 
-  it('does not hand over from an account wallet still being restored', async () => {
-    const mint = new TestNutftMint()
-    const {session} = device(mint).open(ACCOUNT_A)
-    await session.open()
-    await expect(
-      session.handOver('a secret', addressOf(ACCOUNT_B).pubkey)
-    ).rejects.toThrow(STILL_RESTORING)
-    expect(mint.calls.filter(call => call.operation === 'trade')).toEqual([])
-  })
-
   it('refuses a seed that is not 64 lowercase hex before anything opens', () => {
     const mint = new TestNutftMint()
     const phone = device(mint)
@@ -348,18 +337,6 @@ describe('receiving a card', () => {
     expect(outcome).toBeInstanceOf(ReceiveProblem)
     expect(said(outcome)).not.toContain(card.slice(0, 30))
     expect((await session.snapshot()).owned).toEqual([])
-  })
-
-  it('waits for an account wallet to finish restoring', async () => {
-    const mint = new TestNutftMint()
-    const {session} = device(mint).open(ACCOUNT_A)
-    await session.open()
-    const card = mint.issue(addressOf(ACCOUNT_A).pubkey, 1)
-    const outcome = await session.receive(card).catch(error => error)
-    expect(outcome.reason).toBe('restoring')
-    expect(mint.calls.filter(call => call.operation === 'checkstate')).toEqual(
-      []
-    )
   })
 
   it('keeps a card waiting for its re-issue, and tries again on refresh', async () => {

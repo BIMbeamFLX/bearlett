@@ -69,39 +69,36 @@ describe('regression: restoring under a rate limit', () => {
     expect((await two.session.snapshot()).owned).toHaveLength(3)
   })
 
-  it.fails(
-    'receives while a restore keeps being refused, and finishes it later',
-    async () => {
-      const mint = new TestNutftMint()
-      const address = await accountWithCards(mint, [0, 1, 3])
-      let refusing = true
-      intercept(mint, async request =>
-        refusing && request.operation === 'restore'
-          ? {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 60000}
-          : undefined
-      )
+  it('receives while a restore keeps being refused, and finishes it later', async () => {
+    const mint = new TestNutftMint()
+    const address = await accountWithCards(mint, [0, 1, 3])
+    let refusing = true
+    intercept(mint, async request =>
+      refusing && request.operation === 'restore'
+        ? {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 60000}
+        : undefined
+    )
 
-      const laptop = device(mint)
-      const two = laptop.open(ACCOUNT_A)
-      await two.session.open()
-      const stopped = await two.session.restore().catch(error => error)
-      expect(stopped).toBeInstanceOf(Error)
-      expect(stopped.message).toMatch(/continues/)
-      expect(
-        (await laptop.state(accountKey(ACCOUNT_A), ACCOUNT_A)).restore
-      ).toBe('pending')
+    const laptop = device(mint)
+    const two = laptop.open(ACCOUNT_A)
+    await two.session.open()
+    const stopped = await two.session.restore().catch(error => error)
+    expect(stopped).toBeInstanceOf(Error)
+    expect(stopped.message).toMatch(/continues/)
+    expect((await laptop.state(accountKey(ACCOUNT_A), ACCOUNT_A)).restore).toBe(
+      'pending'
+    )
 
-      /* Card 2 lands on an output the first device never used. */
-      expect(await two.session.receive(mint.issue(address, 2))).toBe(1)
-      expect((await two.session.snapshot()).owned).toHaveLength(1)
+    /* Card 2 lands on an output the first device never used. */
+    expect(await two.session.receive(mint.issue(address, 2))).toBe(1)
+    expect((await two.session.snapshot()).owned).toHaveLength(1)
 
-      refusing = false
-      /* The three cards the first device holds come back beside it. */
-      expect(await two.session.restore()).toBe(3)
-      expect((await two.session.snapshot()).owned).toHaveLength(4)
-      expect(
-        (await laptop.state(accountKey(ACCOUNT_A), ACCOUNT_A)).restore
-      ).toBeUndefined()
-    }
-  )
+    refusing = false
+    /* The three cards the first device holds come back beside it. */
+    expect(await two.session.restore()).toBe(3)
+    expect((await two.session.snapshot()).owned).toHaveLength(4)
+    expect(
+      (await laptop.state(accountKey(ACCOUNT_A), ACCOUNT_A)).restore
+    ).toBeUndefined()
+  })
 })

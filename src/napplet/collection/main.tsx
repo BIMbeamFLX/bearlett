@@ -4,6 +4,7 @@ import {getWalletHost} from '../host'
 import type {WalletHost} from '../host'
 import {installNutftShim} from '../../host/nutft-shim'
 import {startCollectionWallet} from './bootstrap'
+import {RESTORE_WAITING} from './session'
 import type {CollectionSession, Opening} from './session'
 import {buildCollectionView, filterStacks, scarcityRatio} from './cards'
 import type {CardAsset, CardStack, CollectionView, Snapshot} from './cards'
@@ -132,6 +133,11 @@ function App() {
   const [started, setStarted] = createSignal(false)
   const [checked, setChecked] = createSignal(0)
   const [restored, setRestored] = createSignal('')
+  /* A restore the mint made wait continues by itself, and never blocks the
+     rest of the collection while it waits. */
+  const [restoreWaiting, setRestoreWaiting] = createSignal(false)
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined
+  let restoreDelay = 15_000
   /* Cards held that are not yet on the account's own outputs. */
   const [unrestorable, setUnrestorable] = createSignal(0)
   /* The device's cards and the account: a move offered, or one that stopped
@@ -357,18 +363,7 @@ function App() {
             resume: opening.migration === 'resume'
           })
       }
-      if (opening.active === 'host' && opening.restore) {
-        setChecked(0)
-        setBusy('Restoring your cards from the mint')
-        const found = await session.restore()
-        opening = {...opening, restore: false}
-        if (found !== null)
-          setRestored(
-            found
-              ? `Restored ${found} card${found === 1 ? '' : 's'} from the mint.`
-              : 'Nothing to restore: this account holds no cards at this mint yet.'
-          )
-      }
+      if (opening.active === 'host' && opening.restore) await restoreAccount()
       setMine(await session.destination())
       await refresh()
       /* A move the holder already started carries on without asking twice. */
@@ -380,6 +375,50 @@ function App() {
   }
 
   const retry = () => (mine() ? refresh() : begin())
+
+  /* Restore the account's cards. When the mint makes it wait, the collection
+     says so, stays usable, and tries again later by itself, waiting longer
+     each time up to five minutes. */
+  const restoreAccount = async () => {
+    if (!session) return
+    setChecked(0)
+    setBusy('Restoring your cards from the mint')
+    try {
+      const found = await session.restore()
+      clearTimeout(restoreTimer)
+      setRestoreWaiting(false)
+      restoreDelay = 15_000
+      if (opening) opening = {...opening, restore: false}
+      if (found !== null)
+        setRestored(
+          found
+            ? `Restored ${found} card${found === 1 ? '' : 's'} from the mint.`
+            : 'Nothing to restore: this account holds no cards at this mint yet.'
+        )
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== RESTORE_WAITING)
+        throw error
+      setRestoreWaiting(true)
+      clearTimeout(restoreTimer)
+      restoreTimer = setTimeout(() => void continueRestore(), restoreDelay)
+      restoreDelay = Math.min(restoreDelay * 2, 300_000)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const continueRestore = async () => {
+    if (busy()) {
+      restoreTimer = setTimeout(() => void continueRestore(), 5_000)
+      return
+    }
+    try {
+      await restoreAccount()
+      if (!restoreWaiting()) await refresh()
+    } catch (error) {
+      setFailure(readable(error))
+    }
+  }
 
   /* One button, pressed on purpose. The wallet on screen changes only once
      the session says every card is confirmed under the account's key. */
@@ -412,6 +451,7 @@ function App() {
   }
 
   onCleanup(() => {
+    clearTimeout(restoreTimer)
     requests?.close()
     receives?.close()
     faces?.dispose()
@@ -631,6 +671,12 @@ function App() {
         <Show when={restored()}>
           <p class="notice notice--good" role="status">
             {restored()}
+          </p>
+        </Show>
+
+        <Show when={restoreWaiting()}>
+          <p class="notice" role="status">
+            {RESTORE_WAITING}
           </p>
         </Show>
 

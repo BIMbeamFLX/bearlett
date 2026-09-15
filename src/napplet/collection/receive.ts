@@ -38,8 +38,6 @@ const SAID = {
   'unknown-card': 'The mint does not recognise this card.',
   unreachable:
     'The mint could not be reached, so nothing was redeemed. Try again.',
-  restoring:
-    'Your cards are still being restored. Try again once that has finished.',
   waiting:
     'A card is already waiting here to be redeemed. Redeem or clear it first.',
   failed: 'The card could not be redeemed. Try again.'
