@@ -3,13 +3,14 @@ import {
   OutputData,
   createBlindSignature,
   createDLEQProof,
+  createNewMintKeys,
   getEncodedToken,
   getTag,
   hashToCurve,
   pointFromHex,
   schnorrSignDigest
 } from '@cashu/cashu-ts'
-import {schnorr, secp256k1} from '@noble/curves/secp256k1.js'
+import {schnorr} from '@noble/curves/secp256k1.js'
 import {sha256} from '@noble/hashes/sha2.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import type {
@@ -24,9 +25,13 @@ import type {CardAsset} from './cards'
  *
  * Real blind signatures with DLEQ proofs, a catalogue signed the way the card
  * library verifies it, NUT-09 restore over every signature it ever issued, and
- * idempotent trades that refuse to change a card into another one. What it
- * leaves out is everything a collection napplet does not call: sales,
- * Lightning, P2PK witness checks and persistence.
+ * idempotent trades that refuse to change a card into another one. It is kept
+ * as close to `server/nutft-mint.js` as a collection can observe: the keyset
+ * comes from `createNewMintKeys`, so its id is a version 2 id and tokens carry
+ * the short form of it; an output that was already signed is refused, and the
+ * refusals use the mint's own words. What it leaves out is everything a
+ * collection napplet does not call: sales, Lightning, P2PK witness checks and
+ * persistence.
  */
 
 type Signature = {
@@ -64,7 +69,8 @@ const sha256Hex = (text: string): string =>
 export class TestNutftMint implements NutftHost {
   readonly url: string
   readonly unit: string
-  readonly id = '00b3a41e7c9d2f58'
+  /** The full keyset id, as the mint serves it at `/v1/keys`. */
+  readonly id: string
   readonly catalog: TestCatalog
   readonly calls: NutftRequest[] = []
   /** Curve points of spent proofs. */
@@ -77,12 +83,21 @@ export class TestNutftMint implements NutftHost {
   before?: NutftRequest['operation']
   /** Fail the next call to this operation after the mint has committed it. */
   lost?: NutftRequest['operation']
-  private readonly key = hexToBytes('3c'.repeat(32))
+  private readonly key: Uint8Array
+  private readonly publicKey: string
   private readonly issuer = hexToBytes('4d'.repeat(32))
 
   constructor(options: {url?: string; unit?: string; cards?: number} = {}) {
     this.url = options.url ?? 'https://mint.test/e1'
     this.unit = options.unit ?? '600B-E1'
+    /* The production mint's own call, with a fixed seed so every run of a
+       test signs with the same key. */
+    const keys = createNewMintKeys(1, hexToBytes('3c'.repeat(32)), {
+      unit: this.unit
+    })
+    this.id = keys.keysetId
+    this.key = keys.privKeys['1']
+    this.publicKey = bytesToHex(keys.pubKeys['1'])
     const catalog_uri = `${this.url}/nutft/catalog`
     const assets = Array.from({length: options.cards ?? 4}, (_, index) => {
       const asset_id = `${this.unit}-${String(index + 1).padStart(3, '0')}`
@@ -124,7 +139,8 @@ export class TestNutftMint implements NutftHost {
       id: this.id,
       unit: this.unit,
       active: true,
-      keys: {'1': bytesToHex(secp256k1.getPublicKey(this.key, true))}
+      input_fee_ppk: 0,
+      keys: {'1': this.publicKey}
     }
   }
 
@@ -178,13 +194,17 @@ export class TestNutftMint implements NutftHost {
     return signature
   }
 
+  /* The order of the checks, and their words, follow the mint's own trade. */
   private trade(body: Record<string, any>): {status: number; result: unknown} {
     const settled = this.trades.get(body.idempotency_key)
     if (settled) return {status: 200, result: JSON.parse(settled)}
     const inputs = Array.isArray(body.inputs) ? body.inputs : []
     const outputs = Array.isArray(body.outputs) ? body.outputs : []
     if (inputs.length !== 1 || outputs.length !== 1)
-      return {status: 400, result: {error: 'one card in, one card out'}}
+      return {
+        status: 400,
+        result: {error: 'demo trade accepts one card at a time'}
+      }
     /* The library sends each input through cashu-ts `serializeProofs`, which
        makes it a JSON string rather than an object. */
     const input =
@@ -192,18 +212,25 @@ export class TestNutftMint implements NutftHost {
     const [output] = outputs
     const Y = this.pointOf(input.secret)
     if (this.spent.has(Y))
-      return {status: 400, result: {error: 'proof already spent'}}
+      return {status: 400, result: {error: 'input proof is already spent'}}
     const expected = hashToCurve(utf8ToBytes(input.secret))
       .multiply(BigInt(`0x${bytesToHex(this.key)}`))
       .toHex(true)
     if (input.C !== expected)
-      return {status: 400, result: {error: 'invalid proof'}}
+      return {status: 400, result: {error: 'input signature is invalid'}}
     const was = getTag(input.secret, 'nutft')
     const becomes = output?.nutft?.secret
       ? getTag(output.nutft.secret, 'nutft')
       : undefined
     if (!was || !becomes || was[4] !== becomes[4])
-      return {status: 400, result: {error: 'a trade cannot change the card'}}
+      return {
+        status: 400,
+        result: {error: 'replacement CardBinding must equal input CardBinding'}
+      }
+    /* A blinded message signs once. Signing it again would hand two wallets
+       the same card, so the production mint refuses, and so does this one. */
+    if (this.signatures.has(output.B_))
+      return {status: 400, result: {error: 'output was already signed'}}
     this.spent.add(Y)
     const result = {
       signature: this.sign(output.B_),
