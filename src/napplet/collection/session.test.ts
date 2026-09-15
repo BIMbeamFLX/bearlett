@@ -702,6 +702,31 @@ describe('a move and the wallets around it', () => {
     expect(await ui.session.moveUnfinished()).toBe(false)
   })
 
+  it('finishes a device handover whose answer was lost, and lists it under the account', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    const old = phone.open()
+    await old.session.open()
+    const [card] = (await old.session.snapshot()).owned
+    mint.lost = 'trade'
+    await expect(old.session.handOver(secretOf(card), FRIEND)).rejects.toThrow()
+    expect((await phone.state(RANDOM_KEY)).pending).toBeTruthy()
+    await restoredAccount(phone, ACCOUNT_A)
+
+    const ui = phone.open(ACCOUNT_A)
+    expect(await ui.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+    expect((await phone.state(RANDOM_KEY)).pending).toBeNull()
+    const sent = await ui.session.sent()
+    expect(sent).toHaveLength(1)
+    await ui.session.passedOn(sent.map(entry => entry.token))
+    expect(await ui.session.sent()).toEqual([])
+  })
+
   it('refuses to hand over, receive or pass on from the device wallet while it moves', async () => {
     const mint = new TestNutftMint()
     const {phone, address} = await deviceWithCards(mint, [1, 2, 3])
@@ -729,10 +754,12 @@ describe('a move and the wallets around it', () => {
     expect(await ui.session.sent()).toEqual([])
     await expect(ui.session.passedOn([token!])).rejects.toThrow(MOVE_OPEN)
 
+    /* Once the move finishes, the handover from before is listed again. */
     expect(await ui.session.migrate()).toEqual({
       moved: 2,
       gone: 0,
       restored: null
     })
+    expect((await ui.session.sent()).map(entry => entry.token)).toEqual([token])
   })
 })

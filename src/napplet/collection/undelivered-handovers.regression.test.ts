@@ -20,7 +20,7 @@ vi.setConfig({testTimeout: 120_000})
  */
 
 describe('regression: handovers from the device wallet stay reachable', () => {
-  it.fails('are listed after a move and can be passed on', async () => {
+  it('are listed after a move and can be passed on', async () => {
     const mint = new TestNutftMint()
     const {phone} = await deviceWithCards(mint, [1, 2, 3])
     const before = phone.open()
@@ -62,31 +62,28 @@ describe('regression: handovers from the device wallet stay reachable', () => {
     expect((await phone.state(RANDOM_KEY)).outgoing).toEqual([])
   })
 
-  it.fails(
-    'are listed under the account when the device wallet gave every card away',
-    async () => {
-      const mint = new TestNutftMint()
-      const {phone} = await deviceWithCards(mint, [1])
-      const before = phone.open()
-      await before.session.open()
-      const snap = await before.session.snapshot()
-      const handed = await before.session.handOver(
-        secretOf(snap.owned[0]),
-        FRIEND
-      )
-      expect((await phone.state(RANDOM_KEY)).tokens).toEqual([])
+  it('are listed under the account when the device wallet gave every card away', async () => {
+    const mint = new TestNutftMint()
+    const {phone} = await deviceWithCards(mint, [1])
+    const before = phone.open()
+    await before.session.open()
+    const snap = await before.session.snapshot()
+    const handed = await before.session.handOver(
+      secretOf(snap.owned[0]),
+      FRIEND
+    )
+    expect((await phone.state(RANDOM_KEY)).tokens).toEqual([])
 
-      await restoredAccount(phone, ACCOUNT_A)
-      const ui = phone.open(ACCOUNT_A)
-      expect(await ui.session.open()).toEqual({
-        active: 'host',
-        restore: false,
-        migration: 'none',
-        cards: 0
-      })
-      expect((await ui.session.sent()).map(entry => entry.token)).toEqual([
-        handed.token
-      ])
-    }
-  )
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    expect(await ui.session.open()).toEqual({
+      active: 'host',
+      restore: false,
+      migration: 'none',
+      cards: 0
+    })
+    expect((await ui.session.sent()).map(entry => entry.token)).toEqual([
+      handed.token
+    ])
+  })
 })

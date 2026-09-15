@@ -576,6 +576,14 @@ export function openSession(deps: SessionDeps) {
       lockedTo(entry.token, seeded().privateKey)
     ).length
 
+  /* The wallets whose sent transfers are this holder's: the one on screen,
+     and, under an account, the device's own wallet too. */
+  const listed = async (): Promise<string[]> => {
+    if (active !== 'host') return [randomKey]
+    const device = await readWallet(store, randomKey)
+    return device?.privateKey ? [account!.key, randomKey] : [account!.key]
+  }
+
   const moveOps: MigrationOps = {
     save: async journal =>
       store.setItem(
@@ -740,9 +748,13 @@ export function openSession(deps: SessionDeps) {
           }
           if (!record) {
             /* Cards still in the device's random wallet keep it on screen
-               until they are moved on purpose. */
+               until they are moved on purpose, and a transfer it has in
+               flight is finished first. */
             const random = await readWallet(store, randomKey)
-            if (random && (random.tokens.length || toAccount(random))) {
+            if (
+              random &&
+              (random.tokens.length || random.pending || toAccount(random))
+            ) {
               await point(randomKey)
               const owned = complete(
                 (await wallet.snapshot(edition.mint)) as Snapshot
@@ -891,9 +903,9 @@ export function openSession(deps: SessionDeps) {
 
     /**
      * Cards handed over and not yet confirmed as passed on, from the wallet on
-     * screen. The card library keeps every one in storage from the moment the
-     * mint re-binds it, because the token is the only thing that can ever
-     * claim that card.
+     * screen and, under an account, from the device's own wallet too. The card
+     * library keeps every one in storage from the moment the mint re-binds it,
+     * because the token is the only thing that can ever claim that card.
      *
      * Never listed: a card re-issued to its own wallet, and a token locked to
      * the account, which is a move's own token and no handover. While a move of
@@ -905,7 +917,7 @@ export function openSession(deps: SessionDeps) {
         if (!opened) throw new SessionProblem(NOT_OPEN)
         if (await moveOpen()) return []
         const entries: Array<{token: string; at?: string}> = []
-        for (const key of [activeKey()]) {
+        for (const key of await listed()) {
           const state = await readWallet(store, key)
           if (!state?.privateKey) continue
           for (const {token, at} of state.outgoing ?? []) {
@@ -918,15 +930,15 @@ export function openSession(deps: SessionDeps) {
       }),
 
     /**
-     * Forget handed-over cards the holder says were passed on. Refused while a
-     * move is unfinished, and for any token locked to one of this holder's own
-     * wallets.
+     * Forget handed-over cards the holder says were passed on, from whichever
+     * wallet sent them. Refused while a move is unfinished, and for any token
+     * locked to one of this holder's own wallets.
      */
     passedOn: (tokens: readonly string[]): Promise<void> =>
       serial(async () => {
         if (!opened) throw new SessionProblem(NOT_OPEN)
         if (await moveOpen()) throw new SessionProblem(MOVE_OPEN)
-        const wallets = [activeKey()]
+        const wallets = await listed()
         for (const token of tokens) {
           if (account && lockedTo(token, seeded().privateKey))
             throw new SessionProblem(NOT_A_HANDOVER)
