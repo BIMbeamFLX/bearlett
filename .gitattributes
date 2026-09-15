@@ -1,3 +1,8 @@
+# Every text file is LF in the index and in every checkout, Windows included.
+# The collection artifact is pinned by its hash, and a CRLF checkout of the same
+# commit builds different bytes.
+* text=auto eol=lf
+
 # Preserve format-patch context markers and signature separators verbatim.
 contributions/*.patch -whitespace
 
