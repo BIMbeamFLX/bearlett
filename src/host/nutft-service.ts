@@ -12,10 +12,13 @@ export type NutftServiceOptions = {
   scope(windowId: string): string | undefined
   /**
    * The collection wallet's seed for the account behind this window, when the
-   * shell derives one: 32 bytes of BIP39 entropy as 64 lowercase hex. Asked
-   * only for the window that holds the lease, and the value goes nowhere but
-   * that window's acquire result. `undefined` means the shell derives none.
-   * Anything else, a rejection included, refuses the acquire.
+   * shell derives one: 32 bytes of BIP39 entropy as 64 lowercase hex, derived
+   * for this `scope`, so each collection of an account gets a seed of its own.
+   * `scope` is exactly what `scope(windowId)` returned, which must be the
+   * string the host derives the seed from. Asked only for the window that
+   * holds the lease, and the value goes nowhere but that window's acquire
+   * result. `undefined` means the shell derives none. Anything else, a
+   * rejection included, refuses the acquire.
    */
   seed?(
     windowId: string,

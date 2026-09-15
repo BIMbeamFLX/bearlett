@@ -294,7 +294,8 @@ The reference service takes the seed from a hook:
 
 ```ts
 createNutftService({
-  scope, allowed,
+  scope,   // (windowId) => the lease scope, exactly as the host derives seeds from it
+  allowed,
   seed: (windowId, scope) => string | undefined | Promise<string | undefined>
 })
 ```
@@ -312,15 +313,28 @@ plain object whose only own key is `seed`. A `Uint8Array`, a `String` object, a
 prototype, or a `seed` beside any other key is refused with the fixed sentence,
 never read as "no seed".
 
+**The host derives a seed per collection.** Each collection of one account
+gets a seed of its own from the host, so Edition One and the G edition never
+share a key or an address. The derivation proposed by nappelin-com-b0, and not
+final until its pull request pins a test vector, is
+
+```text
+seed = lowercase hex of HMAC-SHA256(key = the 32-byte account secret key,
+                                    message = UTF-8 "nappelin:nutft:" + scope)
+```
+
+where `scope` is the collection's app id exactly as the host scopes the lease,
+for instance `collection-600b-e1`. A shell using the reference service must
+return that very string from `scope(windowId)`: it is the argument the seed hook
+receives, and any other spelling of it derives another seed, and so another
+wallet. The collection adds no derivation of its own.
+
 In the napplet (`src/host/nutft-shim.ts`, `src/napplet/collection/seed.ts`,
-`session.ts`), the seed becomes a 24-word mnemonic in memory only. **Each edition
-gets its own wallet from one account seed:** the mnemonic is
-`entropyToMnemonic(HKDF-SHA256(seed, salt "bearlett:nutft:wallet", info <edition id>, 32 bytes))`,
-so Edition One and the G edition have different keys and different addresses,
-and neither address says anything about the other. The account's wallet state
-is written before the card library ever sees its storage key, with the key the
-library itself derives (`m/129373'/10'/0'/0'/0`) and NUT-13 counters left to the
-mint, so the library never gets the chance to generate a random key there.
+`session.ts`), the seed becomes a 24-word mnemonic in memory only, with
+`entropyToMnemonic`. The account's wallet state is written before the card
+library ever sees its storage key, with the key the library itself derives
+(`m/129373'/10'/0'/0'/0`) and NUT-13 counters left to the mint, so the library
+never gets the chance to generate a random key there.
 
 **One wallet per seed.** A second Nappelin account on the same browser brings a
 different seed, and gets a wallet of its own:

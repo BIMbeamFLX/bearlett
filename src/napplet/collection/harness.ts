@@ -7,9 +7,7 @@ import * as cashu from '@cashu/cashu-ts'
 import * as bip39 from '@scure/bip39'
 import {wordlist} from '@scure/bip39/wordlists/english.js'
 import {HDKey} from '@scure/bip32'
-import {hkdf} from '@noble/hashes/hkdf.js'
-import {sha256} from '@noble/hashes/sha2.js'
-import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
+import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
 import type {NutftOperation, NutftRequest} from '../../host/nutft-contract'
 import {prepareCollectionGlobals} from './bootstrap'
 import type {CollectionEdition, NutFTWalletApi} from './bootstrap'
@@ -52,20 +50,11 @@ export const accountKey = (seed: string): string =>
 
 /**
  * An account's key and address, derived here from the documented recipe and
- * not from the collection's own code: HKDF-SHA256 over the seed, salted with
- * `bearlett:nutft:wallet` and bound to the edition id, as 24 words.
+ * not from the collection's own code: the seed's 32 bytes as 24 words, the key
+ * on the card library's path.
  */
 export const addressOf = (seed: string) => {
-  const words = bip39.entropyToMnemonic(
-    hkdf(
-      sha256,
-      hexToBytes(seed),
-      utf8ToBytes('bearlett:nutft:wallet'),
-      utf8ToBytes(EDITION_ID),
-      32
-    ),
-    wordlist
-  )
+  const words = bip39.entropyToMnemonic(hexToBytes(seed), wordlist)
   const key = HDKey.fromMasterSeed(bip39.mnemonicToSeedSync(words)).derive(
     "m/129373'/10'/0'/0'/0"
   ).privateKey!

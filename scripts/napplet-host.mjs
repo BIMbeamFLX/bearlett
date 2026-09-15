@@ -188,7 +188,7 @@ const mint=new BearlettCollectionPreview.TestNutftMint({url:${scriptValue(mint)}
 const store=new Map();const topics=new Set();let pending=[];let frame=null;
 window.collectionMint=mint;window.hostStore=store;window.hostCalls=[];window.hostEmits=[];window.previewSeed=undefined;
 const service=BearlettCollectionPreview.createNutftService({
- scope:key=>key==='collection'?'preview-collection':undefined,
+ scope:key=>key==='collection'?'collection-600b-e1':undefined,
  allowed:(key,url)=>key==='collection'&&url===mint.url,
  seed:()=>window.previewSeed,
  fetch:async(url,init)=>{
