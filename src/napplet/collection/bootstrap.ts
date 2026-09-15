@@ -206,6 +206,7 @@ export async function startCollectionWallet(
     wallet,
     cashu: deps.cashu as TokenTools,
     crypto: deps.walletCrypto as SeedCrypto,
+    fetch: scope.fetch as typeof fetch,
     seed: deps.seed
   })
 }

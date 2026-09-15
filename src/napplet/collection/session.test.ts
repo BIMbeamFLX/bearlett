@@ -11,6 +11,8 @@ import {
   addressOf,
   device,
   fingerprint,
+  rateLimit,
+  secretOf,
   unreachable,
   watchConsole
 } from './harness'
@@ -358,6 +360,33 @@ describe('receiving a card', () => {
     expect(mint.calls.filter(call => call.operation === 'checkstate')).toEqual(
       []
     )
+  })
+
+  it('keeps a card waiting for its re-issue, and tries again on refresh', async () => {
+    const mint = new TestNutftMint()
+    const phone = device(mint)
+    const {session} = phone.open()
+    await session.open()
+    const address = await session.destination()
+    const card = mint.issue(address, 1)
+    /* Every re-issue is refused while the mint is busy. */
+    const busy = rateLimit(mint, 'trade', () => true)
+    expect(await session.receive(card)).toBe(1)
+    const waiting = await phone.state(RANDOM_KEY)
+    expect(waiting.reissue).toHaveLength(1)
+    const [secret] = waiting.reissue
+    let snapshot = await session.snapshot()
+    expect(snapshot.owned).toHaveLength(1)
+    expect(snapshot.unrestorable).toBe(1)
+    /* The held proof is still the one the sender made. */
+    expect(secretOf(snapshot.owned[0])).toBe(secret)
+
+    busy()
+    snapshot = await session.snapshot()
+    expect(snapshot.unrestorable).toBe(0)
+    expect(snapshot.owned).toHaveLength(1)
+    expect(secretOf(snapshot.owned[0])).not.toBe(secret)
+    expect((await phone.state(RANDOM_KEY)).reissue).toBeUndefined()
   })
 })
 

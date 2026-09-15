@@ -55,6 +55,12 @@ export type StoredWallet = {
   seedSource?: SeedSource
   /** Present until an account wallet has been restored from the mint. */
   restore?: 'pending'
+  /**
+   * Proof secrets received here that still wait to be re-issued to this
+   * wallet's own outputs, the only outputs a restore from its seed can find.
+   * Written before the card is imported, and cleared once its proof is spent.
+   */
+  reissue?: string[]
 }
 
 export class WalletUnreadable extends Error {
@@ -86,7 +92,10 @@ export const isStoredWallet = (value: unknown): value is StoredWallet =>
   (value.seedSource === undefined ||
     value.seedSource === 'random' ||
     value.seedSource === 'host') &&
-  (value.restore === undefined || value.restore === 'pending')
+  (value.restore === undefined || value.restore === 'pending') &&
+  (value.reissue === undefined ||
+    (Array.isArray(value.reissue) &&
+      value.reissue.every(secret => typeof secret === 'string')))
 
 /** Read a wallet without the library. Absent is `null`; damaged throws. */
 export async function readWallet(

@@ -72,29 +72,26 @@ describe('regression: every confirmed card is restorable from the seed', () => {
     }
   )
 
-  it.fails(
-    'a three-card token whose second re-issue answer is lost',
-    async () => {
-      const mint = new TestNutftMint()
-      const phone = device(mint)
-      await restoredAccount(phone, ACCOUNT_A)
-      const ui = phone.open(ACCOUNT_A)
-      await ui.session.open()
-      const token = cardsToken(mint, addressOf(ACCOUNT_A).pubkey, [0, 1, 2])
-      let trades = 0
-      const answer = intercept(mint, async request => {
-        if (request.operation === 'trade' && ++trades === 2)
-          throw new Error('Mint request unavailable, denied, or interrupted.')
-        return undefined
-      })
-      expect(await ui.session.receive(token)).toBe(3)
-      answer()
-      expect((await ui.session.snapshot()).owned).toHaveLength(3)
-      expect(await restoreElsewhere(mint)).toBe(3)
-    }
-  )
+  it('a three-card token whose second re-issue answer is lost', async () => {
+    const mint = new TestNutftMint()
+    const phone = device(mint)
+    await restoredAccount(phone, ACCOUNT_A)
+    const ui = phone.open(ACCOUNT_A)
+    await ui.session.open()
+    const token = cardsToken(mint, addressOf(ACCOUNT_A).pubkey, [0, 1, 2])
+    let trades = 0
+    const answer = intercept(mint, async request => {
+      if (request.operation === 'trade' && ++trades === 2)
+        throw new Error('Mint request unavailable, denied, or interrupted.')
+      return undefined
+    })
+    expect(await ui.session.receive(token)).toBe(3)
+    answer()
+    expect((await ui.session.snapshot()).owned).toHaveLength(3)
+    expect(await restoreElsewhere(mint)).toBe(3)
+  })
 
-  it.fails('a three-card token whose second re-issue is refused', async () => {
+  it('a three-card token whose second re-issue is refused', async () => {
     const mint = new TestNutftMint()
     const phone = device(mint)
     await restoredAccount(phone, ACCOUNT_A)

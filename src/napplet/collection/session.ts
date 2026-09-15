@@ -3,7 +3,6 @@ import type {CollectionEdition, NutFTWalletApi} from './bootstrap'
 import {isIncomplete} from './cards'
 import type {Snapshot} from './cards'
 import {
-  ALREADY_TAKEN,
   MigrationStopped,
   parseMigrationJournal,
   planMigration,
@@ -20,7 +19,8 @@ import type {CardToken} from './receive'
 import {sealedWith} from './sealed'
 import {hostMnemonic, seedFingerprint, seededWallet} from './seed'
 import type {KeyTools, SeedCrypto, SeededWallet} from './seed'
-import type {TokenCodec} from './tokens'
+import {decodeCards} from './tokens'
+import type {CardProof, TokenCodec} from './tokens'
 import {
   WalletUnreadable,
   hostWalletKey,
@@ -41,6 +41,11 @@ import type {StoredWallet, WalletSlots, WalletStore} from './wallets'
  * it. The device's random wallet is never switched away from while it still
  * holds cards; moving them is a deliberate step, and the switch comes only
  * once every card is confirmed under the account's key.
+ *
+ * A card taken in is not counted as held for good until it sits on the
+ * wallet's own deterministic outputs, the only outputs a restore from its seed
+ * can find. Until then its secret waits in the wallet's own list and every
+ * refresh tries its re-issue again.
  *
  * Every wallet call goes through one queue and names the wallet it is for, so
  * the library's single storage key is never re-pointed in the middle of an
@@ -80,6 +85,7 @@ export type TokenTools = KeyTools &
       privateKey: string,
       proof: {secret: string; p2pk_e?: string}
     ): string[]
+    hashToCurve(secret: Uint8Array): {toHex(compressed?: boolean): string}
   }
 
 export type SessionDeps = {
@@ -92,7 +98,7 @@ export type SessionDeps = {
   cashu: TokenTools
   crypto: SeedCrypto
   /** The collection's router to its mint, the same door the library uses. */
-  fetch?: typeof fetch
+  fetch: typeof fetch
   /** The account's seed from the lease, already checked. */
   seed?: string
 }
@@ -114,13 +120,6 @@ export const MINT_UNASKED =
 const NOT_OPEN = 'The collection is not open yet.'
 const NO_ACCOUNT =
   'Cards can only be moved once the collection is opened from your account.'
-
-/* Read as a property: the card library may run in another realm, where its
-   errors are not instances of this realm's Error. */
-const messageOf = (error: unknown): string => {
-  const message = (error as {message?: unknown} | null)?.message
-  return typeof message === 'string' ? message : ''
-}
 
 /* The binding and asset of a card, read from its proof secret. */
 const tagOf = (secret: string): {binding: string; asset_id: string} | null => {
@@ -167,6 +166,7 @@ export type CollectionSession = ReturnType<typeof openSession>
 
 export function openSession(deps: SessionDeps) {
   const {edition, store, slots, wallet, cashu, crypto} = deps
+  const fetcher = deps.fetch
   /* A seed is checked whether or not this build uses it: a malformed one
      refuses to open in the alpha build exactly as it would with account
      wallets on. Only a build with account wallets goes on to use it. */
@@ -265,17 +265,7 @@ export function openSession(deps: SessionDeps) {
     return stored ? checkAccountWallet(stored) : createAccountWallet()
   }
 
-  const ready = async (): Promise<void> => {
-    if (active !== 'host') return
-    if ((await readWallet(store, account!.key))?.restore === 'pending')
-      throw new SessionProblem(STILL_RESTORING)
-  }
-
-  /* A card this wallet re-issued to itself can be left among the outgoing
-     transfers instead of its tokens: when the answer to that trade is lost, a
-     later call finishes it and files it as sent. It is still this wallet's
-     card, locked to this wallet's key, so it is taken back in. A failure here
-     is left for the next refresh rather than hiding the cards already held. */
+  /* Whether every proof of a token is locked to this private key. */
   const lockedTo = (token: string, privateKey: string): boolean => {
     try {
       const {incompleteProofs} = cashu.getTokenMetadata(token)
@@ -292,26 +282,168 @@ export function openSession(deps: SessionDeps) {
     }
   }
 
-  const adopt = async (): Promise<number> => {
-    const state = (await wallet.read()) as StoredWallet
-    let taken = 0
-    for (const entry of state.outgoing ?? []) {
-      if (!lockedTo(entry.token, state.privateKey)) continue
+  /* The proofs a list of tokens holds, read offline. A token this collection
+     cannot take apart is left out, as the card library leaves it out. */
+  const proofsIn = (tokens: readonly string[]): CardProof[] =>
+    tokens.flatMap(token => {
       try {
-        taken += Number(await wallet.importToken(edition.mint, entry.token))
-      } catch (error) {
-        if (!ALREADY_TAKEN.test(messageOf(error))) break
+        return decodeCards(token, cashu).proofs
+      } catch {
+        return []
       }
-      await wallet.forgetOutgoing(entry.token)
+    })
+
+  const secretsIn = (tokens: readonly string[]): Set<string> =>
+    new Set(proofsIn(tokens).map(proof => proof.secret))
+
+  /* What the mint says about proofs, by secret. Every one is answered, or the
+     whole question fails: a card the mint was not asked about is not spent. */
+  const states = async (
+    secrets: readonly string[]
+  ): Promise<Map<string, 'UNSPENT' | 'SPENT'>> => {
+    const answers = new Map<string, 'UNSPENT' | 'SPENT'>()
+    for (let offset = 0; offset < secrets.length; offset += 256) {
+      const batch = secrets.slice(offset, offset + 256)
+      const Ys = batch.map(secret =>
+        cashu.hashToCurve(new TextEncoder().encode(secret)).toHex(true)
+      )
+      let payload: {states?: Array<{Y?: string; state?: string}>}
+      try {
+        const response = await fetcher(`${edition.mint}/v1/checkstate`, {
+          method: 'POST',
+          body: JSON.stringify({Ys})
+        })
+        if (!response.ok) throw new Error('refused')
+        payload = await response.json()
+      } catch {
+        throw new SessionProblem(MINT_UNASKED)
+      }
+      const answered = payload?.states
+      if (!Array.isArray(answered) || answered.length !== batch.length)
+        throw new SessionProblem(MINT_UNASKED)
+      batch.forEach((secret, index) => {
+        const answer = answered[index]
+        if (
+          answer?.Y !== Ys[index] ||
+          (answer.state !== 'UNSPENT' && answer.state !== 'SPENT')
+        )
+          throw new SessionProblem(MINT_UNASKED)
+        answers.set(secret, answer.state)
+      })
     }
-    return taken
+    return answers
   }
 
-  const snapshotHere = async (): Promise<Snapshot> => {
-    const first = complete((await wallet.snapshot(edition.mint)) as Snapshot)
-    return (await adopt())
-      ? complete((await wallet.snapshot(edition.mint)) as Snapshot)
-      : first
+  /* A card this wallet re-issued to itself can be left among its sent
+     transfers instead of its tokens: when the answer to that trade is lost, a
+     later call finishes it and files it as sent. It is still this wallet's
+     card, locked to this wallet's key and already on its own outputs, so it is
+     moved back among the tokens, once. */
+  const adoptOwn = async (key: string): Promise<boolean> => {
+    const state = await readWallet(store, key)
+    if (!state?.privateKey) return false
+    const own = (state.outgoing ?? []).filter(entry =>
+      lockedTo(entry.token, state.privateKey)
+    )
+    if (!own.length) return false
+    const held = secretsIn(state.tokens)
+    const tokens = [...state.tokens]
+    for (const {token} of own) {
+      const proofs = proofsIn([token])
+      if (!proofs.length || proofs.some(proof => held.has(proof.secret)))
+        continue
+      proofs.forEach(proof => held.add(proof.secret))
+      tokens.push(token)
+    }
+    const moved = new Set(own.map(entry => entry.token))
+    await writeWallet(store, key, {
+      ...state,
+      tokens,
+      outgoing: (state.outgoing ?? []).filter(entry => !moved.has(entry.token))
+    })
+    return true
+  }
+
+  /**
+   * Bring proofs this wallet holds onto its own deterministic outputs. A proof
+   * counts as re-issued once the mint says it is spent. Resolves to the
+   * secrets that still wait; throws only when the mint could not be asked.
+   */
+  const reissue = async (
+    key: string,
+    secrets: readonly string[]
+  ): Promise<string[]> => {
+    if (!secrets.length) return []
+    if ((await readWallet(store, key))?.pending)
+      try {
+        await wallet.recoverPending()
+      } catch {
+        /* a refusal drops it; a lost answer keeps it for the next try */
+      }
+    await adoptOwn(key)
+    const first = await states(secrets)
+    for (const secret of secrets) {
+      if (first.get(secret) === 'SPENT') continue
+      const state = await readWallet(store, key)
+      if (!state || state.pending || !secretsIn(state.tokens).has(secret))
+        continue
+      try {
+        await wallet.tradeProof(edition.mint, secret, state.pubkey)
+      } catch {
+        /* refused, or its answer lost: it waits for the next try */
+      }
+      await adoptOwn(key)
+    }
+    const after = await states(secrets)
+    const held = secretsIn((await readWallet(store, key))?.tokens ?? [])
+    return secrets.filter(
+      secret => after.get(secret) !== 'SPENT' && held.has(secret)
+    )
+  }
+
+  /* The wallet's list of secrets that wait for their re-issue, changed. */
+  const awaiting = async (
+    key: string,
+    change: (list: string[]) => string[]
+  ): Promise<void> => {
+    const state = await readWallet(store, key)
+    if (!state) return
+    const next = [...new Set(change(state.reissue ?? []))]
+    const {reissue: _, ...rest} = state
+    await writeWallet(store, key, next.length ? {...rest, reissue: next} : rest)
+  }
+
+  const snapshotHere = async (key: string): Promise<Snapshot> => {
+    let snapshot = complete((await wallet.snapshot(edition.mint)) as Snapshot)
+    let changed = await adoptOwn(key)
+    const waiting = (await readWallet(store, key))?.reissue ?? []
+    let unrestorable = 0
+    if (waiting.length) {
+      const owned = new Set(
+        snapshot.owned.map(
+          item => (item.proof as {secret?: string} | undefined)?.secret
+        )
+      )
+      const candidates = waiting.filter(secret => owned.has(secret))
+      let still = candidates
+      try {
+        still = await reissue(key, candidates)
+      } catch {
+        /* the mint could not be asked: they stay as they were */
+      }
+      await awaiting(key, () => still)
+      unrestorable = still.length
+      changed ||= still.length !== waiting.length
+    }
+    if (changed)
+      snapshot = complete((await wallet.snapshot(edition.mint)) as Snapshot)
+    return {...snapshot, unrestorable}
+  }
+
+  const ready = async (): Promise<void> => {
+    if (active !== 'host') return
+    if ((await readWallet(store, account!.key))?.restore === 'pending')
+      throw new SessionProblem(STILL_RESTORING)
   }
 
   const restoreHere = async (): Promise<number | null> => {
@@ -401,7 +533,8 @@ export function openSession(deps: SessionDeps) {
       on(account!.key, async () => {
         await wallet.importToken(edition.mint, token)
       }),
-    newCards: () => on(account!.key, async () => cardsOf(await snapshotHere()))
+    newCards: () =>
+      on(account!.key, async () => cardsOf(await snapshotHere(account!.key)))
   }
 
   return {
@@ -532,7 +665,14 @@ export function openSession(deps: SessionDeps) {
         return pubkey
       }),
 
-    snapshot: (): Promise<Snapshot> => on(activeKey(), snapshotHere),
+    /**
+     * The wallet on screen, read at the mint. Retries the re-issue of every
+     * card that still waits for one, and says how many still do.
+     */
+    snapshot: (): Promise<Snapshot> => {
+      const key = activeKey()
+      return on(key, () => snapshotHere(key))
+    },
 
     /**
      * Redeem a card token into the wallet on screen. Everything that can be
@@ -546,7 +686,8 @@ export function openSession(deps: SessionDeps) {
       } catch (error) {
         return Promise.reject(receiveProblem(error))
       }
-      return on(activeKey(), async () => {
+      const key = activeKey()
+      return on(key, async () => {
         if (
           active === 'host' &&
           (await readWallet(store, account!.key))?.restore === 'pending'
@@ -556,7 +697,34 @@ export function openSession(deps: SessionDeps) {
         await wallet.destination()
         const state = (await wallet.read()) as StoredWallet
         checkLockedTo(card, state.privateKey, cashu)
-        return Number(await wallet.importToken(edition.mint, card.token))
+        const secrets = card.proofs.map(proof => proof.secret)
+        const known = new Set(state.reissue ?? [])
+        /* Written before the import, so a card that arrives and is then cut
+           off from its re-issue is still tried again on the next refresh. */
+        await awaiting(key, list => [...list, ...secrets])
+        let count: number
+        try {
+          count = Number(await wallet.importToken(edition.mint, card.token))
+        } catch (error) {
+          await awaiting(key, list =>
+            list.filter(
+              secret => known.has(secret) || !secrets.includes(secret)
+            )
+          ).catch(() => undefined)
+          throw error
+        }
+        let still = secrets
+        try {
+          still = await reissue(key, secrets)
+        } catch {
+          /* the mint could not be asked: every one of them waits */
+        }
+        await awaiting(key, list =>
+          list.filter(
+            secret => !secrets.includes(secret) || still.includes(secret)
+          )
+        ).catch(() => undefined)
+        return count
       }).catch(error => Promise.reject(receiveProblem(error)))
     },
 

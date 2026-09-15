@@ -132,6 +132,8 @@ function App() {
   const [started, setStarted] = createSignal(false)
   const [checked, setChecked] = createSignal(0)
   const [restored, setRestored] = createSignal('')
+  /* Cards held that are not yet on the account's own outputs. */
+  const [unrestorable, setUnrestorable] = createSignal(0)
   /* The device's cards and the account: a move offered, or one that stopped
      and continues. Null when there is nothing to move. */
   const [move, setMove] = createSignal<{
@@ -248,6 +250,9 @@ function App() {
       setView(buildCollectionView(snapshot))
       setCatalog([...(snapshot.catalog?.assets ?? [])])
       setFailure('')
+      setUnrestorable(
+        session.active === 'host' ? (snapshot.unrestorable ?? 0) : 0
+      )
       setSent(await session.sent())
       /* While the device's own wallet is on screen, the offer counts what it
          holds now, after a card came in or went out. */
@@ -627,6 +632,18 @@ function App() {
           <p class="notice notice--good" role="status">
             {restored()}
           </p>
+        </Show>
+
+        <Show when={unrestorable()}>
+          {count => (
+            <p class="notice" role="status">
+              {count()} card{count() === 1 ? ' is' : 's are'} not yet restorable
+              from your account: {count() === 1 ? 'it has' : 'they have'} not
+              been re-issued to your own key. The collection keeps trying on
+              every refresh, and the card{count() === 1 ? ' stays' : 's stay'}{' '}
+              yours meanwhile.
+            </p>
+          )}
         </Show>
 
         <Show when={move()}>
