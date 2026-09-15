@@ -137,7 +137,8 @@ describe('createNutftService', () => {
 
   /* One collection is one storage scope, whatever window it is shown in. That
      is the whole point of the lease, so the fixture must not hand each window
-     its own scope. */
+     its own scope. Node has Web Locks of its own, shared by every test in the
+     file, so each service here gets the locks its test gives it, or none. */
   const service = (
     over: Partial<Parameters<typeof createNutftService>[0]> = {}
   ) =>
@@ -145,6 +146,7 @@ describe('createNutftService', () => {
       scope: () => 'scope:600b-e1',
       allowed: () => true,
       fetch: vi.fn(async () => ok({ok: true})) as unknown as typeof fetch,
+      locks: null,
       ...over
     })
 
@@ -233,6 +235,157 @@ describe('createNutftService', () => {
     expect(String(busy[0].error)).toMatch(/already open in another window/)
   })
 
+  /* Web Locks as a browser shares them between the tabs of one origin. */
+  const sharedLocks = () => {
+    const held = new Set<string>()
+    const manager = {
+      held,
+      request: (async (
+        name: string,
+        options: LockOptions,
+        callback: (lock: Lock | null) => unknown
+      ) => {
+        if (held.has(name)) {
+          expect(options.ifAvailable).toBe(true)
+          return callback(null)
+        }
+        held.add(name)
+        try {
+          return await callback({name, mode: 'exclusive'} as Lock)
+        } finally {
+          held.delete(name)
+        }
+      }) as unknown as LockManager['request']
+    }
+    return manager
+  }
+
+  it('holds a lease across the tabs of the shell with a Web Lock', async () => {
+    const locks = sharedLocks()
+    const tab1 = service({locks})
+    const tab2 = service({locks})
+    await tab1.acquire('win-1')
+    expect([...locks.held]).toEqual(['bearlett:nutft-lease:scope:600b-e1'])
+    await expect(tab2.acquire('win-2')).rejects.toThrow(
+      /already open in another window/
+    )
+    await expect(
+      tab2.request('win-2', {mint: MINT, operation: 'info'})
+    ).rejects.toThrow(/already open in another window/)
+
+    /* Closing the first window gives the lock back to the other tab. */
+    tab1.onWindowDestroyed('win-1')
+    await vi.waitFor(() => expect(locks.held.size).toBe(0))
+    await expect(tab2.acquire('win-2')).resolves.toBeUndefined()
+    await expect(tab1.acquire('win-3')).rejects.toThrow(
+      /already open in another window/
+    )
+  })
+
+  it('gives the lock back when the seed is refused', async () => {
+    const locks = sharedLocks()
+    const tab1 = service({locks, seed: () => 'not a seed'})
+    const tab2 = service({locks})
+    await expect(tab1.acquire('win-1')).rejects.toThrow()
+    await vi.waitFor(() => expect(locks.held.size).toBe(0))
+    await expect(tab2.acquire('win-2')).resolves.toBeUndefined()
+  })
+
+  it('gives back a lock that arrives after its window closed', async () => {
+    const locks = sharedLocks()
+    let asked = 0
+    let grant: () => void = () => {}
+    const slow = {
+      request: ((
+        name: string,
+        options: LockOptions,
+        callback: (lock: Lock | null) => unknown
+      ) => {
+        asked += 1
+        return new Promise<void>(resolve => (grant = resolve)).then(() =>
+          (
+            locks.request as unknown as (
+              name: string,
+              options: LockOptions,
+              callback: (lock: Lock | null) => unknown
+            ) => Promise<unknown>
+          )(name, options, callback)
+        )
+      }) as unknown as LockManager['request']
+    }
+    const tab = service({locks: slow})
+    const late = tab.acquire('win-1')
+    await vi.waitFor(() => expect(asked).toBe(1))
+    tab.onWindowDestroyed('win-1')
+    grant()
+    await expect(late).rejects.toThrow()
+    await vi.waitFor(() => expect(locks.held.size).toBe(0))
+
+    /* And a window that claims the scope while the grant is on its way gets
+       that grant instead of waiting for a second one. */
+    const first = tab.acquire('win-2')
+    await vi.waitFor(() => expect(asked).toBe(2))
+    tab.onWindowDestroyed('win-2')
+    const second = tab.acquire('win-3')
+    grant()
+    await expect(first).rejects.toThrow()
+    await expect(second).resolves.toBeUndefined()
+    expect(asked).toBe(2)
+    expect([...locks.held]).toEqual(['bearlett:nutft-lease:scope:600b-e1'])
+  })
+
+  it('reopens in the same tab right after a window closed', async () => {
+    const locks = sharedLocks()
+    const tab = service({locks})
+    await tab.acquire('win-1')
+    tab.onWindowDestroyed('win-1')
+    await expect(tab.acquire('win-2')).resolves.toBeUndefined()
+  })
+
+  it('takes the host Web Locks when none are given', async () => {
+    const name = `bearlett:nutft-lease:scope:default-${Math.random()}`
+    const tab = createNutftService({
+      scope: () => name.slice('bearlett:nutft-lease:'.length),
+      allowed: () => true
+    })
+    await tab.acquire('win-1')
+    const state = await navigator.locks.query()
+    expect(state.held?.map(lock => lock.name)).toContain(name)
+    tab.onWindowDestroyed('win-1')
+    await vi.waitFor(async () =>
+      expect(
+        (await navigator.locks.query()).held?.map(lock => lock.name)
+      ).not.toContain(name)
+    )
+  })
+
+  it('holds leases in the service alone where there are no Web Locks', async () => {
+    const tab = service({locks: null})
+    await tab.acquire('win-1')
+    await expect(tab.acquire('win-2')).rejects.toThrow(
+      /already open in another window/
+    )
+  })
+
+  it('refuses a lease when the Web Lock cannot be asked for', async () => {
+    const tab = service({
+      locks: {
+        request: (async () => {
+          throw new DOMException('denied', 'SecurityError')
+        }) as unknown as LockManager['request']
+      }
+    })
+    const sent: Array<Record<string, unknown>> = []
+    tab.handleMessage('win-1', {type: 'nutft.acquire', id: '1'}, message =>
+      sent.push(message as Record<string, unknown>)
+    )
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].ok).toBe(false)
+    await expect(
+      tab.request('win-1', {mint: MINT, operation: 'info'})
+    ).rejects.toThrow()
+  })
+
   it('ignores a message that is not its own', () => {
     const sent: unknown[] = []
     const nutft = service()
@@ -253,6 +406,7 @@ describe('the account seed in the acquire result', () => {
       fetch: vi.fn(
         async () => new Response('{}', {status: 200})
       ) as unknown as typeof fetch,
+      locks: null,
       seed
     })
 

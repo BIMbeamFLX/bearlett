@@ -23,8 +23,21 @@ export type NutftServiceOptions = {
   ): string | undefined | Promise<string | undefined>
   fetch?: typeof fetch
   timeoutMs?: number
+  /**
+   * Where a lease is held across every tab of this shell's origin. Two tabs
+   * each run a service of their own, and both write the same storage scope, so
+   * a lease held only in this service would let each of them open the same
+   * collection. Defaults to `navigator.locks` where the host has it; `null`
+   * holds leases in this service alone, which leaves that guarantee to the
+   * shell (docs/NAPPLETS.md).
+   */
+  locks?: Pick<LockManager, 'request'> | null
 }
 type Envelope = {type: string; id: string; request?: NutftRequest}
+
+/** Web Lock names, one per storage scope. Not any shell's own lock name. */
+export const NUTFT_LEASE_LOCK = 'bearlett:nutft-lease:'
+const BUSY = 'This collection is already open in another window.'
 
 const PARAMETER = /^[a-zA-Z0-9_-]{1,200}$/
 /** A card is one proof, and a deck is sixty. Nothing here needs thousands. */
@@ -102,27 +115,92 @@ export function nutftEndpoint(request: NutftRequest): {
 }
 
 /** Errors a napplet may read verbatim. Every other reason is redacted. */
-const SAYABLE = new Set([
-  'This collection is already open in another window.',
-  UNSAFE_OPEN_MESSAGE
-])
+const SAYABLE = new Set([BUSY, UNSAFE_OPEN_MESSAGE])
 
 /**
  * The reference NutFT service. Source-bound like the Cashu one: one writer per
  * storage scope, one request in flight per window, fixed endpoints, and errors
  * that never carry a bearer payload, a seed or the mint's address.
+ *
+ * One writer per scope holds across tabs too: while a window holds a lease,
+ * this service holds a Web Lock named for its scope, and a window in another
+ * tab of the shell is told the collection is open elsewhere.
  */
 export function createNutftService(options: NutftServiceOptions) {
   const scopes = new Map<string, string>()
   const inFlight = new Set<string>()
+  const locks =
+    options.locks === undefined
+      ? ((globalThis as {navigator?: {locks?: Pick<LockManager, 'request'>}})
+          .navigator?.locks ?? null)
+      : options.locks
+  /* Per scope: whether its lock was granted, and how to give it back. */
+  const locking = new Map<string, Promise<boolean>>()
+  const releases = new Map<string, () => void>()
+  const released = new Map<string, Promise<unknown>>()
 
-  const claim = (windowId: string) => {
+  const lockFor = (scope: string): Promise<boolean> => {
+    const existing = locking.get(scope)
+    if (existing) return existing
+    const granted = (async () => {
+      if (!locks) return true
+      /* A lease given back a moment ago lets go of its lock first. */
+      await released.get(scope)
+      return new Promise<boolean>((resolve, reject) => {
+        const held = locks
+          .request(NUTFT_LEASE_LOCK + scope, {ifAvailable: true}, lock => {
+            if (!lock) {
+              resolve(false)
+              return undefined
+            }
+            return new Promise<void>(release => {
+              releases.set(scope, release)
+              resolve(true)
+            })
+          })
+          .catch(reject)
+        released.set(scope, held)
+      })
+    })()
+    locking.set(scope, granted)
+    granted.then(
+      ok => {
+        if (!ok) locking.delete(scope)
+      },
+      () => locking.delete(scope)
+    )
+    return granted
+  }
+
+  /* A lock still being granted is left to arrive: a window that claims the
+     scope meanwhile shares that grant, and a grant nobody claims any more is
+     given back the moment it arrives, in claim(). */
+  const unlock = (scope: string) => {
+    const release = releases.get(scope)
+    if (!release) return
+    releases.delete(scope)
+    locking.delete(scope)
+    release()
+  }
+
+  const claim = async (windowId: string): Promise<void> => {
     const scope = options.scope(windowId)
     if (!scope) throw new Error('Wallet session unavailable.')
     const owner = scopes.get(scope)
-    if (owner && owner !== windowId)
-      throw new Error('This collection is already open in another window.')
+    if (owner && owner !== windowId) throw new Error(BUSY)
     scopes.set(scope, windowId)
+    let granted = false
+    try {
+      granted = await lockFor(scope)
+    } finally {
+      if (!granted && scopes.get(scope) === windowId) scopes.delete(scope)
+    }
+    if (!granted) throw new Error(BUSY)
+    /* The window may have closed while the lock was asked for. */
+    if (scopes.get(scope) !== windowId) {
+      if (!scopes.has(scope)) unlock(scope)
+      throw new Error('Wallet session unavailable.')
+    }
   }
 
   /* The lease comes first, so a second window hears that the collection is
@@ -133,7 +211,7 @@ export function createNutftService(options: NutftServiceOptions) {
   const acquire = async (windowId: string): Promise<NutftLease | undefined> => {
     const scope = options.scope(windowId)
     const held = Boolean(scope) && scopes.get(scope!) === windowId
-    claim(windowId)
+    await claim(windowId)
     if (!options.seed) return undefined
     try {
       const seed: unknown = await options.seed(windowId, scope!)
@@ -142,7 +220,10 @@ export function createNutftService(options: NutftServiceOptions) {
       if (scopes.get(scope!) !== windowId) throw new UnsafeLease()
       return isHostSeed(seed) ? {seed} : undefined
     } catch {
-      if (!held && scopes.get(scope!) === windowId) scopes.delete(scope!)
+      if (!held && scopes.get(scope!) === windowId) {
+        scopes.delete(scope!)
+        unlock(scope!)
+      }
       throw new UnsafeLease()
     }
   }
@@ -151,7 +232,7 @@ export function createNutftService(options: NutftServiceOptions) {
     windowId: string,
     incoming: NutftRequest
   ): Promise<NutftResponse> => {
-    claim(windowId)
+    await claim(windowId)
     const {url, method} = nutftEndpoint(incoming)
     if (!(await options.allowed(windowId, nutftMintUrl(incoming.mint))))
       throw new Error('Mint access is not approved.')
@@ -254,7 +335,10 @@ export function createNutftService(options: NutftServiceOptions) {
     },
     onWindowDestroyed(windowId: string): void {
       for (const [scope, owner] of scopes)
-        if (owner === windowId) scopes.delete(scope)
+        if (owner === windowId) {
+          scopes.delete(scope)
+          unlock(scope)
+        }
     }
   }
 }

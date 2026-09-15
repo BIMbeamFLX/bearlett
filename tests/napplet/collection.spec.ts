@@ -130,6 +130,26 @@ test.describe('the alpha collection', () => {
     expect(errors).toEqual([])
   })
 
+  test('tells a second tab of the shell that the collection is open', async ({
+    page,
+    context
+  }) => {
+    await opened(page)
+    const other = await context.newPage()
+    await other.goto('/collection')
+    const second = other.frameLocator('#collection')
+    await expect(
+      second.getByText('This collection is already open in another window.')
+    ).toBeVisible()
+
+    /* Closing the first tab gives the lease back. */
+    await page.close()
+    await other.evaluate(() => window.reloadNapplet())
+    await expect(
+      second.getByRole('heading', {name: 'No cards yet'})
+    ).toBeVisible()
+  })
+
   test('declares no receive route in its manifest', () => {
     const manifest = JSON.parse(
       readFileSync(`${ALPHA}/.nip5a-manifest.json`, 'utf8')
