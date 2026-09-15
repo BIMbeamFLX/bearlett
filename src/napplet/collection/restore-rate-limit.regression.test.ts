@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 import {
   ACCOUNT_A,
   TestNutftMint,
@@ -8,6 +8,9 @@ import {
   intercept,
   restoredAccount
 } from './harness'
+
+/* Restores and moves do real curve arithmetic on every card slot. */
+vi.setConfig({testTimeout: 120_000})
 
 /*
  * Regression tests from the "never lose a card" review of pull request 23. On
@@ -30,7 +33,7 @@ const accountWithCards = async (mint: TestNutftMint, cards: number[]) => {
 }
 
 describe('regression: restoring under a rate limit', () => {
-  it.fails('waits as the mint asks and finishes', async () => {
+  it('waits as the mint asks and finishes', async () => {
     const mint = new TestNutftMint()
     await accountWithCards(mint, [0, 1, 3])
     /* Three restore or checkstate calls per 20-second window. */

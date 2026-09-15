@@ -1,161 +1,31 @@
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {createHash} from 'node:crypto'
-import {readFileSync} from 'node:fs'
-import {fileURLToPath} from 'node:url'
-import vm from 'node:vm'
-import * as cashu from '@cashu/cashu-ts'
-import * as bip39 from '@scure/bip39'
-import {wordlist} from '@scure/bip39/wordlists/english.js'
-import {HDKey} from '@scure/bip32'
-import {hkdf} from '@noble/hashes/hkdf.js'
-import {sha256} from '@noble/hashes/sha2.js'
-import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
+import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {UNSAFE_OPEN_MESSAGE} from '../../host/nutft-contract'
 import type {NutftOperation} from '../../host/nutft-contract'
-import {prepareCollectionGlobals} from './bootstrap'
-import type {NutFTWalletApi} from './bootstrap'
-import {TestNutftMint} from './fixture'
+import {
+  ACCOUNT_A,
+  ACCOUNT_B,
+  RANDOM_KEY,
+  TestNutftMint,
+  accountKey,
+  addressOf,
+  device,
+  fingerprint,
+  unreachable,
+  watchConsole
+} from './harness'
 import {MigrationStopped} from './migration'
 import {ReceiveProblem} from './receive'
-import {sealedWith} from './sealed'
-import {STILL_RESTORING, openSession} from './session'
-import {
-  WalletUnreadable,
-  createWalletSlots,
-  createWalletStore,
-  storageKeyFor
-} from './wallets'
-
-const VENDOR = fileURLToPath(
-  new URL('./vendor/nutft-wallet.js', import.meta.url)
-)
-const LIBRARY = readFileSync(VENDOR, 'utf8')
-const crypto = {...bip39, wordlist, HDKey}
-const ACCOUNT_A = '5e'.repeat(32)
-const ACCOUNT_B = '6f'.repeat(32)
-const RANDOM_KEY = 'bearlett:nutft:600b-e1'
-
-const fingerprint = (seed: string) =>
-  createHash('sha256')
-    .update(`bearlett:nutft:fingerprint:${seed}`)
-    .digest('hex')
-    .slice(0, 16)
-const accountKey = (seed: string) => `${RANDOM_KEY}:${fingerprint(seed)}`
-
-/* The account's address, derived here without the collection's own code:
-   HKDF-SHA256 over the seed, salted and bound to the edition, as 24 words. */
-const addressOf = (seed: string) => {
-  const words = bip39.entropyToMnemonic(
-    hkdf(
-      sha256,
-      hexToBytes(seed),
-      utf8ToBytes('bearlett:nutft:wallet'),
-      utf8ToBytes('600b-e1'),
-      32
-    ),
-    wordlist
-  )
-  const key = HDKey.fromMasterSeed(bip39.mnemonicToSeedSync(words)).derive(
-    "m/129373'/10'/0'/0'/0"
-  ).privateKey!
-  return {
-    words,
-    privateKey: bytesToHex(key),
-    pubkey: bytesToHex(cashu.getPubKeyFromPrivKey(key))
-  }
-}
+import {STILL_RESTORING} from './session'
+import {WalletUnreadable} from './wallets'
 
 /* Every console method: nothing on these paths may write to any of them. */
-let logged: unknown[][]
+let heard: ReturnType<typeof watchConsole>
 beforeEach(() => {
-  logged = []
-  for (const method of [
-    'log',
-    'info',
-    'warn',
-    'error',
-    'debug',
-    'trace'
-  ] as const)
-    vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
-      logged.push(args)
-    })
+  heard = watchConsole()
 })
 afterEach(() => {
-  vi.restoreAllMocks()
-  expect(logged).toEqual([])
-})
-
-const memory = () => {
-  const map = new Map<string, string>()
-  return {
-    map,
-    getItem: async (key: string) => map.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      map.set(key, value)
-    }
-  }
-}
-
-/**
- * One device: the shell's storage, kept across opens. Each open is a fresh
- * realm with the vendored library loaded for real, the way a napplet reload
- * starts over with only what the shell kept.
- */
-const device = (
-  mint: TestNutftMint,
-  storage = memory(),
-  observe?: (operation: NutftOperation) => void,
-  accountWallets = true
-) => ({
-  storage,
-  open(seed?: string) {
-    const edition = {
-      id: '600b-e1',
-      mint: mint.url,
-      units: [mint.unit],
-      mirrors: [],
-      accountWallets
-    }
-    const store = createWalletStore(storage)
-    const slots = createWalletSlots(store, storageKeyFor(edition))
-    const scope: Record<string, unknown> = {
-      crypto: globalThis.crypto,
-      TextEncoder,
-      TextDecoder,
-      URL,
-      setTimeout,
-      clearTimeout,
-      console,
-      btoa: (value: string) => globalThis.btoa(value)
-    }
-    prepareCollectionGlobals(scope, edition, {
-      storage: slots.port,
-      nutft: mint,
-      resource: {bytes: vi.fn()},
-      cashu,
-      walletCrypto: crypto,
-      observe
-    })
-    const context = vm.createContext(scope)
-    context.globalThis = context
-    vm.runInContext(LIBRARY, context, {filename: VENDOR})
-    const wallet = context.NutFTWallet as NutFTWalletApi
-    return {
-      wallet,
-      session: openSession({edition, store, slots, wallet, cashu, crypto, seed})
-    }
-  },
-  /** A stored wallet, opened with the account's seed when it is sealed. */
-  async state(key: string, seed?: string) {
-    const text = storage.map.get(key)
-    if (!text) return null
-    return JSON.parse(seed ? await sealedWith(seed).open(text, key) : text)
-  },
-  async store(key: string, value: unknown, seed?: string) {
-    const text = JSON.stringify(value)
-    storage.map.set(key, seed ? await sealedWith(seed).seal(text, key) : text)
-  }
+  heard.restore()
+  expect(heard.said).toEqual([])
 })
 
 /* An account wallet at a mint that has never seen it has nothing to restore;
@@ -167,8 +37,7 @@ const markRestored = async (phone: ReturnType<typeof device>, seed: string) => {
 }
 
 describe('a build without account wallets', () => {
-  const alpha = (mint: TestNutftMint) =>
-    device(mint, memory(), undefined, false)
+  const alpha = (mint: TestNutftMint) => device(mint, {accountWallets: false})
 
   it('opens the device wallet for a valid seed, and creates nothing for the account', async () => {
     const mint = new TestNutftMint()
@@ -283,9 +152,9 @@ describe('a collection with an account seed', () => {
     expect((await one.session.snapshot()).owned).toHaveLength(2)
 
     const operations: NutftOperation[] = []
-    const second = device(mint, memory(), operation =>
-      operations.push(operation)
-    )
+    const second = device(mint, {
+      observe: operation => operations.push(operation)
+    })
     const two = second.open(ACCOUNT_A)
     expect(await two.session.open()).toMatchObject({
       active: 'host',
@@ -456,8 +325,9 @@ describe('receiving a card', () => {
     const {session} = device(mint).open()
     await session.open()
     const card = mint.issue(await session.destination(), 1)
-    mint.before = 'checkstate'
+    const answer = unreachable(mint, 'checkstate')
     const outcome = await session.receive(card).catch(error => error)
+    answer()
     expect(outcome).toBeInstanceOf(ReceiveProblem)
     expect(said(outcome)).not.toContain(card.slice(0, 30))
     expect((await session.snapshot()).owned).toEqual([])

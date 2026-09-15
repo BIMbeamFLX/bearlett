@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 import {
   ACCOUNT_A,
   FRIEND,
@@ -8,6 +8,9 @@ import {
   restoredAccount,
   secretOf
 } from './harness'
+
+/* Restores and moves do real curve arithmetic on every card slot. */
+vi.setConfig({testTimeout: 120_000})
 
 /*
  * Regression tests from the "never lose a card" review of pull request 23. On

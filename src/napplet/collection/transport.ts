@@ -31,9 +31,12 @@ export type CollectionTransportOptions = {
   maxBytes?: number
   /**
    * Told the name of each mint operation as it is sent, for progress on long
-   * work such as a restore. Never the body, the parameter or the reply.
+   * work such as a restore, and how long it waits before asking again. Never
+   * the body, the parameter or the reply.
    */
-  observe?: (operation: NutftOperation) => void
+  observe?: (operation: NutftOperation, detail?: {retryInMs?: number}) => void
+  /** How to wait before asking the mint again. Tests pass one that does not. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 type Route =
@@ -41,6 +44,30 @@ type Route =
   | {kind: 'mirror'; url: string}
 
 const DEFAULT_MAX_BYTES = 3 * 1024 * 1024
+
+/**
+ * The operations that change nothing at the mint, and so may simply be asked
+ * again. Trades, sales and possession proofs are not here: the card library
+ * keeps their pending outputs and decides itself when to send them again.
+ */
+const READ_ONLY: ReadonlySet<NutftOperation> = new Set([
+  'info',
+  'keys',
+  'keysets',
+  'catalog',
+  'blob',
+  'state',
+  'supply',
+  'checkstate',
+  'restore'
+])
+
+/** Asked at most this often, waiting between tries as the mint asks. */
+export const ATTEMPTS = 4
+/** No single wait is longer than this, whatever the mint asks for. */
+export const LONGEST_WAIT_MS = 20_000
+const backoff = (attempt: number) => Math.min(8000, 500 * 2 ** attempt)
+const busy = (status: number) => status === 429 || status === 503
 
 /** Longest path first, so `/v1/keysets` never matches as `/v1/keys`. */
 const OPERATIONS = Object.entries(NUTFT_OPERATIONS).sort(
@@ -102,17 +129,35 @@ export function routeRequest(
  * Capability calls are serialised. The host permits one mint request per window
  * at a time, and the wallet asks for `/v1/info` and `/v1/keys` together, so
  * without this queue the second of the pair would be refused as a duplicate.
+ *
+ * A read that the mint answers with 429 or 503, or that the shell could not
+ * deliver, is asked again: after the wait the mint named, or a backoff that
+ * doubles from half a second, never more than twenty seconds at a time and at
+ * most four times in all. The queue waits with it, since a rate limit is on
+ * this client and not on one call. What still fails after that is handed to
+ * the library as it came.
  */
 export function createCollectionFetch(
   options: CollectionTransportOptions
 ): typeof fetch {
   const mint = nutftMintUrl(options.mint)
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>(done => setTimeout(done, ms)))
   let queue: Promise<unknown> = Promise.resolve()
   const serialised = <T>(work: () => Promise<T>): Promise<T> => {
     const run = queue.then(work, work)
     queue = run.catch(() => {})
     return run
+  }
+  const tell = (operation: NutftOperation, detail?: {retryInMs: number}) => {
+    try {
+      if (detail) options.observe?.(operation, detail)
+      else options.observe?.(operation)
+    } catch {
+      /* Progress is a courtesy; it never stops a mint call. */
+    }
   }
 
   return async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -141,18 +186,30 @@ export function createCollectionFetch(
           ? undefined
           : String(init.body)
 
-    const reply = await serialised(() => {
-      try {
-        options.observe?.(route.operation)
-      } catch {
-        /* Progress is a courtesy; it never stops a mint call. */
+    const request = {
+      mint,
+      operation: route.operation,
+      ...(route.parameter !== undefined ? {parameter: route.parameter} : {}),
+      ...(body !== undefined ? {body} : {})
+    }
+    const retries = READ_ONLY.has(route.operation)
+    const reply = await serialised(async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        if (attempt === 0) tell(route.operation)
+        const last = attempt + 1 >= ATTEMPTS || !retries
+        let wait: number
+        try {
+          const answer = await options.nutft.request(request)
+          if (last || !busy(answer.status)) return answer
+          wait = answer.retryAfterMs ?? backoff(attempt)
+        } catch (error) {
+          if (last) throw error
+          wait = backoff(attempt)
+        }
+        const retryInMs = Math.max(0, Math.min(LONGEST_WAIT_MS, wait))
+        tell(route.operation, {retryInMs})
+        await sleep(retryInMs)
       }
-      return options.nutft.request({
-        mint,
-        operation: route.operation,
-        ...(route.parameter !== undefined ? {parameter: route.parameter} : {}),
-        ...(body !== undefined ? {body} : {})
-      })
     })
     return new Response(reply.body, {
       status: reply.status,

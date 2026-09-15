@@ -145,7 +145,8 @@ export function prepareCollectionGlobals(
     nutft: deps.nutft,
     resource: deps.resource,
     mirrors: edition.mirrors,
-    observe: deps.observe
+    observe: deps.observe,
+    sleep: deps.sleep
   })
 
   scope.__bearlettCollection = edition.id
