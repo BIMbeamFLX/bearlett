@@ -93,9 +93,66 @@ export type NutftResponse = {
   retryAfterMs?: number
 }
 
+/**
+ * What `nutft.acquire` resolves to.
+ *
+ * A shell that derives the collection wallet from the account hands over
+ * `seed`: 32 bytes of BIP39 entropy as exactly 64 lowercase hex characters.
+ * Never a mnemonic, and never something the napplet has to tidy up first. A
+ * shell that does not derive one leaves the field out, and the napplet keeps
+ * generating its own random mnemonic.
+ */
+export type NutftLease = {seed?: string}
+
 export type NutftHost = {
-  acquire?(): Promise<void>
+  acquire?(): Promise<NutftLease | void>
   request(request: NutftRequest): Promise<NutftResponse>
+}
+
+/** What a holder is told when a seed is wrong. It never names the value. */
+export const UNSAFE_OPEN_MESSAGE =
+  'This collection could not be opened safely. Close it and try again.'
+
+/** Exactly 64 lowercase hex characters, as sent. Nothing is trimmed or folded. */
+export const isHostSeed = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+
+export class UnsafeLease extends Error {
+  constructor() {
+    super(UNSAFE_OPEN_MESSAGE)
+    this.name = 'UnsafeLease'
+  }
+}
+
+/**
+ * Read an acquire result, failing closed.
+ *
+ * Only three shapes are a lease: `undefined`, `null`, and a plain object whose
+ * own keys are at most `seed`. Absent means no such key, or `seed: undefined`.
+ * A present seed must already be a host seed: an empty string, `null`, a
+ * number, a mnemonic or mixed-case hex is refused rather than repaired, because
+ * a repaired seed opens a different wallet.
+ *
+ * Every other shape is refused, not read as "no seed": a bare string, bytes, a
+ * `String` object, a `Map`, an object with a prototype of its own or with a
+ * seed under another name (`seedHex`, `mnemonic`, `lease.seed`). Each of those
+ * is most likely a seed sent in the wrong place, and reading it as absent
+ * would quietly open a random wallet instead of the account's.
+ */
+export function readNutftLease(result: unknown): NutftLease {
+  if (result === undefined || result === null) return {}
+  if (
+    typeof result !== 'object' ||
+    Object.getPrototypeOf(result) !== Object.prototype
+  )
+    throw new UnsafeLease()
+  const keys = Reflect.ownKeys(result)
+  if (keys.some(key => key !== 'seed')) throw new UnsafeLease()
+  if (!Object.hasOwn(result, 'seed')) return {}
+  const seed: unknown = (result as {seed?: unknown}).seed
+  if (seed === undefined) return {}
+  if (!isHostSeed(seed)) throw new UnsafeLease()
+  return {seed}
 }
 
 /**

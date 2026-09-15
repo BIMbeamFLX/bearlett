@@ -16,8 +16,16 @@ export const INVENTORY_KIND = 'nutft/inventory'
 export const INVENTORY_REQUEST_KIND = 'nutft/inventory-request'
 /** Storage key the host reads the last inventory from. */
 export const INVENTORY_STORAGE_KEY = 'inventory'
+/**
+ * Storage key naming the wallet the stored inventory was counted from. The
+ * host reads only `inventory`; this one is the collection's own record, so an
+ * inventory never stands without the wallet it belongs to.
+ */
+export const INVENTORY_WALLET_KEY = 'inventory:wallet'
 export const MAX_INVENTORY_CARDS = 4096
-const MAX_ID = 64
+/* The strictest reader of this payload, the host's, takes exactly these. A
+   looser writer would only find out when the host dropped the payload. */
+const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const MAX_URI = 2048
 
 export type InventoryCard = {
@@ -112,14 +120,29 @@ const exactFields = (
 }
 
 const idField = (value: unknown, name: string): string => {
-  if (typeof value !== 'string' || !value || value.length > MAX_ID)
-    fail(`"${name}" must be a string of 1 to ${MAX_ID} characters`)
+  if (typeof value !== 'string' || !ID.test(value))
+    fail(
+      `"${name}" must be 1 to 64 letters, digits, dots, underscores or ` +
+        'hyphens, starting with a letter or digit'
+    )
   return value as string
 }
 
-const uriField = (value: unknown, name: string): string => {
-  if (typeof value !== 'string' || value.length > MAX_URI)
-    fail(`"${name}" must be a string of at most ${MAX_URI} characters`)
+/** An https URL with no credentials, or `""` where `empty` allows it. */
+const httpsField = (value: unknown, name: string, empty: boolean): string => {
+  const refuse = () =>
+    fail(
+      `"${name}" must be ${empty ? 'empty or ' : ''}an https URL of at most ${MAX_URI} characters`
+    )
+  if (typeof value !== 'string' || value.length > MAX_URI) refuse()
+  if (empty && value === '') return value as string
+  let url: URL | null = null
+  try {
+    url = new URL(value as string)
+  } catch {
+    refuse()
+  }
+  if (url!.protocol !== 'https:' || url!.username || url!.password) refuse()
   return value as string
 }
 
@@ -139,8 +162,8 @@ export function parseInventory(value: unknown): Inventory {
   if (record.kind !== INVENTORY_KIND) fail(`"kind" must be "${INVENTORY_KIND}"`)
   const edition = idField(record.edition, 'edition')
   const collection_id = idField(record.collection_id, 'collection_id')
-  const catalog_uri = uriField(record.catalog_uri, 'catalog_uri')
-  const mint = uriField(record.mint, 'mint')
+  const catalog_uri = httpsField(record.catalog_uri, 'catalog_uri', true)
+  const mint = httpsField(record.mint, 'mint', false)
   const at = record.at
   if (typeof at !== 'number' || !Number.isSafeInteger(at) || at < 0)
     fail('"at" must be a non-negative integer of unix seconds')
@@ -177,6 +200,71 @@ export function parseInventory(value: unknown): Inventory {
     at: at as number,
     cards
   }
+}
+
+/** Where an inventory goes: the shell's storage, and INC when there is one. */
+export type InventoryOutlet = {
+  storage: {
+    setItem(key: string, value: string): Promise<void>
+    removeItem?(key: string): Promise<void>
+  }
+  inc?: {emit(topic: string, payload: unknown): void}
+}
+
+/**
+ * Take a stored inventory back, so the host never answers for this napplet
+ * with counts it could not confirm, or with another wallet's. Removed where
+ * the shell can remove, and emptied where it cannot; an empty value is not an
+ * inventory to anyone.
+ */
+export async function withdrawInventory(
+  outlet: Pick<InventoryOutlet, 'storage'>
+): Promise<void> {
+  for (const key of [INVENTORY_STORAGE_KEY, INVENTORY_WALLET_KEY])
+    try {
+      if (!outlet.storage.removeItem) throw new Error('no remove')
+      await outlet.storage.removeItem(key)
+    } catch {
+      try {
+        await outlet.storage.setItem(key, '')
+      } catch {
+        /* Nothing more a napplet can do; the cards on screen are unaffected. */
+      }
+    }
+}
+
+/**
+ * Publish what the snapshot of one wallet holds, or withdraw what was
+ * published before.
+ *
+ * The payload is stored only once it has been built and read back strictly,
+ * then announced, with the name of the wallet it was counted from written
+ * first. A snapshot that does not make a valid inventory, or a store that
+ * refuses either, takes the previous one away instead of leaving it standing.
+ * Resolves to what was published, or `null`.
+ */
+export async function publishInventory(
+  outlet: InventoryOutlet,
+  edition: CollectionEdition,
+  snapshot: Snapshot,
+  now: number,
+  wallet: string
+): Promise<Inventory | null> {
+  let built: Inventory
+  try {
+    built = buildInventory(edition, snapshot, now)
+    await outlet.storage.setItem(INVENTORY_WALLET_KEY, wallet)
+    await outlet.storage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(built))
+  } catch {
+    await withdrawInventory(outlet)
+    return null
+  }
+  try {
+    outlet.inc?.emit(INVENTORY_CONVENTION, built)
+  } catch {
+    /* The stored copy stands; the host can still answer from it. */
+  }
+  return built
 }
 
 /** Whether a payload asks for the inventory of exactly this edition. */

@@ -1,5 +1,10 @@
 import {describe, expect, it, vi} from 'vitest'
-import {createCollectionFetch, routeRequest} from './transport'
+import {
+  ATTEMPTS,
+  LONGEST_WAIT_MS,
+  createCollectionFetch,
+  routeRequest
+} from './transport'
 import type {NutftRequest, NutftResponse} from '../../host/nutft-contract'
 
 const MINT = 'https://tcg.example/g'
@@ -187,7 +192,10 @@ describe('createCollectionFetch', () => {
       resource: {bytes: vi.fn()},
       mirrors: MIRRORS
     })
-    await expect(fetcher(`${MINT}/v1/info`)).rejects.toThrow(/refused/)
+    /* A trade is never asked twice, so its failure reaches the caller. */
+    await expect(
+      fetcher(`${MINT}/nutft/trade`, {method: 'POST', body: '{}'})
+    ).rejects.toThrow(/refused/)
     expect(await (await fetcher(`${MINT}/v1/keys`)).json()).toEqual({
       second: true
     })
@@ -213,6 +221,163 @@ describe('createCollectionFetch', () => {
       maxBytes: 16
     })
     await expect(big(url)).rejects.toThrow(/larger than this wallet accepts/)
+  })
+
+  it('names each mint operation to an observer, and nothing more', async () => {
+    const seen: unknown[][] = []
+    const fetcher = createCollectionFetch({
+      mint: MINT,
+      nutft: host(),
+      resource: {bytes: vi.fn(async () => new Blob(['face']))},
+      mirrors: MIRRORS,
+      observe: (...args: unknown[]) => {
+        seen.push(args)
+        throw new Error('an observer that fails')
+      }
+    })
+    await fetcher(`${MINT}/v1/restore`, {
+      method: 'POST',
+      body: '{"outputs":[]}'
+    })
+    await fetcher(`${MINT}/nutft/reveal?payment_hash=abc`)
+    await fetcher(`https://nostr.download/${SHA}.webp`)
+    /* A mirror fetch is not a mint operation, and a failing observer does not
+       stop the call it was told about. */
+    expect(seen).toEqual([['restore'], ['reveal']])
+  })
+
+  describe('when the mint is busy', () => {
+    /* A host whose replies are scripted, one per call, and a clock that adds
+       up the waits instead of waiting. */
+    const scripted = (replies: Array<NutftResponse | Error>) => {
+      const calls: NutftRequest[] = []
+      return {
+        calls,
+        request: vi.fn(async (request: NutftRequest) => {
+          calls.push(request)
+          const next = replies.shift() ?? {status: 200, body: '{"ok":true}'}
+          if (next instanceof Error) throw next
+          return next
+        })
+      }
+    }
+    const fetcherFor = (
+      nutft: ReturnType<typeof scripted>,
+      waits: number[] = [],
+      seen: unknown[][] = []
+    ) =>
+      createCollectionFetch({
+        mint: MINT,
+        nutft,
+        resource: {bytes: vi.fn()},
+        mirrors: MIRRORS,
+        sleep: async ms => {
+          waits.push(ms)
+        },
+        observe: (...args: unknown[]) => {
+          seen.push(args)
+        }
+      })
+
+    it('asks a read again after the wait the mint names', async () => {
+      const nutft = scripted([
+        {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 1500},
+        {status: 503, body: '{"error":"busy"}'},
+        {status: 200, body: '{"states":[]}'}
+      ])
+      const waits: number[] = []
+      const seen: unknown[][] = []
+      const reply = await fetcherFor(nutft, waits, seen)(`${MINT}/v1/keys`)
+      expect(reply.status).toBe(200)
+      expect(nutft.calls).toHaveLength(3)
+      /* The mint's own wait first, then the backoff for the second try. */
+      expect(waits).toEqual([1500, 1000])
+      expect(seen).toEqual([
+        ['keys'],
+        ['keys', {retryInMs: 1500}],
+        ['keys', {retryInMs: 1000}]
+      ])
+    })
+
+    it('leaves restore and checkstate to the library, with the wait the mint named', async () => {
+      for (const [path, body] of [
+        ['/v1/restore', '{"outputs":[]}'],
+        ['/v1/checkstate', '{"Ys":[]}']
+      ]) {
+        const nutft = scripted([
+          {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 1500},
+          new Error('never reached')
+        ])
+        const waits: number[] = []
+        const reply = await fetcherFor(nutft, waits)(`${MINT}${path}`, {
+          method: 'POST',
+          body
+        })
+        /* Handed on at once, asked once: the library waits, and only it. */
+        expect(reply.status).toBe(429)
+        expect(reply.headers.get('retry-after')).toBe('2')
+        expect(nutft.calls).toHaveLength(1)
+        expect(waits).toEqual([])
+
+        const lost = scripted([new Error('Shell request timed out.')])
+        await expect(
+          fetcherFor(lost)(`${MINT}${path}`, {method: 'POST', body})
+        ).rejects.toThrow(/timed out/)
+        expect(lost.calls).toHaveLength(1)
+      }
+    })
+
+    it('asks again when the shell could not deliver, then gives up with its error', async () => {
+      const lost = () => new Error('Shell request timed out.')
+      const nutft = scripted([lost(), lost(), lost(), lost(), lost()])
+      const waits: number[] = []
+      await expect(
+        fetcherFor(nutft, waits)(`${MINT}/nutft/catalog`)
+      ).rejects.toThrow(/timed out/)
+      expect(nutft.calls).toHaveLength(ATTEMPTS)
+      expect(waits).toEqual([500, 1000, 2000])
+    })
+
+    it('hands the last busy answer on after the last try', async () => {
+      const busy = {status: 429, body: '{"error":"rate limited"}'}
+      const nutft = scripted([busy, busy, busy, busy, busy])
+      const reply = await fetcherFor(nutft)(`${MINT}/v1/keys`)
+      expect(reply.status).toBe(429)
+      expect(nutft.calls).toHaveLength(ATTEMPTS)
+    })
+
+    it('never waits longer than it allows, whatever the mint asks', async () => {
+      const nutft = scripted([
+        {status: 429, body: '{}', retryAfterMs: 3_600_000},
+        {status: 200, body: '{}'}
+      ])
+      const waits: number[] = []
+      await fetcherFor(nutft, waits)(`${MINT}/v1/info`)
+      expect(waits).toEqual([LONGEST_WAIT_MS])
+    })
+
+    it('never sends a trade again: the card library keeps its pending outputs', async () => {
+      const nutft = scripted([
+        {status: 429, body: '{"error":"rate limited"}', retryAfterMs: 10},
+        new Error('never reached')
+      ])
+      const waits: number[] = []
+      const reply = await fetcherFor(nutft, waits)(`${MINT}/nutft/trade`, {
+        method: 'POST',
+        body: '{"idempotency_key":"k","inputs":[],"outputs":[]}'
+      })
+      expect(reply.status).toBe(429)
+      expect(nutft.calls).toHaveLength(1)
+      expect(waits).toEqual([])
+      const failing = scripted([new Error('Shell request timed out.')])
+      await expect(
+        fetcherFor(failing)(`${MINT}/nutft/trade`, {
+          method: 'POST',
+          body: '{"idempotency_key":"k","inputs":[],"outputs":[]}'
+        })
+      ).rejects.toThrow(/timed out/)
+      expect(failing.calls).toHaveLength(1)
+    })
   })
 
   it('never lets an unknown address reach either channel', async () => {

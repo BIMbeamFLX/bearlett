@@ -48,7 +48,31 @@ export type Snapshot = {
   spent: readonly OwnedItem[]
   invalid: readonly {error?: string}[]
   unreadable: readonly unknown[]
+  /** Cards held that still wait to be re-issued to this wallet's own key. */
+  unrestorable?: number
 }
+
+/*
+ * The card library's own verdicts on a proof it did look at. A proof it could
+ * not look at, because the mint did not answer its checkstate or its catalogue
+ * could not be fetched, lands in the same `invalid` list with some other
+ * message, and says nothing about whether that card is held.
+ */
+const VERDICTS = [
+  /^invalid NutFT proof$/,
+  /^catalog has no verified asset /,
+  /^proof is not addressed to this wallet$/
+]
+
+/**
+ * Whether a snapshot holds cards the mint was never asked about. Such a
+ * snapshot is not a wallet without those cards: nothing may be decided from
+ * it, no wallet switched, no move planned and no inventory published.
+ */
+export const isIncomplete = (snapshot: Snapshot): boolean =>
+  snapshot.invalid.some(
+    entry => !VERDICTS.some(verdict => verdict.test(entry?.error ?? ''))
+  )
 
 /** Copies of one card, held together so the grid can show `×N`. */
 export type CardStack = {

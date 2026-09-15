@@ -40,4 +40,10 @@ declare module 'node:crypto' {
   export function createHash(algorithm: string): {
     update(data: Uint8Array | string): {digest(encoding: 'hex'): string}
   }
+  export function createHmac(
+    algorithm: string,
+    key: Uint8Array
+  ): {
+    update(data: Uint8Array | string): {digest(encoding: 'hex'): string}
+  }
 }

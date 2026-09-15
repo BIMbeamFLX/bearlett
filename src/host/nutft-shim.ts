@@ -1,8 +1,9 @@
-import type {NutftHost} from './nutft-contract'
+import {readNutftLease} from './nutft-contract'
+import type {NutftHost, NutftLease} from './nutft-contract'
 
 /** Inject only when the shell grants NutFT. Replies must originate from this iframe's parent. */
-export function installNutftShim(): NutftHost & {
-  acquire(): Promise<void>
+export function installNutftShim(): Omit<NutftHost, 'acquire'> & {
+  acquire(): Promise<NutftLease>
   dispose(): void
 } {
   const pending = new Map<
@@ -49,9 +50,10 @@ export function installNutftShim(): NutftHost & {
   return {
     request: request =>
       call('nutft.request', request) as ReturnType<NutftHost['request']>,
-    acquire: async () => {
-      await call('nutft.acquire')
-    },
+    /* The lease may carry the account's seed. It is checked here, before any
+       caller sees it, and a malformed one refuses the acquire instead of
+       quietly falling back to a random wallet. */
+    acquire: async () => readNutftLease(await call('nutft.acquire')),
     dispose: () => {
       window.removeEventListener('message', listener)
       for (const p of pending.values()) {

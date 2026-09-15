@@ -1,8 +1,11 @@
 import {describe, expect, it} from 'vitest'
 import {
   EDITIONS,
+  InvalidAccountWallets,
+  InvalidMint,
   MintNotConfigured,
   UnknownEdition,
+  checkMintAddress,
   isEditionMode,
   resolveEdition
 } from './editions'
@@ -49,8 +52,27 @@ describe('resolveEdition', () => {
       id: '600b-g',
       mint: 'https://tcg.example/g',
       units: ['600B-G'],
-      mirrors: EDITIONS['600b-g'].mirrors
+      mirrors: EDITIONS['600b-g'].mirrors,
+      accountWallets: false
     })
+  })
+
+  it('leaves account wallets out unless the build turns them on', () => {
+    for (const value of [undefined, '', '0'])
+      expect(
+        resolveEdition('600b-e1', 'https://tcg.nappelin.com', value)
+          .accountWallets
+      ).toBe(false)
+    expect(
+      resolveEdition('600b-e1', 'https://tcg.nappelin.com', '1').accountWallets
+    ).toBe(true)
+  })
+
+  it('stops the build on a flag value it does not know', () => {
+    for (const value of ['true', 'yes', 'on', ' 1', '01', 'false'])
+      expect(() =>
+        resolveEdition('600b-e1', 'https://tcg.nappelin.com', value)
+      ).toThrow(InvalidAccountWallets)
   })
 
   it('pins the unit to the collection id the mint signs with', () => {
@@ -62,6 +84,44 @@ describe('resolveEdition', () => {
   it('refuses to build without a mint rather than guessing one', () => {
     expect(() => resolveEdition('600b-g', undefined)).toThrow(MintNotConfigured)
     expect(() => resolveEdition('600b-g', '')).toThrow(MintNotConfigured)
+  })
+
+  it('accepts the production mint exactly as written', () => {
+    expect(resolveEdition('600b-e1', 'https://tcg.nappelin.com').mint).toBe(
+      'https://tcg.nappelin.com'
+    )
+    expect(checkMintAddress('https://tcg.example/g')).toBe(
+      'https://tcg.example/g'
+    )
+  })
+
+  it('refuses a mint address instead of normalising it', () => {
+    const refused: Array<[string, RegExp]> = [
+      ['http://tcg.nappelin.com', /must use https/],
+      ['http://127.0.0.1:4190', /must use https/],
+      ['tcg.nappelin.com', /is not a URL/],
+      [
+        'https://tcg.nappelin.com/',
+        /must not end with a slash: use https:\/\/tcg\.nappelin\.com\./
+      ],
+      [
+        'https://tcg.example/g/',
+        /must not end with a slash: use https:\/\/tcg\.example\/g\./
+      ],
+      ['https://user:pw@tcg.nappelin.com', /credentials/],
+      ['https://tcg.nappelin.com?x=1', /query or a fragment/],
+      ['https://tcg.nappelin.com#top', /query or a fragment/],
+      ['https://tcg.nappelin.com?', /query or a fragment/],
+      [
+        'https://TCG.nappelin.com',
+        /written as the mint writes it: https:\/\/tcg\.nappelin\.com\./
+      ],
+      ['https://tcg.nappelin.com:443', /written as the mint writes it/]
+    ]
+    for (const [mint, reason] of refused) {
+      expect(() => resolveEdition('600b-e1', mint)).toThrow(InvalidMint)
+      expect(() => resolveEdition('600b-e1', mint)).toThrow(reason)
+    }
   })
 
   it('refuses an edition it does not know, and says which it does', () => {

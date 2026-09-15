@@ -26,7 +26,11 @@ export default defineConfig(({mode}) => {
     )
 
   if (edition) {
-    const collection = resolveEdition(edition, process.env.BEARLETT_MINT)
+    const collection = resolveEdition(
+      edition,
+      process.env.BEARLETT_MINT,
+      process.env.BEARLETT_ACCOUNT_WALLETS
+    )
     const title = editionById(edition)!.title
     return {
       mode,
@@ -49,8 +53,16 @@ export default defineConfig(({mode}) => {
           description: `Hold, inspect and hand over the ${title} cards you own.`,
           artifactMode: 'single-file',
           /* No `storage`-free variant: a collection that cannot persist its
-             key is not a collection, it is a fresh wallet on every open. */
+             key is not a collection, it is a fresh wallet on every open.
+             The mint capability, `nutft`, is required too but cannot be
+             declared here: the plugin keeps only registered NAP domains and
+             drops any other name without a word, as it does for the sats
+             wallet's `cashu`. docs/NAPPLETS.md says so for a shell author. */
           requires: ['storage', 'resource', 'inc'],
+          /* Receiving is by paste only. The collection still stages a card
+             another napplet hands over on napplet:collection/receive for the
+             holder to confirm, but no build asks a host to route one there
+             until that route is agreed with the host. */
           archetypes: [
             {slug: 'collection', convention: 'napplet:collection/open'},
             {slug: 'collection', convention: 'napplet:collection/inventory'}
@@ -58,7 +70,9 @@ export default defineConfig(({mode}) => {
         })
       ],
       build: {
-        outDir: `dist-collection-${edition}`,
+        /* A build with account wallets lands beside the alpha build, never
+           over it, so the two artifacts cannot be mistaken for each other. */
+        outDir: `dist-collection-${edition}${collection.accountWallets ? '-accounts' : ''}`,
         target: 'esnext',
         assetsInlineLimit: 1000000
       }
