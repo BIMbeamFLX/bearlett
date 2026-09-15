@@ -343,20 +343,21 @@ describe('createNutftService', () => {
   })
 
   it('takes the host Web Locks when none are given', async () => {
-    const name = `bearlett:nutft-lease:scope:default-${Math.random()}`
-    const tab = createNutftService({
-      scope: () => name.slice('bearlett:nutft-lease:'.length),
-      allowed: () => true
-    })
-    await tab.acquire('win-1')
-    const state = await navigator.locks.query()
-    expect(state.held?.map(lock => lock.name)).toContain(name)
-    tab.onWindowDestroyed('win-1')
-    await vi.waitFor(async () =>
-      expect(
-        (await navigator.locks.query()).held?.map(lock => lock.name)
-      ).not.toContain(name)
-    )
+    /* The host's own navigator, whatever Web Locks this Node has or lacks. */
+    const locks = sharedLocks()
+    vi.stubGlobal('navigator', {locks})
+    try {
+      const tab = createNutftService({
+        scope: () => 'scope:600b-e1',
+        allowed: () => true
+      })
+      await tab.acquire('win-1')
+      expect([...locks.held]).toEqual(['bearlett:nutft-lease:scope:600b-e1'])
+      tab.onWindowDestroyed('win-1')
+      await vi.waitFor(() => expect(locks.held.size).toBe(0))
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('holds leases in the service alone where there are no Web Locks', async () => {
