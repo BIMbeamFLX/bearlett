@@ -23,6 +23,11 @@ import {
   readCashAddressSecretIndices,
   mergeCashAddressSecretIndices
 } from './cashSecrets'
+import {
+  registeredAddresses,
+  mergeRegisteredAddresses,
+  type RegisteredAddress
+} from './addressRegistry'
 import {withStorageLock} from './storageLock'
 
 // One bearer note held by this wallet - the decrypted, in-memory shape.
@@ -308,6 +313,9 @@ export type BackupFile = {
   cashIndices?: Record<string, number>
   // LUD-25 Part 2 note-key counters, same treatment (see cashSecrets.ts)
   cashAddressIndices?: Record<string, number>
+  // LUD-25 Part 2 usernames this wallet registered (addressRegistry.ts):
+  // non-secret, the branch behind each is re-derived from the seed
+  registeredAddresses?: RegisteredAddress[]
   bearers: EncryptedBearerRecord[]
   trustedMints?: TrustedMint[]
 }
@@ -320,7 +328,8 @@ export const buildBackup = (): BackupFile => {
     bearers: readEncryptedBearers(),
     trustedMints: trustedMints(),
     cashIndices: readCashSecretIndices(),
-    cashAddressIndices: readCashAddressSecretIndices()
+    cashAddressIndices: readCashAddressSecretIndices(),
+    registeredAddresses: registeredAddresses()
   }
   if (savedStorageRootKeyIsEncrypted()) {
     backup.storageRootKey = getSavedStorageRootKeyStored()!
@@ -467,6 +476,7 @@ export const applyBackup = (data: unknown): RestoreResult => {
   mergeCashSecretIndices(backup.cashIndices)
   // a backup taken before Part 2 keys existed simply has no field here
   mergeCashAddressSecretIndices(backup.cashAddressIndices)
+  mergeRegisteredAddresses(backup.registeredAddresses)
 
   return {
     added,

@@ -1,0 +1,234 @@
+import {createSignal} from 'solid-js'
+import {serviceOriginOf} from './lnurlcash'
+import {isValidNpub} from './nostrAddress'
+
+// LUD-25 Part 2 (see 25.md's "Seed & derivation") - usernames THIS wallet
+// has registered for itself at a mint (POST /p/{username}), each backed by
+// the mint's own watch-only branch (see cashSecrets.ts's cashAddressBranch).
+// Distinct from trustedMints.ts's own `username` field, which caches the
+// local-part a mint's own GENERIC identity was reached at ("mint" out of
+// "mint@host"). The registration itself stands at the mint; this is the
+// device's record of it, included in backups (storage.ts) so a restored
+// wallet knows where to look. The branch is always re-derivable from the
+// seed regardless.
+export type RegisteredAddress = {
+  // full SERVICE origin, same convention as trustedMints.ts's own `server`
+  server: string
+  username: string
+  registeredAt: number
+  // whatever npub AddressDialog sent alongside this claim, purely for this
+  // device's own display - SERVICE is the one that actually serves it as
+  // a NIP-05 identity, this is never re-sent anywhere
+  npub?: string
+  // minutes between automatic "check notes" passes - undefined/0 means
+  // off (see AddressAutoScanner.tsx). Per-address, not wallet-wide, since
+  // different addresses see very different traffic
+  autoScanMinutes?: number
+  lastAutoScanAt?: number
+  // resume floor for the next incremental "check notes" pass (as opposed
+  // to a full rescan from 0) - see addressRecovery.ts's
+  // scanRegisteredAddress's own `nextScanIndex` for how this advances:
+  // past whatever this device has itself confirmed used, and past
+  // whatever index SERVICE's own payRequest metadata hints at (LUD-25
+  // Part 2's text/xpub) - never regresses
+  nextScanIndex?: number
+}
+
+// 0 is "off", not a real interval
+export const ADDRESS_SCAN_OPTIONS = [0, 15, 30, 60, 360] as const
+export type AddressScanMinutes = (typeof ADDRESS_SCAN_OPTIONS)[number]
+
+export const ADDRESS_SCAN_LABEL: Record<AddressScanMinutes, string> = {
+  0: 'Off',
+  15: '15 minutes',
+  30: '30 minutes',
+  60: '1 hour',
+  360: '6 hours'
+}
+
+const STORAGE_KEY = 'lnurlcash_registered_addresses'
+
+// mirrors the mint's own username pattern (lnurl-mint router.py) - a
+// display/shape guard on OUR OWN stored records, not a substitute for the
+// mint's own validation of what it actually accepted
+const USERNAME_PATTERN = /^[a-z0-9_.-]{1,32}$/
+
+const normalizeOrigin = (value: string): string | null => {
+  const origin = serviceOriginOf(value)
+  try {
+    return new URL(origin).origin
+  } catch {
+    return null
+  }
+}
+
+// validates one stored or imported record into the exact shape kept here,
+// or nothing - shared by the localStorage read and the backup merge so a
+// crafted file can plant no more than a fresh session could
+const sanitize = (a: any): RegisteredAddress | null => {
+  const server =
+    typeof a?.server === 'string' ? normalizeOrigin(a.server) : null
+  const username =
+    typeof a?.username === 'string' ? a.username.toLowerCase() : ''
+  if (
+    !server ||
+    !USERNAME_PATTERN.test(username) ||
+    typeof a?.registeredAt !== 'number'
+  ) {
+    return null
+  }
+  const npub =
+    typeof a?.npub === 'string' && isValidNpub(a.npub) ? a.npub : undefined
+  const autoScanMinutes = (ADDRESS_SCAN_OPTIONS as readonly number[]).includes(
+    a?.autoScanMinutes
+  )
+    ? (a.autoScanMinutes as AddressScanMinutes)
+    : undefined
+  const lastAutoScanAt =
+    typeof a?.lastAutoScanAt === 'number' ? a.lastAutoScanAt : undefined
+  const nextScanIndex =
+    typeof a?.nextScanIndex === 'number' && a.nextScanIndex >= 0
+      ? a.nextScanIndex
+      : undefined
+  return {
+    server,
+    username,
+    registeredAt: a.registeredAt,
+    ...(npub && {npub}),
+    ...(autoScanMinutes && {autoScanMinutes}),
+    ...(lastAutoScanAt && {lastAutoScanAt}),
+    ...(nextScanIndex && {nextScanIndex})
+  }
+}
+
+const readStored = (): RegisteredAddress[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap(a => {
+      const clean = sanitize(a)
+      return clean ? [clean] : []
+    })
+  } catch {
+    return []
+  }
+}
+
+const [registeredAddresses, setRegisteredAddressesSignal] =
+  createSignal<RegisteredAddress[]>(readStored())
+export {registeredAddresses}
+
+const persist = (addresses: RegisteredAddress[]): void => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(addresses))
+  setRegisteredAddressesSignal(addresses)
+}
+
+// Records a registration THIS device just made (or already knows about) -
+// never calls the mint itself (see the kit's registerUsername for that).
+// Idempotent for a bare re-claim (same server+username+npub); a CHANGED
+// npub on a re-claim updates this device's own record too, mirroring
+// SERVICE's own "always replaces wholesale, never merges" npub semantics.
+export const addRegisteredAddress = (
+  server: string,
+  username: string,
+  npub?: string
+): void => {
+  const origin = normalizeOrigin(server)
+  if (!origin) throw new Error('Not a valid mint address.')
+  const name = username.trim().toLowerCase()
+  if (!USERNAME_PATTERN.test(name)) {
+    throw new Error('Not a valid username.')
+  }
+  const current = registeredAddresses()
+  const existing = current.find(a => a.server === origin && a.username === name)
+  if (existing) {
+    if (existing.npub === npub) return
+    persist(current.map(a => (a === existing ? {...a, npub} : a)))
+    return
+  }
+  persist([
+    ...current,
+    {server: origin, username: name, registeredAt: Date.now(), npub}
+  ])
+}
+
+// Forgets this device's own record of a registration - purely local
+// bookkeeping, never itself calls the mint (see the kit's
+// unregisterUsername; AddressDialog.tsx's own unclaim calls both).
+export const removeRegisteredAddress = (
+  server: string,
+  username: string
+): void => {
+  const origin = normalizeOrigin(server)
+  const name = username.trim().toLowerCase()
+  persist(
+    registeredAddresses().filter(
+      a => !(a.server === origin && a.username === name)
+    )
+  )
+}
+
+const updateAddress = (
+  server: string,
+  username: string,
+  patch: Partial<RegisteredAddress>
+): void => {
+  const origin = normalizeOrigin(server)
+  const name = username.trim().toLowerCase()
+  const current = registeredAddresses()
+  if (!current.some(a => a.server === origin && a.username === name)) return
+  persist(
+    current.map(a =>
+      a.server === origin && a.username === name ? {...a, ...patch} : a
+    )
+  )
+}
+
+export const setAddressAutoScan = (
+  server: string,
+  username: string,
+  minutes: AddressScanMinutes
+): void => {
+  updateAddress(server, username, {
+    autoScanMinutes: minutes || undefined
+  })
+}
+
+// Records where a "check notes" pass (manual or automatic) actually left
+// off, so the NEXT one can resume past it instead of re-walking the same
+// gap-limit stretch - see addressRecovery.ts's scanRegisteredAddress
+export const markAddressScanned = (
+  server: string,
+  username: string,
+  nextScanIndex: number,
+  at: number = Date.now()
+): void => {
+  updateAddress(server, username, {nextScanIndex, lastAutoScanAt: at})
+}
+
+// Backup restore (storage.ts): adds registrations this device does not
+// know yet, keeps its own record for ones it does (a backup can never
+// lower a scan floor or change an npub behind the device's back), and
+// ignores anything malformed rather than throwing.
+export const mergeRegisteredAddresses = (incoming: unknown): number => {
+  if (!Array.isArray(incoming)) return 0
+  const current = registeredAddresses()
+  const added: RegisteredAddress[] = []
+  for (const raw of incoming) {
+    const clean = sanitize(raw)
+    if (!clean) continue
+    const known = [...current, ...added].some(
+      a => a.server === clean.server && a.username === clean.username
+    )
+    if (!known) added.push(clean)
+  }
+  if (added.length > 0) persist([...current, ...added])
+  return added.length
+}
+
+export const clearRegisteredAddresses = (): void => {
+  localStorage.removeItem(STORAGE_KEY)
+  setRegisteredAddressesSignal([])
+}

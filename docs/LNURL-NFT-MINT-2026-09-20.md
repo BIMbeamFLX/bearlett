@@ -123,8 +123,12 @@ In order, each its own PR:
    Part 1 fallback, rotates of a `ck1` note stay pubkey-bound, and the seed
    scan walks both ladders. The hardware vault and the napplet's host vault
    still hold hex preimages only.
-2. **Username registration and recovery scan** (upstream `addressRegistry.ts`,
-   `addressRecovery.ts`).
+2. **Username registration and recovery scan.** Done the same day
+   (`src/addressRegistry.ts`, `src/addressRecovery.ts`, the "@" button on a
+   trusted mint's card opens `AddressDialog`): claim with a Schnorr proof from
+   the branch's index-0 key, optional npub, incremental "check notes" with a
+   per-address resume floor that also honours the mint's `text/xpub` hint, a
+   foreground auto-check timer, and registrations carried in backups.
 3. **Internal transfer and send-to-pubkey dialogs.**
 4. **A collection surface for non-melting notes**: one napplet per the design
    brief, showing genesis id, artwork by hash, current holder and hops, with

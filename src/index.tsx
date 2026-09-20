@@ -14,6 +14,7 @@ import './styles/style.scss'
 import './styles/background.scss'
 
 import Nav from './components/Nav'
+import AddressAutoScanner from './components/AddressAutoScanner'
 import Footer from './components/Footer'
 import Hero from './pages/Hero'
 import Wallet from './pages/Wallet'
@@ -46,6 +47,7 @@ const App = (props: any) => {
           containerStyle={{top: '64px'}}
         />
         <Nav />
+        <AddressAutoScanner />
         {/* a render-time throw (e.g. one malformed stored record) must
         never take down the whole app shell - show a recoverable error
         instead of a permanently blank page */}
