@@ -8,7 +8,9 @@ Mint identity includes its path. Cards never contain spendable proofs.
 
 Seed material, monotonic counters, assets and Cashu operations live in one
 AES-GCM encrypted `cashu-v1` snapshot. Host writes must be acknowledged durably.
-One BIP39 phrase supplies separate Cashu/NUT-13 and LNURLcash/LUD-25 derivations.
+One BIP39 phrase supplies separate Cashu/NUT-13 and LNURLcash/LUD-25 derivations;
+the LUD-25 root carries both the Part 1 preimage ladder and the Part 2 note-key
+branch (`cashSecrets.ts`), each with its own per-mint counter in backups.
 Old wallets enable Cashu only after proving their original phrase matches.
 
 Before mutation, the journal records inputs, exact prepared outputs, blinding

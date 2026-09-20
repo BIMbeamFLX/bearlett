@@ -9,7 +9,10 @@ import {notify, NotifyKind, msatToSats} from '../helpers'
 import {resolveMintInput} from '../lnurlcash'
 import {PUBLIC_MINTS} from '../trustedMints'
 import {scanMintForNotes, RECOVERY_GAP_LIMIT} from '../recovery'
-import {mergeCashSecretIndices} from '../cashSecrets'
+import {
+  mergeCashSecretIndices,
+  mergeCashAddressSecretIndices
+} from '../cashSecrets'
 
 type Tab = 'create' | 'restore'
 
@@ -365,6 +368,11 @@ const MintRecovery: Component<{onDone: () => void}> = props => {
         if (result.highestUsedIndex !== null) {
           mergeCashSecretIndices({
             [result.server]: result.highestUsedIndex + 1
+          })
+        }
+        if (result.highestUsedAddressIndex !== null) {
+          mergeCashAddressSecretIndices({
+            [result.server]: result.highestUsedAddressIndex + 1
           })
         }
         totalFound += result.recovered.length

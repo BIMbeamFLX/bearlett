@@ -23,8 +23,8 @@ rotated, never split or merged.
 
 | Piece                                  | Draft (`25.md` 265759f)                                                | lnurl-mint `main` 66c77e8                                                             | Bearlett after this PR                                              |
 | -------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Mint against a 1000 sat payment        | Part 1 minting, `comment = cp1<pk>` under Part 2                       | `/p/cb`, `/p/{username}`; `MIN_SENDABLE_MSAT`, `MAX_SENDABLE_MSAT` fix the price      | `requestInvoice` accepts a `cp1` comment; wallet still sends a hash |
-| Holder is a public key                 | Part 2 ownership proofs: note id is `pk`, spend is `ck1<pk><sig>`      | `_decode_note_ref` keys a note by its `cp1` pubkey                                    | codecs and Schnorr verify present; no note keys in the seed yet     |
+| Mint against a 1000 sat payment        | Part 1 minting, `comment = cp1<pk>` under Part 2                       | `/p/cb`, `/p/{username}`; `MIN_SENDABLE_MSAT`, `MAX_SENDABLE_MSAT` fix the price      | mints `comment = cp1<pk>` when the mint accepts it, else a hash     |
+| Holder is a public key                 | Part 2 ownership proofs: note id is `pk`, spend is `ck1<pk><sig>`      | `_decode_note_ref` keys a note by its `cp1` pubkey                                    | note keys derived from the seed, stored as `ck1`, scanned by pubkey |
 | Transfer without Lightning             | "Internal transfer": rotate to `p1 = cp1<pk_i>` from the payee's `cx1` | PR 49; `text/xpub` in the payee's payRequest metadata; `POST /p/{username}` registers | `payInternalTransfer`, `registerUsername` exported, no UI           |
 | No melt                                | Melt is plain LUD-03 and always allowed                                | No switch; `if pr is not None:` in `/w/cb` pays unconditionally                       | Melt UI exists and would show an error from such a mint             |
 | Public page: current holder of NFT `n` | Not in the draft                                                       | Not present; the `burns` table holds the needed forward links                         | Not present                                                         |
@@ -116,13 +116,13 @@ them.
 
 In order, each its own PR:
 
-1. **Part 2 note keys in the seed.** The kit ships the derivation
-   (`deriveDomainBranchNode`, `deriveNoteSecretKey`, pinned to the draft's
-   vectors in `src/lud25Vectors.test.ts`); the wallet has to persist the
-   per-domain index, hand `configurePubkeySecretProvider` a `ck1`, and mint
-   with `comment = cp1<pk>` the way upstream `requestMintInvoice` does. Until
-   then Bearlett issues Part 1 hash-keyed notes, which such a mint accepts but
-   cannot show a holder key for.
+1. **Part 2 note keys in the seed.** Done on 20 September, same day
+   (`src/cashSecrets.ts`, `requestMintInvoice` in `src/lnurlcash.ts`): note
+   keys come from the draft's domain branch under the wallet's `m/139'` root,
+   mint and cross-mint transfer prefer `comment = cp1<pk>` with a silent
+   Part 1 fallback, rotates of a `ck1` note stay pubkey-bound, and the seed
+   scan walks both ladders. The hardware vault and the napplet's host vault
+   still hold hex preimages only.
 2. **Username registration and recovery scan** (upstream `addressRegistry.ts`,
    `addressRecovery.ts`).
 3. **Internal transfer and send-to-pubkey dialogs.**

@@ -3,12 +3,20 @@ import {
   configureNetworkGuard,
   configurePubkeySecretProvider,
   configureSecretProvider,
-  configureTransport
+  configureTransport,
+  cp1FromCk1,
+  hashK1,
+  requestInvoice
 } from '@lnurlcash/kit'
-import type {MintFee} from '@lnurlcash/kit'
+import type {InvoiceResult, MintFee} from '@lnurlcash/kit'
 import {fetchServiceResponse, isServiceOffline} from './serviceTransport'
 import {offlineMode} from './offlineMode'
-import {nextCashSecret, requireRecoverableCashSecret} from './cashSecrets'
+import {
+  nextCashAddressSecret,
+  nextCashSecret,
+  requireRecoverableCashAddressSecret,
+  requireRecoverableCashSecret
+} from './cashSecrets'
 import {msatToSats} from './helpers'
 
 // LUD-25 LNURLcash - bearer assets. Draft spec:
@@ -63,13 +71,53 @@ configureSecretProvider(generateNoteSecret)
 export const generateMintSecret = (domain: string): string =>
   requireRecoverableCashSecret(domain)
 
-// LUD-25 Part 2 issuance (cp1-committed notes signed with a note key) needs
-// a seed branch this wallet does not derive yet - the kit ships the
-// derivation (deriveDomainBranchNode, deriveNoteSecretKey), the wallet-side
-// storage of note keys is still to come. Returning null tells the kit to
-// keep issuing Part 1 hash-keyed outputs; Part 2 notes received from others
-// are still decoded and verified through the kit's own codecs.
-configurePubkeySecretProvider(() => null)
+// LUD-25 Part 2: a note that already is pubkey-bound stays that way across
+// a rotate/split/merge (the kit asks this provider whenever an input is a
+// ck1), instead of coming back as a fresh Part 1 preimage. Null whenever no
+// cash root is loaded, which tells the kit to fall back to the Part 1
+// provider above.
+configurePubkeySecretProvider(domain => {
+  try {
+    return nextCashAddressSecret(domain)
+  } catch {
+    return null
+  }
+})
+
+// Part 2 counterpart to generateMintSecret: a wallet-initiated mint or
+// transfer's own pubkey-bound output, seed-recoverable for the same
+// reload-survival reason (see requireRecoverableCashAddressSecret).
+export const generateMintPubkeySecret = (domain: string): string =>
+  requireRecoverableCashAddressSecret(domain)
+
+// Requests a mint invoice, preferring a Part 2 pubkey-bound output
+// (comment=cp1<pk>) over the Part 1 hash-keyed one whenever the mint accepts
+// it. There is no capability flag to check first (the draft dispatches by
+// value shape, never by version), so this just tries. Requesting an invoice
+// has no burn side effect: if the mint rejects a cp1 comment, no invoice was
+// issued and nothing was paid, so falling back is always safe - at most one
+// already-persisted address index goes unused. Callers already required
+// commentAllowed >= 64 (requireMintComment); a cp1 value is 61 characters.
+export const requestMintInvoice = async (
+  callback: string,
+  amountMsat: number,
+  domain: string
+): Promise<{result: InvoiceResult; secret: string}> => {
+  try {
+    const secret = generateMintPubkeySecret(domain)
+    const cp1 = cp1FromCk1(secret)
+    if (cp1) {
+      const result = await requestInvoice(callback, amountMsat, cp1)
+      return {result, secret}
+    }
+  } catch {
+    // no cash root loaded, or the mint did not accept a cp1 comment - no
+    // invoice exists either way, so the Part 1 path below is safe
+  }
+  const secret = generateMintSecret(domain)
+  const result = await requestInvoice(callback, amountMsat, hashK1(secret))
+  return {result, secret}
+}
 
 // fee_percent_ppm is parts-per-million - /10_000 for a percent, then trim
 // the trailing zeros toFixed leaves behind (2000 ppm -> "0.2000" -> "0.2")

@@ -53,7 +53,8 @@ import {
   lightningAddressUsername,
   probeBurnedNote,
   sameInvoice,
-  generateMintSecret,
+  requestMintInvoice,
+  isCk1,
   hashK1,
   requireMintComment,
   requireBoundMintQuote,
@@ -100,7 +101,11 @@ import {
   type PendingDeviceMint
 } from '../pendingDeviceMint'
 import {scanMintForNotes} from '../recovery'
-import {hasCashRoot, mergeCashSecretIndices} from '../cashSecrets'
+import {
+  hasCashRoot,
+  mergeCashSecretIndices,
+  mergeCashAddressSecretIndices
+} from '../cashSecrets'
 import {
   storeableMints,
   addStoreableMint,
@@ -629,13 +634,15 @@ const Mint: Component = () => {
       }
 
       if (!result) {
-        const secret = generateMintSecret(mintServer)
-        result = await requestInvoice(
+        // LUD-25 Part 2 pubkey-bound output when the mint accepts it, with
+        // an invisible Part 1 fallback otherwise - see requestMintInvoice
+        const minted = await requestMintInvoice(
           info.callback,
           amount.grossMsat,
-          hashK1(secret)
+          mintServer
         )
-        setMintSecret(secret)
+        result = minted.result
+        setMintSecret(minted.secret)
         setDeviceMintAttempt(null)
         setInvoicedMsat(amount.netMsat)
       }
@@ -745,8 +752,8 @@ const Mint: Component = () => {
   ) => {
     const info = payRequest()
     if (!info?.withdrawLink) return
-    if (!isPreimage(noteSecret)) {
-      notify('The note secret is 64 hex characters.', NotifyKind.ERROR)
+    if (!isPreimage(noteSecret) && !isCk1(noteSecret)) {
+      notify('The note secret is malformed.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
@@ -777,6 +784,44 @@ const Mint: Component = () => {
       // is more than this deserves
       const feePaidMsat = grossPaidMsat - noteInfo.maxWithdrawable
       const mintPubkey = noteInfo.mintPubkey
+
+      // LUD-25 Part 2: this note's bearer secret already is a signature
+      // proving key ownership, so none of the rotate-for-a-certificate
+      // dance below applies (rotating would reissue under a fresh Part 1
+      // secret, silently downgrading it), and the hardware vault holds
+      // hex preimages only - so this stays browser-only regardless of a
+      // connected device.
+      if (isCk1(noteSecret)) {
+        const url = buildNoteUrl(
+          info.withdrawLink,
+          noteSecret,
+          noteInfo.maxWithdrawable
+        )
+        await addBearer({
+          url,
+          callback: noteInfo.callback,
+          amount: noteInfo.maxWithdrawable,
+          verified: true,
+          mintPubkey
+        })
+        logActivity(
+          'mint',
+          `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(url)} (pubkey-bound).` +
+            (feePaidMsat > 0
+              ? ` (${msatToSats(feePaidMsat)} sat mint fee.)`
+              : '') +
+            (verifyUrl() ? ` Verify: ${verifyUrl()}.` : '')
+        )
+        notify(
+          `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.` +
+            (feePaidMsat > 0
+              ? ` (${msatToSats(feePaidMsat)} sat mint fee.)`
+              : ''),
+          NotifyKind.SUCCESS
+        )
+        navigate('/wallet')
+        return
+      }
 
       // if a vault is connected, this note's secret is generated and held
       // there instead of in this browser - import the note secret, then
@@ -1132,6 +1177,11 @@ const Mint: Component = () => {
       if (result.highestUsedIndex !== null) {
         mergeCashSecretIndices({
           [result.server]: result.highestUsedIndex + 1
+        })
+      }
+      if (result.highestUsedAddressIndex !== null) {
+        mergeCashAddressSecretIndices({
+          [result.server]: result.highestUsedAddressIndex + 1
         })
       }
       if (result.error) {

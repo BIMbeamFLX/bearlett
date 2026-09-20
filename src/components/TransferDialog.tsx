@@ -26,7 +26,8 @@ import {
   describeMintFee,
   probeBurnedNote,
   sameInvoice,
-  generateMintSecret,
+  requestMintInvoice,
+  isCk1,
   hashK1,
   requireMintComment,
   PendingNoteError,
@@ -205,13 +206,10 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       // Refuse before requesting the destination invoice or spending the
       // source note unless the output can be bound to our own secret.
       requireMintComment(info)
-      const secret = generateMintSecret(
-        serverOf(info.withdrawLink || info.callback)
-      )
-      const result = await requestInvoice(
+      const {result, secret} = await requestMintInvoice(
         info.callback,
         props.sourceBearer.amount,
-        hashK1(secret)
+        serverOf(info.withdrawLink || info.callback)
       )
       setMintSecret(secret)
       if (props.sourceBearer.deviceId) {
@@ -247,7 +245,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   // import then rotate).
   const claimDestination = async (noteSecret: string) => {
     const info = payRequest()
-    if (!info?.withdrawLink || !isPreimage(noteSecret)) return
+    if (!info?.withdrawLink) return
+    if (!isPreimage(noteSecret) && !isCk1(noteSecret)) return
     try {
       const declaredUrl = buildNoteUrl(
         info.withdrawLink,
@@ -255,6 +254,40 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         props.sourceBearer.amount
       )
       const noteInfo = await fetchNoteInfo(declaredUrl)
+
+      // LUD-25 Part 2: same reasoning as Mint.tsx's claim - the secret
+      // already proves key ownership, no rotate needed, vault stays out
+      if (isCk1(noteSecret)) {
+        const url = buildNoteUrl(
+          info.withdrawLink,
+          noteSecret,
+          noteInfo.maxWithdrawable
+        )
+        await addBearer({
+          url,
+          callback: noteInfo.callback,
+          amount: noteInfo.maxWithdrawable,
+          verified: true,
+          mintPubkey: noteInfo.mintPubkey
+        })
+        setClaimed(true)
+        stopPolling()
+        if (props.sourceBearer.deviceId) {
+          await markDeviceNoteSpent(deviceClient(), props.sourceBearer.deviceId)
+        }
+        logActivity(
+          'transfer',
+          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(url)} (pubkey-bound).`,
+          props.sourceBearer.label
+        )
+        notify(
+          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}.`,
+          NotifyKind.SUCCESS
+        )
+        navigate('/wallet')
+        props.onClose()
+        return
+      }
 
       const client = deviceClient()
       if (client) {

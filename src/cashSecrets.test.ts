@@ -1,4 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {HDKey} from '@scure/bip32'
+import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
+import {CASH_ROOT_PURPOSE, encodeCx1} from '@lnurlcash/kit'
 
 // same in-memory localStorage stand-in as storage.test.ts/trustedMints.test.ts -
 // cashSecrets.ts persists per-SERVICE indices there, and a fresh module graph
@@ -185,5 +188,93 @@ describe('readCashSecretIndices (backup build)', () => {
 
   it('is empty on a fresh wallet', () => {
     expect(cashSecrets.readCashSecretIndices()).toEqual({})
+  })
+})
+
+// LUD-25 test vector 1 (lnurl/luds branch lnurlcash at 265759f): the
+// spec's own BIP-32 seed, domain mint.example, branch key with odd y. The
+// Part 2 ladder must land on these bytes exactly or a mint scanning the
+// same branch (a registered username's auto-mint) and this wallet would
+// disagree about which keys are whose.
+const VECTOR_SEED = '000102030405060708090a0b0c0d0e0f'
+const VECTOR_DOMAIN = 'mint.example'
+const VECTOR_CX1 =
+  'cx1k7pa9ycdcpf6ju0sryz5efp70jw72rs8d80gwtw3mh096zl5e8g6hywvzxh28902dd3zj2npgl63aaq4p6l2qnn52ymmdpceugu0jpqes280t'
+const VECTOR_SK0 =
+  '944a9631dbda27cf989e27df8be7317a5a9dfb517a6b71358d175f58dd2dc99f'
+const VECTOR_CK1_0 =
+  'ck14tf6pcmvpqltp5ke9mqgvzthm3rdzry49uccxrnygwcl4gvewc62s0003psm2kxx7p8dsal9arwd7e6usu04cjens0qhywer99jc5sz9zqptmg4gyjlgg2zpglhl8atjj6zsfsh5ffnzn4k73naafcukpgdezzqx'
+
+const loadVectorRoot = () =>
+  cashSecrets.setCashRoot(
+    HDKey.fromMasterSeed(hexToBytes(VECTOR_SEED)).deriveChild(CASH_ROOT_PURPOSE)
+  )
+
+describe('Part 2 address branch (LUD-25 Seed & derivation)', () => {
+  it('is null without a loaded root', () => {
+    expect(cashSecrets.cashAddressBranch(VECTOR_DOMAIN)).toBeNull()
+    expect(cashSecrets.cashAddressSecretAtIndex(VECTOR_DOMAIN, 0)).toBeNull()
+    expect(cashSecrets.nextCashAddressSecret(VECTOR_DOMAIN)).toBeNull()
+    expect(() =>
+      cashSecrets.requireRecoverableCashAddressSecret(VECTOR_DOMAIN)
+    ).toThrow(/seed/)
+  })
+
+  it('exports the spec vector cx1 for the domain branch', () => {
+    loadVectorRoot()
+    const branch = cashSecrets.cashAddressBranch(VECTOR_DOMAIN)!
+    expect(encodeCx1(branch.pubkeyXOnly, branch.chainCode)).toBe(VECTOR_CX1)
+  })
+
+  it('derives sk_0 and its ck1 exactly as the spec vectors do', () => {
+    loadVectorRoot()
+    expect(
+      bytesToHex(cashSecrets.cashAddressSecretAtIndex(VECTOR_DOMAIN, 0)!)
+    ).toBe(VECTOR_SK0)
+    expect(cashSecrets.nextCashAddressSecret(VECTOR_DOMAIN)).toBe(VECTOR_CK1_0)
+  })
+
+  it('keeps its own counter, separate from the Part 1 ladder', () => {
+    loadVectorRoot()
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(0)
+    const first = cashSecrets.nextCashAddressSecret(VECTOR_DOMAIN)
+    const second = cashSecrets.nextCashAddressSecret(VECTOR_DOMAIN)
+    expect(first).not.toBe(second)
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(2)
+    expect(cashSecrets.nextCashSecretIndex(VECTOR_DOMAIN)).toBe(0)
+    expect(cashSecrets.readCashAddressSecretIndices()).toEqual({
+      [VECTOR_DOMAIN]: 2
+    })
+    expect(cashSecrets.readCashSecretIndices()).toEqual({})
+  })
+
+  it('never hands out a Part 1 preimage shape', () => {
+    loadVectorRoot()
+    const secret = cashSecrets.nextCashAddressSecret(VECTOR_DOMAIN)!
+    expect(secret.startsWith('ck1')).toBe(true)
+    expect(secret).toHaveLength(163)
+  })
+
+  it('cashAddressSecretAtIndex is pure and the ck1 is deterministic', () => {
+    loadVectorRoot()
+    const a = cashSecrets.ck1ForSecretKey(
+      cashSecrets.cashAddressSecretAtIndex(VECTOR_DOMAIN, 3)!
+    )
+    const b = cashSecrets.ck1ForSecretKey(
+      cashSecrets.cashAddressSecretAtIndex(VECTOR_DOMAIN, 3)!
+    )
+    expect(a).toBe(b)
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(0)
+  })
+
+  it('merges backup counters upward only and clears independently', () => {
+    cashSecrets.mergeCashAddressSecretIndices({[VECTOR_DOMAIN]: 5, bad: -1})
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(5)
+    cashSecrets.mergeCashAddressSecretIndices({[VECTOR_DOMAIN]: 2})
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(5)
+    cashSecrets.mergeCashSecretIndices({[VECTOR_DOMAIN]: 9})
+    cashSecrets.clearCashAddressSecretIndices()
+    expect(cashSecrets.nextCashAddressSecretIndex(VECTOR_DOMAIN)).toBe(0)
+    expect(cashSecrets.nextCashSecretIndex(VECTOR_DOMAIN)).toBe(9)
   })
 })
