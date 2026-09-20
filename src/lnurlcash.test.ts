@@ -53,6 +53,13 @@ import {
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
+// LUD-25 test vector 1, cp1<pk_0> and cp1<pk_1>: valid Part 2 output
+// commitments for a rotate/split
+const CP1_OUTPUT =
+  'cp14tf6pcmvpqltp5ke9mqgvzthm3rdzry49uccxrnygwcl4gvewc6qh2fkky'
+const CP1_OUTPUT_2 =
+  'cp17rq74xhda9zmnnuy7wlcmun6ceg4f2fhungsew99sewlqkpmzzpsf28ex8'
+
 const NOTE_URL = `https://mint.example.com/withdraw?k1=${K1}&amount=21000`
 const MINT_KEY = `02${'11'.repeat(32)}`
 
@@ -196,17 +203,30 @@ describe('mandatory offline-verification fields', () => {
     await expect(fetchNoteInfo(NOTE_URL)).rejects.toThrow(/mintPubkey/)
   })
 
-  it('preserves mutation outputs when an OK response omits sig', async () => {
+  // LUD-25 Part 2 (Offline verification): a certificate is mandatory for a
+  // cp1 output and has nothing to attest to for a Part 1 hash output, so a
+  // legacy rotate without sig succeeds with no signature attached.
+  it('keeps a Part 1 mutation output when an OK response omits sig', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({json: async () => ({status: 'OK'})}) as Response)
     )
     await expect(
       rotateNoteWithHash('https://mint.example.com/w/cb', K1, 'b'.repeat(64))
+    ).resolves.toEqual({signature: undefined})
+  })
+
+  it('requires sig for a cp1 output', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({json: async () => ({status: 'OK'})}) as Response)
+    )
+    await expect(
+      rotateNoteWithHash('https://mint.example.com/w/cb', K1, CP1_OUTPUT)
     ).rejects.toBeInstanceOf(AmbiguousMintError)
   })
 
-  it('requires both signatures for a split', async () => {
+  it('requires both signatures for a split into cp1 outputs', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -221,8 +241,8 @@ describe('mandatory offline-verification fields', () => {
         'https://mint.example.com/w/cb',
         [K1],
         1000,
-        'b'.repeat(64),
-        'c'.repeat(64)
+        CP1_OUTPUT,
+        CP1_OUTPUT_2
       )
     ).rejects.toThrow(/sig2/)
   })
