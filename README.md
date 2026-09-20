@@ -74,7 +74,10 @@ Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-ha
   dni publishes from the reference wallet. New notes are minted pubkey-bound
   (`cp1`/`ck1`, Part 2) whenever the mint accepts it, with note keys derived
   from the seed on the draft's own branch, and recovered from the seed by
-  public key. The draft's test vectors are pinned in this repository's suite.
+  public key. Claim a `username@mint` address on a trusted mint's card, with
+  an optional npub for NIP-05, and let the mint auto-mint to your branch;
+  "Check notes" resumes from where the last scan stopped, or on a timer.
+  The draft's test vectors are pinned in this repository's suite.
 
 ### Notes
 

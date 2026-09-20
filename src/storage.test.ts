@@ -181,6 +181,7 @@ describe('buildBackup', () => {
     const backup = storage.buildBackup()
     expect(backup.cashIndices).toEqual({'mint.example': 3})
     expect(backup.cashAddressIndices).toEqual({'mint.example': 7})
+    expect(backup.registeredAddresses).toEqual([])
   })
 
   it('never exports a plaintext-stored cash root key', async () => {

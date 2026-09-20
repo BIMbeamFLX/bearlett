@@ -44,6 +44,7 @@ import {
   clearCashSecretIndices,
   clearCashAddressSecretIndices
 } from './cashSecrets'
+import {clearRegisteredAddresses} from './addressRegistry'
 import type {Bearer, ActivityEvent, ActivityKind} from './storage'
 import {
   loadBearers,
@@ -320,6 +321,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     clearSavedCashRootKey()
     clearCashSecretIndices()
     clearCashAddressSecretIndices()
+    clearRegisteredAddresses()
     clearAllBearers()
     clearAllActivity()
     clearTrustedMints()

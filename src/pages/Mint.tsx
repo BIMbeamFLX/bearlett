@@ -20,7 +20,8 @@ import {
   IoLockClosedSharp,
   IoHelpCircleSharp,
   IoCopySharp,
-  IoSearchSharp
+  IoSearchSharp,
+  IoAtCircleSharp
 } from 'solid-icons/io'
 import {MdSharpKeyboard} from 'solid-icons/md'
 
@@ -117,6 +118,8 @@ import ScanToggle from '../components/ScanToggle'
 import NfcToggle from '../components/NfcToggle'
 import RequireWallet from '../components/RequireWallet'
 import Dialog from '../components/Dialog'
+import AddressDialog from '../components/AddressDialog'
+import {registeredAddresses} from '../addressRegistry'
 import FiatValue from '../components/FiatValue'
 
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
@@ -1022,6 +1025,15 @@ const Mint: Component = () => {
   // which trusted mint's own Rescan button is currently in flight (see
   // recovery.ts's scanMintForNotes) - single-flight same as refreshingServer
   // above, plus the index it's currently probing for a live progress line
+  // which trusted mint's own "@" button opened AddressDialog (LUD-25 Part
+  // 2's cx1 registration and everything that follows from having one -
+  // claim, check notes, unclaim, auto-check) - at most one at a time
+  const [addressDialogFor, setAddressDialogFor] = createSignal<string | null>(
+    null
+  )
+  const registeredAt = (server: string) =>
+    registeredAddresses().find(a => a.server === server)
+
   const [rescanningServer, setRescanningServer] = createSignal<string | null>(
     null
   )
@@ -1231,6 +1243,14 @@ const Mint: Component = () => {
   return (
     <div id="mint" class="page">
       <h2>Mint a bearer note</h2>
+      <Show when={addressDialogFor()}>
+        {server => (
+          <AddressDialog
+            server={server()}
+            onClose={() => setAddressDialogFor(null)}
+          />
+        )}
+      </Show>
       <div class="two-columns">
         <div class="two-col">
           <RequireWallet>
@@ -1769,6 +1789,18 @@ const Mint: Component = () => {
                           </Show>
                         </button>
                       </Show>
+                      <button
+                        class="icon-btn icon-btn-gap"
+                        classList={{active: !!registeredAt(mint.server)}}
+                        title={
+                          registeredAt(mint.server)
+                            ? `Manage ${registeredAt(mint.server)!.username}@${serverOf(mint.server)} - check notes, unclaim, auto-check`
+                            : 'Claim a username@mint address here (LUD-25 Part 2)'
+                        }
+                        onClick={() => setAddressDialogFor(mint.server)}
+                      >
+                        <IoAtCircleSharp />
+                      </button>
                       <a
                         class="icon-btn icon-btn-gap"
                         title="Open this mint"
