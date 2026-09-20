@@ -77,6 +77,11 @@ Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-ha
   public key. Claim a `username@mint` address on a trusted mint's card, with
   an optional npub for NIP-05, and let the mint auto-mint to your branch;
   "Check notes" resumes from where the last scan stopped, or on a timer.
+- Pay a Lightning Address that published its branch without Lightning: when
+  you hold notes at that address's mint, "Pay via internal transfer" rotates
+  them straight onto the payee's next key. "Send to pubkey" in the notes
+  toolbar burns the selected notes into one owned by a pasted `cp1` key,
+  with change back to you when you name an amount.
   The draft's test vectors are pinned in this repository's suite.
 
 ### Design

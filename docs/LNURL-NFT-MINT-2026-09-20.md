@@ -129,7 +129,14 @@ In order, each its own PR:
    the branch's index-0 key, optional npub, incremental "check notes" with a
    per-address resume floor that also honours the mint's `text/xpub` hint, a
    foreground auto-check timer, and registrations carried in backups.
-3. **Internal transfer and send-to-pubkey dialogs.**
+3. **Internal transfer and send-to-pubkey dialogs.** Done the same day:
+   the Pay dialog offers "Pay via internal transfer" when the looked-up
+   address carries `text/xpub` and this wallet holds notes at its mint
+   (`pickInternalTransferBearers` prefers an exact note, then everything,
+   then an in-order run; the kit's `payInternalTransfer` does the burn); the
+   notes toolbar's "Send to pubkey" burns the selection into a pasted `cp1`,
+   optionally with change. Saved addresses remember whether they advertised
+   internal transfers.
 4. **A collection surface for non-melting notes**: one napplet per the design
    brief, showing genesis id, artwork by hash, current holder and hops, with
    split, merge and melt hidden for notes from a mint that refuses them.
