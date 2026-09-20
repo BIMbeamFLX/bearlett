@@ -8,14 +8,22 @@ const isPermittedMint = (url: URL): boolean =>
 /** Let protocol callers distinguish a local offline choice from ambiguous network failure. */
 export const isServiceOffline = (): boolean =>
   import.meta.env.MODE === 'napplet' && nappletIsOffline()
-/** Fetch protocol responses through the host when running as a napplet. */
+/**
+ * Fetch protocol responses through the host when running as a napplet.
+ * Matches the kit's Transport shape: redirects are returned unfollowed so
+ * the kit can admit each destination before sending a bearer secret.
+ */
 export const fetchServiceResponse = async (
   url: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  method: string = 'GET'
 ): Promise<Response> => {
-  if (import.meta.env.MODE !== 'napplet') return fetch(url, {signal})
+  if (import.meta.env.MODE !== 'napplet')
+    return fetch(url, {signal, method, redirect: 'manual'})
   if (nappletIsOffline())
     throw new Error('Offline mode is on. No request was sent.')
+  if (method !== 'GET')
+    throw new Error('The napplet host only allows GET requests to a mint.')
   const resource = window.napplet?.resource
   if (!resource) throw new Error('The shell must provide NAP-RESOURCE.')
   const fresh = new URL(url)

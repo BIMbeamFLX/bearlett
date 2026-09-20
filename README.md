@@ -70,6 +70,10 @@ Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-ha
   LNURLcash and Cashu mints, retaining payment, issuance and change journals.
 - Use one recovery phrase with separate protocol derivations. Encrypted backups
   contain proofs, counters, quotes, open transfers and designs.
+- Speak the current LUD-25 draft through `@lnurlcash/kit`, the protocol layer
+  dni publishes from the reference wallet: Part 2 public-key notes are decoded
+  and verified, and the draft's test vectors are pinned in this repository's
+  suite.
 
 ### Notes
 
@@ -321,6 +325,7 @@ being discovered later. Provenance and licence:
 | [docs/INFRASTRUCTURE-TODO-2026-09-10.md](docs/INFRASTRUCTURE-TODO-2026-09-10.md)       | What still has to be built as infrastructure, and the two mints we run         |
 | [docs/LINK-PROPOSALS.md](docs/LINK-PROPOSALS.md)                                       | Proposed link formats between napplets                                         |
 | [docs/SOURCES-2026-09-09.md](docs/SOURCES-2026-09-09.md)                               | Pinned specification and dependency sources                                    |
+| [docs/LNURL-NFT-MINT-2026-09-20.md](docs/LNURL-NFT-MINT-2026-09-20.md)                 | Feasibility of an LNURL NFT mint on dni's stack, and the LUD-25 state it needs |
 | [docs/UPSTREAM-LNURLWALLET.md](docs/UPSTREAM-LNURLWALLET.md)                           | Original LNURLwallet documentation                                             |
 | [tests/integration/README.md](tests/integration/README.md)                             | Regtest environment with LNURLmint, Nutshell and two LND nodes                 |
 
