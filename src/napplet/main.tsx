@@ -15,6 +15,7 @@ import Banknote from './Banknote'
 import {DEFAULT_DESIGN, parseDesign} from './design'
 import type {NoteDesign} from './design'
 import './style.css'
+import {startTheme} from './theme'
 import {generateSeedPhrase} from '../keys'
 import WalletTools from './WalletTools'
 import NoteTools from './NoteTools'
@@ -1373,5 +1374,8 @@ function App() {
     </div>
   )
 }
+
+// NAP-THEME: paint the Hypershell chrome now and follow the shell's skin
+void startTheme()
 
 render(() => <App />, document.getElementById('root')!)

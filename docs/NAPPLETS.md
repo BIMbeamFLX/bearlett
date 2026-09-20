@@ -483,6 +483,20 @@ present. One account's cards are never moved to another: a move toward another
 account is left exactly as it is, the current account gets a wallet of its own,
 and the holder is told to open the collection from that account to finish it.
 
+### Design and theme
+
+Wallet and Notes wear the Nappelin Hypershell chrome the way the 600B Timelock
+TCG does: `src/napplet/style.css` declares nappelin's design-system tokens
+(`--iron`, `--brass`, ... `--headline`, `--mono`, `--r`) with the Nappelin values,
+and `src/napplet/theme.ts` paints the same names from the shell's NAP-THEME
+service. Both manifests ask for the `theme` domain. In a shell that grants it,
+the napplet calls `theme.get` once and follows `theme.changed`, so a guild skin
+recolours the chrome; a shell without it, or a colours-only payload, leaves the
+defaults. Every value is checked by kind (colour, font list, length) before it
+reaches the document, so a token can never carry a `url()`. The fonts are the
+Hangar's own Josefin Sans and IBM Plex Mono subsets, inlined into the single
+file under SIL OFL (`src/napplet/fonts`). The banknote keeps its own design.
+
 ### What the Hangar has to provide
 
 - `nutft.acquire` with the lease and the optional `seed`, exactly as above, and

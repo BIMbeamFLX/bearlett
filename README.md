@@ -76,6 +76,17 @@ Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-ha
   from the seed on the draft's own branch, and recovered from the seed by
   public key. The draft's test vectors are pinned in this repository's suite.
 
+### Design
+
+- Wallet and Notes wear the Nappelin Hypershell ("Brass Terminal"), the same
+  register as the 600B Timelock TCG: iron ground, brass voice, Josefin Sans
+  headlines, IBM Plex Mono body, square corners, no shadows, the Hangar's own
+  font subsets inlined. The chrome is painted from nappelin's design-system
+  tokens; inside a shell that serves NAP-THEME the napplets ask `theme.get` and
+  follow `theme.changed`, so a guild skin recolours them, and any value that is
+  not a plain colour, font list or length keeps the default. The banknote itself
+  is the holder's design and stays out of the chrome.
+
 ### Notes
 
 - Design notes with uploaded images, colours and text, and push appearance-only

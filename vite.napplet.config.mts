@@ -102,9 +102,11 @@ export default defineConfig(({mode}) => {
           ? 'Design bearer notes with your own images, colors and words.'
           : 'A bearer wallet for LNURLcash and Cashu sats, connected through Lightning.',
         artifactMode: 'single-file',
+        /* `theme`: NAP-THEME, so the shell paints its skin onto the Hypershell
+           chrome (src/napplet/theme.ts); a shell without it leaves the defaults. */
         requires: designer
-          ? ['storage', 'inc']
-          : ['storage', 'resource', 'inc'],
+          ? ['storage', 'inc', 'theme']
+          : ['storage', 'resource', 'inc', 'theme'],
         archetypes: designer
           ? [
               {

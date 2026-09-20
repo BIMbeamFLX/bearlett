@@ -11,6 +11,7 @@ import type {NoteDesign} from './design'
 import {pushNoteDesign} from './note-interface'
 import './style.css'
 import './designer.css'
+import {startTheme} from './theme'
 
 function Designer() {
   const [design, setDesign] = createSignal<NoteDesign>({...DEFAULT_DESIGN})
@@ -278,5 +279,8 @@ function Designer() {
     </div>
   )
 }
+
+// NAP-THEME: paint the Hypershell chrome now and follow the shell's skin
+void startTheme()
 
 render(() => <Designer />, document.getElementById('root')!)
