@@ -17,7 +17,12 @@ import {
 } from './keys'
 import type {TrustedMint} from './trustedMints'
 import {trustedMints, mergeTrustedMints} from './trustedMints'
-import {readCashSecretIndices, mergeCashSecretIndices} from './cashSecrets'
+import {
+  readCashSecretIndices,
+  mergeCashSecretIndices,
+  readCashAddressSecretIndices,
+  mergeCashAddressSecretIndices
+} from './cashSecrets'
 import {withStorageLock} from './storageLock'
 
 // One bearer note held by this wallet - the decrypted, in-memory shape.
@@ -301,6 +306,8 @@ export type BackupFile = {
   storageRootKey?: StoredSecret
   cashRootKey?: StoredSecret
   cashIndices?: Record<string, number>
+  // LUD-25 Part 2 note-key counters, same treatment (see cashSecrets.ts)
+  cashAddressIndices?: Record<string, number>
   bearers: EncryptedBearerRecord[]
   trustedMints?: TrustedMint[]
 }
@@ -312,7 +319,8 @@ export const buildBackup = (): BackupFile => {
     createdAt: Date.now(),
     bearers: readEncryptedBearers(),
     trustedMints: trustedMints(),
-    cashIndices: readCashSecretIndices()
+    cashIndices: readCashSecretIndices(),
+    cashAddressIndices: readCashAddressSecretIndices()
   }
   if (savedStorageRootKeyIsEncrypted()) {
     backup.storageRootKey = getSavedStorageRootKeyStored()!
@@ -457,6 +465,8 @@ export const applyBackup = (data: unknown): RestoreResult => {
   // outcome above - they're non-secret bookkeeping, safe to raise even for
   // a device keeping its own existing wallet (see mergeCashSecretIndices)
   mergeCashSecretIndices(backup.cashIndices)
+  // a backup taken before Part 2 keys existed simply has no field here
+  mergeCashAddressSecretIndices(backup.cashAddressIndices)
 
   return {
     added,

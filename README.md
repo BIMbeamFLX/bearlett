@@ -71,9 +71,10 @@ Prototype file: [docs/prototype/bearlett-hangar.html](docs/prototype/bearlett-ha
 - Use one recovery phrase with separate protocol derivations. Encrypted backups
   contain proofs, counters, quotes, open transfers and designs.
 - Speak the current LUD-25 draft through `@lnurlcash/kit`, the protocol layer
-  dni publishes from the reference wallet: Part 2 public-key notes are decoded
-  and verified, and the draft's test vectors are pinned in this repository's
-  suite.
+  dni publishes from the reference wallet. New notes are minted pubkey-bound
+  (`cp1`/`ck1`, Part 2) whenever the mint accepts it, with note keys derived
+  from the seed on the draft's own branch, and recovered from the seed by
+  public key. The draft's test vectors are pinned in this repository's suite.
 
 ### Notes
 

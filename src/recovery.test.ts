@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
-import {hashK1 as sha256Hex} from './lnurlcash'
+import {hashK1 as sha256Hex, encodeCp1, cp1FromCk1} from './lnurlcash'
 import type {Bearer} from './storage'
 
 // same in-memory localStorage stand-in as cashSecrets.test.ts/storage.test.ts -
@@ -77,6 +77,11 @@ const fakeMint = (liveAtIndex: number, spentAtIndex: number | null) => {
       // k1 would make it a mint this wallet deliberately never sends a
       // secret to, and every index would read as an empty gap.
       const askedHash = url.searchParams.get('h')
+      // the Part 2 ladder asks by public key; nothing on this stand-in's
+      // branch was ever minted, so every such probe is an empty gap
+      if (url.searchParams.get('p')) {
+        return jsonResponse({status: 'ERROR', reason: 'Unknown note.'})
+      }
       const k1 =
         url.searchParams.get('k1') ??
         (askedHash === sha256Hex(liveSecret)
@@ -190,5 +195,83 @@ describe('scanMintForNotes', () => {
     // the first index (live) was recovered before the second call blew up
     expect(result.recovered).toHaveLength(1)
     expect(result.error).toBeTruthy()
+  })
+})
+
+describe('scanMintForNotes, Part 2 ladder', () => {
+  // a stand-in mint holding one pubkey-bound note at index `liveAtIndex` of
+  // this wallet's branch for SERVER, and nothing on the Part 1 ladder
+  const fakePubkeyMint = (liveAtIndex: number) => {
+    const branch = cashSecrets.cashAddressBranch(SERVER)!
+    const liveCp1 = cp1FromCk1(
+      cashSecrets.ck1ForSecretKey(
+        cashSecrets.cashAddressSecretAtIndex(SERVER, liveAtIndex)!
+      )
+    )!
+    const cx1Pubkey = encodeCp1(branch.pubkeyXOnly)
+    expect(cx1Pubkey.startsWith('cp1')).toBe(true)
+    return (input: string | URL) => {
+      const url = new URL(input.toString())
+      if (url.pathname === '/.well-known/lnurlp/mint') {
+        return jsonResponse({
+          tag: 'payRequest',
+          callback: `https://${SERVER}/pay/cb`,
+          minSendable: 1000,
+          maxSendable: 100_000_000,
+          metadata: '[]',
+          withdrawLink: `https://${SERVER}/w`
+        })
+      }
+      if (url.pathname === '/w') {
+        if (url.searchParams.get('p') === liveCp1) {
+          return jsonResponse({
+            tag: 'withdrawRequest',
+            callback: WITHDRAW_CALLBACK,
+            mintPubkey: MINT_PUBKEY,
+            minWithdrawable: 21000,
+            maxWithdrawable: 21000
+          })
+        }
+        return jsonResponse({status: 'ERROR', reason: 'Unknown note.'})
+      }
+      return jsonResponse({status: 'ERROR', reason: 'not found'})
+    }
+  }
+
+  it('recovers a pubkey-bound note as its ck1 and reports the address index', async () => {
+    vi.stubGlobal('fetch', fakePubkeyMint(2) as unknown as typeof fetch)
+    const result = await recovery.scanMintForNotes(`mint@${SERVER}`)
+    expect(result.error).toBeUndefined()
+    expect(result.highestUsedIndex).toBeNull()
+    expect(result.highestUsedAddressIndex).toBe(2)
+    expect(result.recovered).toHaveLength(1)
+    const k1 = new URL(result.recovered[0].url).searchParams.get('k1')!
+    expect(k1.startsWith('ck1')).toBe(true)
+    expect(k1).toBe(
+      cashSecrets.ck1ForSecretKey(
+        cashSecrets.cashAddressSecretAtIndex(SERVER, 2)!
+      )
+    )
+    expect(result.recovered[0].amount).toBe(21000)
+  })
+
+  it('does not re-recover a pubkey-bound note already held', async () => {
+    vi.stubGlobal('fetch', fakePubkeyMint(0) as unknown as typeof fetch)
+    const ck1 = cashSecrets.ck1ForSecretKey(
+      cashSecrets.cashAddressSecretAtIndex(SERVER, 0)!
+    )
+    const held = {
+      id: 'x',
+      url: `https://${SERVER}/w?k1=${ck1}&amount=21000`,
+      callback: WITHDRAW_CALLBACK,
+      amount: 21000
+    } as unknown as Bearer
+    const result = await recovery.scanMintForNotes(
+      `mint@${SERVER}`,
+      undefined,
+      [held]
+    )
+    expect(result.recovered).toHaveLength(0)
+    expect(result.highestUsedAddressIndex).toBe(0)
   })
 })

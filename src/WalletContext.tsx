@@ -39,7 +39,11 @@ import {
   decryptSavedCashRootKeyHex,
   clearSavedCashRootKey
 } from './keys'
-import {setCashRoot, clearCashSecretIndices} from './cashSecrets'
+import {
+  setCashRoot,
+  clearCashSecretIndices,
+  clearCashAddressSecretIndices
+} from './cashSecrets'
 import type {Bearer, ActivityEvent, ActivityKind} from './storage'
 import {
   loadBearers,
@@ -315,6 +319,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     clearSavedStorageRootKey()
     clearSavedCashRootKey()
     clearCashSecretIndices()
+    clearCashAddressSecretIndices()
     clearAllBearers()
     clearAllActivity()
     clearTrustedMints()
