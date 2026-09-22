@@ -18,7 +18,7 @@ e.g. [lnurl-mint](https://github.com/lnurlcash/lnurl-mint).
 > commitment with Part 2 public keys (`cp1`, `ck1`, `cs1`, `cx1`), moved
 > rotate/split/merge outputs to `p1`/`p2` for those notes, made the offline
 > certificate a cp1-only mechanism, and added LN address proofs and internal
-> transfers. Bearlett follows all of that through `@lnurlcash/kit` 0.18.2,
+> transfers. Bearlett follows all of that through `@lnurlcash/kit` 0.19.5,
 > re-exported from `src/lnurlcash.ts`; the callback table and the signature
 > digest below describe Part 1 notes only. Current draft:
 > <https://github.com/lnurl/luds/blob/lnurlcash/25.md>.
