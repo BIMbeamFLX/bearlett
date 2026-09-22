@@ -183,11 +183,19 @@ export const scanMintForNotes = async (
     await scanForAddressNotes(withdrawLink, branch, {
       gapLimit: RECOVERY_GAP_LIMIT,
       onProgress,
+      // max, not the latest: kept in step with addressRecovery.ts, whose
+      // window below the start reports indices out of order
       onSpent: i => {
-        result.highestUsedAddressIndex = i
+        result.highestUsedAddressIndex = Math.max(
+          result.highestUsedAddressIndex ?? -1,
+          i
+        )
       },
       onFound: found => {
-        result.highestUsedAddressIndex = found.index
+        result.highestUsedAddressIndex = Math.max(
+          result.highestUsedAddressIndex ?? -1,
+          found.index
+        )
         const secretKey = cashAddressSecretAtIndex(server, found.index)
         if (!secretKey) return
         const ck1 = ck1ForSecretKey(secretKey)

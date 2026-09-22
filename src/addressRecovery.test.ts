@@ -99,19 +99,73 @@ describe('scanRegisteredAddress', () => {
     expect(result.nextScanIndex).toBe(3)
   })
 
-  it("resumes from the caller's floor and the mint's hint, whichever is higher", async () => {
+  it("lets the mint's hint raise a confirmed floor, and still re-checks below the start", async () => {
     const {fetchMock, requests} = fakeMint([1, 5], 4)
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
     const result = await recovery.scanRegisteredAddress(SERVER, 'alice', [], {
       startIndex: 2
     })
-    // index 1 sits below both floors and is never probed
-    expect(result.recovered).toHaveLength(1)
+    // the walk starts at the hint; index 1, below both the floor and the
+    // hint, is found by the window behind the start
+    expect(result.checkedFrom).toBe(4)
+    expect(result.serviceHint).toBe(4)
+    expect(
+      result.recovered.map(n => new URL(n.url).searchParams.get('k1'))
+    ).toEqual([ck1At(1), ck1At(5)])
     expect(result.highestIndex).toBe(5)
     expect(result.nextScanIndex).toBe(6)
     expect(
       requests.filter(r => r.includes(`p=${cp1FromCk1(ck1At(1))}`))
+    ).toHaveLength(1)
+  })
+
+  it("ignores the mint's hint on a fresh scan, the bug lnurl-wallet #188 fixed", async () => {
+    // one payment reached alice: the mint already advertises index 1
+    const {fetchMock} = fakeMint([0], 1)
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    const result = await recovery.scanRegisteredAddress(SERVER, 'alice')
+    expect(result.checkedFrom).toBe(0)
+    expect(result.serviceHint).toBe(1)
+    expect(
+      result.recovered.map(n => new URL(n.url).searchParams.get('k1'))
+    ).toEqual([ck1At(0)])
+    expect(result.nextScanIndex).toBe(1)
+  })
+
+  it('finds a note that settled below the floor after an earlier pass', async () => {
+    // an earlier pass found 0 and 2 while index 1 was still unpaid, so the
+    // stored floor is 3; index 1 settles afterwards
+    const {fetchMock} = fakeMint([0, 1, 2], 3)
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    const held = [0, 2].map(
+      i =>
+        ({url: `${SERVER}/w?k1=${ck1At(i)}&amount=21000`}) as unknown as Bearer
+    )
+    const result = await recovery.scanRegisteredAddress(SERVER, 'alice', held, {
+      startIndex: 3
+    })
+    expect(
+      result.recovered.map(n => new URL(n.url).searchParams.get('k1'))
+    ).toEqual([ck1At(1)])
+    expect(result.nextScanIndex).toBe(3)
+  })
+
+  it('re-checks no further back than the gap limit', async () => {
+    const {fetchMock, requests} = fakeMint([5, 12], null)
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    const result = await recovery.scanRegisteredAddress(SERVER, 'alice', [], {
+      startIndex: 30
+    })
+    // the window below 30 is 10..29 with the default gap limit of 20
+    expect(
+      result.recovered.map(n => new URL(n.url).searchParams.get('k1'))
+    ).toEqual([ck1At(12)])
+    expect(
+      requests.filter(r => r.includes(`p=${cp1FromCk1(ck1At(5))}`))
     ).toHaveLength(0)
+    expect(
+      requests.filter(r => r.includes(`p=${cp1FromCk1(ck1At(10))}`))
+    ).toHaveLength(1)
   })
 
   it('skips notes already held and reports errors with the floor intact', async () => {
@@ -149,5 +203,70 @@ describe('runAddressScan', () => {
     expect(result.nextScanIndex).toBe(2)
     expect(registry.registeredAddresses()[0].nextScanIndex).toBe(2)
     expect(registry.registeredAddresses()[0].lastAutoScanAt).toBeGreaterThan(0)
+  })
+})
+
+describe('checkBehindWindow', () => {
+  const branchFor = () => cashSecrets.cashAddressBranch(SERVER)!
+
+  it('waits out a rate limit on the same index instead of skipping it', async () => {
+    const target = cp1FromCk1(ck1At(2))!
+    let limited = true
+    const seen: string[] = []
+    vi.stubGlobal('fetch', ((input: string | URL) => {
+      const p = new URL(input.toString()).searchParams.get('p')!
+      seen.push(p)
+      if (p === target && limited) {
+        limited = false
+        return jsonResponse({status: 'ERROR', reason: 'rate limited'})
+      }
+      if (p === target) {
+        return jsonResponse({
+          tag: 'withdrawRequest',
+          callback: `${SERVER}/w/cb`,
+          mintPubkey: MINT_PUBKEY,
+          minWithdrawable: 21000,
+          maxWithdrawable: 21000
+        })
+      }
+      return jsonResponse({status: 'ERROR', reason: 'Unknown note.'})
+    }) as unknown as typeof fetch)
+    const found: number[] = []
+    const results = await recovery.checkBehindWindow(
+      `${SERVER}/w`,
+      branchFor(),
+      4,
+      20,
+      r => void found.push(r.index),
+      0
+    )
+    expect(results.map(r => r.index)).toEqual([2])
+    expect(found).toEqual([2])
+    // 3, then 2 twice, then 1 and 0
+    expect(seen.filter(p => p === target)).toHaveLength(2)
+    expect(seen).toHaveLength(5)
+  })
+
+  it('stops on anything that is not an answer about the note', async () => {
+    vi.stubGlobal('fetch', (() =>
+      Promise.reject(new TypeError('network down'))) as unknown as typeof fetch)
+    await expect(
+      recovery.checkBehindWindow(`${SERVER}/w`, branchFor(), 3, 20, () => {}, 0)
+    ).rejects.toThrow()
+  })
+
+  it('probes nothing at index 0', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+    const results = await recovery.checkBehindWindow(
+      `${SERVER}/w`,
+      branchFor(),
+      0,
+      20,
+      () => {},
+      0
+    )
+    expect(results).toEqual([])
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

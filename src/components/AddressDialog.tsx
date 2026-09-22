@@ -109,10 +109,18 @@ const AddressDialog: Component<AddressDialogProps> = props => {
   const [busy, setBusy] = createSignal(false)
   const [confirmUnclaim, setConfirmUnclaim] = createSignal(false)
   const [showAutoCheck, setShowAutoCheck] = createSignal(false)
+  // what the latest pass in this dialog saw: where it started and the
+  // mint's own next-index hint at that moment. Shown next to this device's
+  // stored resume index, so the holder sees all three numbers instead of
+  // trusting any one of them (see addressRecovery.ts on why the mint's hint
+  // alone is never enough). Not persisted.
+  const [lastCheck, setLastCheck] = createSignal<{
+    checkedFrom: number
+    serviceHint: number | null
+  } | null>(null)
 
-  // "Check notes" resumes from wherever this address's own nextScanIndex
-  // (or SERVICE's own metadata hint) left off, "full rescan" always
-  // re-walks from 0.
+  // "Check notes" resumes from this address's own nextScanIndex, "full
+  // rescan" re-walks from 0; both re-check the window below their start.
   const checkNotes = async (mode: 'incremental' | 'all') => {
     const addr = registered()
     if (!addr || busy()) return
@@ -125,6 +133,10 @@ const AddressDialog: Component<AddressDialogProps> = props => {
         {addBearer, logActivity},
         {startIndex: mode === 'incremental' ? (addr.nextScanIndex ?? 0) : 0}
       )
+      setLastCheck({
+        checkedFrom: result.checkedFrom,
+        serviceHint: result.serviceHint
+      })
       if (result.error) {
         notify(result.error, NotifyKind.ERROR)
       } else {
@@ -254,6 +266,20 @@ const AddressDialog: Component<AddressDialogProps> = props => {
             </Show>
             <p class="mint-date">
               registered {new Date(addr().registeredAt).toLocaleDateString()}
+            </p>
+            <p class="bearer-hint">
+              Resumes at index {addr().nextScanIndex ?? 0}
+              <Show when={lastCheck()}>
+                {info => (
+                  <>
+                    {' '}
+                    · last pass started at {info().checkedFrom} ·{' '}
+                    {info().serviceHint === null
+                      ? 'the mint suggests no index'
+                      : `the mint suggests index ${info().serviceHint}`}
+                  </>
+                )}
+              </Show>
             </p>
             <div class="btns">
               <button
