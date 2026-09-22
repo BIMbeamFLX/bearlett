@@ -1,0 +1,163 @@
+/*
+ * The Hypershell strip. Iron, brass, Josefin, Plex, square corners.
+ * One bar on the wallet, on Notes, on the collection, and on the web wallet.
+ * Fonts are the same files the wallet already inlines.
+ */
+
+@font-face {
+  font-family: 'Josefin Sans';
+  src: url('./fonts/josefin-sans-latin-wght.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('./fonts/plex-mono-latin-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+.session-bar {
+  --bar-iron: #0f0c08;
+  --bar-brass: #e7bf76;
+  --bar-brass-2: #c9973f;
+  --bar-brass-3: #8f6a2a;
+  --bar-parchment: #ece3d0;
+  --bar-line: rgba(231, 191, 118, 0.28);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  margin: 0;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  border: 0;
+  border-bottom: 1px solid var(--bar-line);
+  border-radius: 0;
+  background: var(--bar-iron);
+  color: var(--bar-parchment);
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  container-type: inline-size;
+}
+
+.session-bar button {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bar-brass);
+  background: transparent;
+  border: 1px solid var(--bar-brass-3);
+  border-radius: 0;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.session-bar button:focus-visible {
+  outline: 2px solid var(--bar-brass);
+  outline-offset: 2px;
+}
+
+.session-bar__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: var(--bar-brass) !important;
+  font-family: 'Josefin Sans', Georgia, sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+.session-bar__mark small {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--bar-brass-3);
+}
+
+.session-bar__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  flex: 1 1 140px;
+}
+
+.session-bar__figure strong {
+  font-family: 'Josefin Sans', Georgia, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--bar-parchment);
+}
+
+.session-bar__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bar-brass-2);
+}
+
+.session-bar__wait {
+  border-color: var(--bar-brass) !important;
+  color: var(--bar-iron) !important;
+  background: var(--bar-brass) !important;
+}
+
+.session-bar__lock {
+  margin-left: auto;
+}
+
+.session-bar--embedded {
+  position: static;
+  width: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-bottom: 0;
+  background: transparent;
+  z-index: auto;
+}
+
+@container (max-width: 340px) {
+  .session-bar__detail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-bar,
+  .session-bar * {
+    transition: none !important;
+  }
+}

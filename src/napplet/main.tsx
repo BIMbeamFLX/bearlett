@@ -1,4 +1,12 @@
-import {createSignal, For, Show, onMount, onCleanup} from 'solid-js'
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  onMount,
+  onCleanup
+} from 'solid-js'
 import {render} from 'solid-js/web'
 import {QRCodeSVG, ErrorCorrectionLevel} from 'solid-qr-code'
 import {getWalletHost} from './host'
@@ -27,6 +35,17 @@ import {
 import type {Preferences} from './preferences'
 import {signedNote} from './mints'
 import type {MintPin} from './mints'
+import SessionBar from './SessionBar'
+import {
+  SESSION_DRAFT_KEY,
+  parseSessionDraft,
+  resumeTab,
+  spendableLine,
+  spendableMints,
+  waitingDraft,
+  waitingLabel
+} from './bar'
+import type {SessionDraft} from './bar'
 
 const sats = (msat: number): string =>
   (msat / 1000).toLocaleString('en-US', {maximumFractionDigits: 3})
@@ -93,8 +112,49 @@ function App() {
   let polling = false
   let lastPoll = 0
   let sessionGeneration = 0
+  let draftGeneration = 0
+  let draftQueue: Promise<void> = Promise.resolve()
+  const [draftReady, setDraftReady] = createSignal(false)
 
-  const lock = (): void => {
+  const snapshotDraft = (): SessionDraft => ({
+    tab: tab(),
+    receive: input(),
+    invoice: invoice(),
+    paymentAddress: paymentAddress(),
+    paymentAmount: paymentAmount(),
+    fundingInvoice: fundingInvoice(),
+    mint: mint(),
+    mintProtocol: mintProtocol(),
+    amount: amount(),
+    shared: shared()
+  })
+  const applyDraft = (draft: SessionDraft): void => {
+    setTab(resumeTab(draft))
+    setInput(draft.receive)
+    setInvoice(draft.invoice)
+    setPaymentAddress(draft.paymentAddress)
+    setPaymentAmount(draft.paymentAmount)
+    setFundingInvoice(draft.fundingInvoice)
+    setMint(draft.mint)
+    setMintProtocol(draft.mintProtocol)
+    setAmount(draft.amount)
+    setShared(draft.shared)
+  }
+  const enqueueDraft = (draft: SessionDraft): void => {
+    const generation = draftGeneration
+    draftQueue = draftQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (generation !== draftGeneration || !draftReady() || !unlocked())
+          return
+        await vault.setMeta(SESSION_DRAFT_KEY, draft)
+      })
+      .then(
+        () => undefined,
+        () => undefined
+      )
+  }
+  const finishLock = (): void => {
     sessionGeneration++
     vault?.lock()
     setUnlocked(false)
@@ -115,6 +175,8 @@ function App() {
     setSavedMintAddresses([])
     setSavedPaymentAddresses([])
     setFundingInvoice('')
+    setMint('')
+    setAmount('')
     setBackupPassword('')
     setAllowLegacyBackup(false)
     setRestoreText('')
@@ -123,14 +185,47 @@ function App() {
     setDesigns({})
     setDesignText('')
   }
+  /**
+   * Lock the key, keep the task.
+   *
+   * The draft is written into the encrypted vault before the key is dropped.
+   * Unlock puts the same payment, note or handover back on the bar.
+   */
+  const lock = (): Promise<void> => {
+    const draft = snapshotDraft()
+    draftGeneration++
+    const generation = draftGeneration
+    setDraftReady(false)
+    const job = draftQueue
+      .catch(() => undefined)
+      .then(async () => {
+        if (generation !== draftGeneration) return
+        try {
+          if (unlocked()) await vault.setMeta(SESSION_DRAFT_KEY, draft)
+        } catch {
+          /* The last queued draft is still the task. Lock anyway. */
+        }
+        finishLock()
+      })
+    draftQueue = job.then(
+      () => undefined,
+      () => undefined
+    )
+    return job
+  }
   const hide = (): void => {
-    if (document.visibilityState === 'hidden') lock()
+    if (document.visibilityState === 'hidden') void lock()
   }
   const touch = (event?: Event): void => {
     if (event && !event.isTrusted) return
     lastActivity = Date.now()
     setLockWarning(false)
   }
+  createEffect(() => {
+    const draft = snapshotDraft()
+    if (!draftReady() || !unlocked()) return
+    enqueueDraft(draft)
+  })
   const loadState = async (): Promise<void> => {
     const current = vault.sessionGuard()
     const [
@@ -231,6 +326,10 @@ function App() {
     current()
     setPreferences(prefs)
     setNappletOffline(prefs.offline)
+    const saved = parseSessionDraft(await vault.meta(SESSION_DRAFT_KEY))
+    current()
+    if (saved && waitingDraft(saved)) applyDraft(saved)
+    setDraftReady(true)
     setUnlocked(true)
   }
   onMount(async () => {
@@ -367,143 +466,106 @@ function App() {
     setDesignText('')
   }
 
+  const mintRows = createMemo(() =>
+    spendableMints(
+      notes().map(note => ({
+        mint: serverOf(note.url),
+        amount: note.amount,
+        ready: note.status === 'ready'
+      }))
+    )
+  )
+  const barLine = createMemo(() => spendableLine(mintRows()))
+  const waiting = createMemo(() =>
+    unlocked() ? waitingLabel(snapshotDraft()) : ''
+  )
   return (
-    <div class="app">
-      <header>
-        <a
-          class="wordmark"
-          href="#"
-          onClick={event => {
-            event.preventDefault()
-            setTab('wallet')
-          }}
-        >
-          <span class="logo">₿</span>
-          <span>
-            Bear<span class="soft">lett</span>
-            <small>WALLET NAPPLET</small>
-          </span>
-        </a>
-        <Show when={unlocked()}>
-          <button class="quiet" onClick={lock}>
-            Lock wallet
-          </button>
-        </Show>
-      </header>
-      <main>
-        <Show
-          when={!failure()}
-          fallback={
-            <section class="panel">
-              <h1>A home for your sats.</h1>
-              <p role="alert">{failure()}</p>
-              <p>
-                This build runs inside a NIP-5D shell. Its storage and network
-                access come from that shell.
-              </p>
-            </section>
-          }
-        >
+    <div class="bearlett-frame">
+      <SessionBar
+        surface="Wallet"
+        figure={
+          unlocked() ? barLine().figure : exists() ? 'Locked' : 'Bearlett'
+        }
+        detail={
+          unlocked()
+            ? barLine().detail
+            : exists()
+              ? 'Unlock to continue'
+              : 'Held on this device'
+        }
+        waiting={waiting()}
+        locked={exists() && !unlocked()}
+        onHome={() => setTab('wallet')}
+        onWaiting={() => setTab(resumeTab(snapshotDraft()))}
+        onLock={unlocked() ? () => void lock() : undefined}
+        lockLabel="Lock wallet"
+      />
+      <div class="app">
+        <main>
           <Show
-            when={initialized()}
-            fallback={<p role="status">Connecting to shell storage…</p>}
+            when={!failure()}
+            fallback={
+              <section class="panel">
+                <h1>A home for your sats.</h1>
+                <p role="alert">{failure()}</p>
+                <p>
+                  This build runs inside a NIP-5D shell. Its storage and network
+                  access come from that shell.
+                </p>
+              </section>
+            }
           >
             <Show
-              when={unlocked()}
-              fallback={
-                <section class="panel onboarding">
-                  <p class="eyebrow">YOUR NOTES. YOUR CONTROL.</p>
-                  <h1>
-                    {exists() ? 'Welcome back.' : 'A home for your sats.'}
-                  </h1>
-                  <p>
-                    Receive, hold and spend LNURLcash and Cashu notes across
-                    independent mints.
-                  </p>
-                  <div>
-                    <label>
-                      Wallet password
-                      <input
-                        type="password"
-                        autocomplete={
-                          exists() ? 'current-password' : 'new-password'
-                        }
-                        value={password()}
-                        onInput={e => setPassword(e.currentTarget.value)}
-                        required
-                        minlength={exists() ? 1 : 12}
-                      />
-                    </label>
-                    <Show when={!exists()}>
+              when={initialized()}
+              fallback={<p role="status">Connecting to shell storage…</p>}
+            >
+              <Show
+                when={unlocked()}
+                fallback={
+                  <section class="panel onboarding">
+                    <p class="eyebrow">YOUR NOTES. YOUR CONTROL.</p>
+                    <h1>
+                      {exists() ? 'Welcome back.' : 'A home for your sats.'}
+                    </h1>
+                    <p>
+                      Receive, hold and spend LNURLcash and Cashu notes across
+                      independent mints.
+                    </p>
+                    <div>
                       <label>
-                        <input
-                          type="checkbox"
-                          checked={restoringSeed()}
-                          onChange={e => {
-                            setRestoringSeed(e.currentTarget.checked)
-                            setSeed(
-                              e.currentTarget.checked
-                                ? ''
-                                : generateSeedPhrase()
-                            )
-                            setSeedSaved(false)
-                          }}
-                        />{' '}
-                        Restore an existing seed
-                      </label>
-                      <label>
-                        BIP39 recovery phrase
-                        <textarea
-                          readonly={!restoringSeed()}
-                          value={seed()}
-                          autocomplete="off"
-                          spellcheck={false}
-                          onInput={e => setSeed(e.currentTarget.value)}
-                        />
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={seedSaved()}
-                          onChange={e => setSeedSaved(e.currentTarget.checked)}
-                        />
-                        I have saved my recovery phrase
-                      </label>
-                      <label>
-                        Repeat password
+                        Wallet password
                         <input
                           type="password"
-                          autocomplete="new-password"
-                          value={repeat()}
-                          onInput={e => setRepeat(e.currentTarget.value)}
+                          autocomplete={
+                            exists() ? 'current-password' : 'new-password'
+                          }
+                          value={password()}
+                          onInput={e => setPassword(e.currentTarget.value)}
                           required
-                          minlength="12"
+                          minlength={exists() ? 1 : 12}
                         />
                       </label>
-                      <p class="hint">
-                        Use 12 or more characters. Save an encrypted backup
-                        after setup and whenever notes change. The seed uses the
-                        same recovery derivation as the original webwallet. Keep
-                        it private; it is not stored. A restored seed must scan
-                        each mint before creating more notes there.
-                      </p>
-                    </Show>
-                    <Show when={exists()}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={resettingPassword()}
-                          onChange={e => {
-                            setResettingPassword(e.currentTarget.checked)
-                            setSeed('')
-                          }}
-                        />{' '}
-                        Reset password with my seed
-                      </label>
-                      <Show when={resettingPassword()}>
+                      <Show when={!exists()}>
                         <label>
-                          Recovery phrase
+                          <input
+                            type="checkbox"
+                            checked={restoringSeed()}
+                            onChange={e => {
+                              setRestoringSeed(e.currentTarget.checked)
+                              setSeed(
+                                e.currentTarget.checked
+                                  ? ''
+                                  : generateSeedPhrase()
+                              )
+                              setSeedSaved(false)
+                            }}
+                          />{' '}
+                          Restore an existing seed
+                        </label>
+                        <label>
+                          BIP39 recovery phrase
                           <textarea
+                            readonly={!restoringSeed()}
                             value={seed()}
                             autocomplete="off"
                             spellcheck={false}
@@ -511,866 +573,933 @@ function App() {
                           />
                         </label>
                         <label>
-                          Repeat new password
+                          <input
+                            type="checkbox"
+                            checked={seedSaved()}
+                            onChange={e =>
+                              setSeedSaved(e.currentTarget.checked)
+                            }
+                          />
+                          I have saved my recovery phrase
+                        </label>
+                        <label>
+                          Repeat password
                           <input
                             type="password"
                             autocomplete="new-password"
                             value={repeat()}
                             onInput={e => setRepeat(e.currentTarget.value)}
+                            required
+                            minlength="12"
                           />
                         </label>
+                        <p class="hint">
+                          Use 12 or more characters. Save an encrypted backup
+                          after setup and whenever notes change. The seed uses
+                          the same recovery derivation as the original
+                          webwallet. Keep it private; it is not stored. A
+                          restored seed must scan each mint before creating more
+                          notes there.
+                        </p>
                       </Show>
+                      <Show when={exists()}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={resettingPassword()}
+                            onChange={e => {
+                              setResettingPassword(e.currentTarget.checked)
+                              setSeed('')
+                            }}
+                          />{' '}
+                          Reset password with my seed
+                        </label>
+                        <Show when={resettingPassword()}>
+                          <label>
+                            Recovery phrase
+                            <textarea
+                              value={seed()}
+                              autocomplete="off"
+                              spellcheck={false}
+                              onInput={e => setSeed(e.currentTarget.value)}
+                            />
+                          </label>
+                          <label>
+                            Repeat new password
+                            <input
+                              type="password"
+                              autocomplete="new-password"
+                              value={repeat()}
+                              onInput={e => setRepeat(e.currentTarget.value)}
+                            />
+                          </label>
+                        </Show>
+                      </Show>
+                      <button
+                        class="primary"
+                        disabled={busy()}
+                        onClick={() => void run(authenticate)}
+                      >
+                        {busy()
+                          ? 'Opening…'
+                          : exists()
+                            ? resettingPassword()
+                              ? 'Reset password and unlock'
+                              : 'Unlock wallet'
+                            : 'Create wallet'}
+                      </button>
+                    </div>
+                  </section>
+                }
+              >
+                <section class="balance">
+                  <div>
+                    <p class="eyebrow">READY TO SPEND</p>
+                    <h1>{barLine().figure}</h1>
+                    <p>{barLine().detail}</p>
+                    <Show when={mintRows().length > 1}>
+                      <ul class="mint-lines">
+                        <For each={mintRows()}>
+                          {row => (
+                            <li>
+                              {sats(row.msat)} sats · {row.mint}
+                            </li>
+                          )}
+                        </For>
+                      </ul>
                     </Show>
-                    <button
-                      class="primary"
-                      disabled={busy()}
-                      onClick={() => void run(authenticate)}
-                    >
-                      {busy()
-                        ? 'Opening…'
-                        : exists()
-                          ? resettingPassword()
-                            ? 'Reset password and unlock'
-                            : 'Unlock wallet'
-                          : 'Create wallet'}
-                    </button>
                   </div>
+                  <span class="badge">ENCRYPTED IN SHELL STORAGE</span>
                 </section>
-              }
-            >
-              <section class="balance">
-                <div>
-                  <p class="eyebrow">CONFIRMED NOTES</p>
-                  <h1>
-                    {sats(
-                      notes()
-                        .filter(n => n.status === 'ready')
-                        .reduce((sum, n) => sum + n.amount, 0)
+                <nav aria-label="Wallet sections">
+                  <For each={['wallet', 'receive', 'pay', 'mint', 'backup']}>
+                    {value => (
+                      <button
+                        classList={{active: tab() === value}}
+                        disabled={busy()}
+                        onClick={() => {
+                          setTab(value)
+                          setShared('')
+                        }}
+                      >
+                        {value[0].toUpperCase() + value.slice(1)}
+                      </button>
                     )}
-                    <span> sats</span>
-                  </h1>
-                  <p>
-                    {notes().filter(n => n.status === 'ready').length} available
-                    notes · balances stay separate by mint
-                  </p>
-                </div>
-                <span class="badge">ENCRYPTED IN SHELL STORAGE</span>
-              </section>
-              <nav aria-label="Wallet sections">
-                <For each={['wallet', 'receive', 'pay', 'mint', 'backup']}>
-                  {value => (
-                    <button
-                      classList={{active: tab() === value}}
-                      disabled={busy()}
-                      onClick={() => {
-                        setTab(value)
-                        setShared('')
-                      }}
-                    >
-                      {value[0].toUpperCase() + value.slice(1)}
-                    </button>
-                  )}
-                </For>
-              </nav>
-              <label class="wallet-more">
-                More wallet tools
-                <select
-                  aria-label="More wallet tools"
-                  value={
-                    [
-                      'recovery',
-                      'transfer',
-                      'mints',
-                      'activity',
-                      'settings',
-                      'device'
-                    ].includes(tab())
-                      ? tab()
-                      : ''
-                  }
-                  disabled={busy()}
-                  onChange={e => {
-                    if (e.currentTarget.value) setTab(e.currentTarget.value)
-                  }}
-                >
-                  <option value="">Choose a tool</option>
-                  <option value="transfer">Transfer between mints</option>
-                  <option value="recovery">Seed recovery</option>
-                  <option value="mints">Mints & signing keys</option>
-                  <option value="activity">Activity</option>
-                  <option value="settings">Settings</option>
-                  <option value="device">
-                    Physical vault (USB / Bluetooth)
-                  </option>
-                </select>
-              </label>
-              <Show when={preferences().offline}>
-                <p class="notice">
-                  Offline mode · stored notes remain available. Enable network
-                  access in Settings to transact.
-                </p>
-              </Show>
-              <Show when={lockWarning()}>
-                <p class="notice" role="status">
-                  Wallet locks in less than 30 seconds.{' '}
-                  <button onClick={touch}>Keep unlocked</button>
-                </p>
-              </Show>
-              <Show when={request()}>
-                <section
-                  class="request"
-                  role="dialog"
-                  aria-label="Review wallet request"
-                >
-                  <p class="eyebrow">REQUEST FROM ANOTHER NAPPLET</p>
-                  <h2>
-                    {request()?.action === 'design'
-                      ? 'A new note design'
-                      : request()?.action === 'pay'
-                        ? 'Review a payment'
-                        : 'Review an incoming note'}
-                  </h2>
-                  <p>Sender: {request()?.sender}</p>
-                  <Show
-                    when={receivedDesign()}
-                    fallback={
-                      <p>
-                        Review the details, then confirm the action yourself.
-                      </p>
+                  </For>
+                </nav>
+                <label class="wallet-more">
+                  More wallet tools
+                  <select
+                    aria-label="More wallet tools"
+                    value={
+                      [
+                        'recovery',
+                        'transfer',
+                        'mints',
+                        'activity',
+                        'settings',
+                        'device'
+                      ].includes(tab())
+                        ? tab()
+                        : ''
                     }
+                    disabled={busy()}
+                    onChange={e => {
+                      if (e.currentTarget.value) setTab(e.currentTarget.value)
+                    }}
                   >
-                    {draft => (
-                      <>
-                        <Banknote
-                          amount={21000}
-                          issuer="design.preview"
-                          serial="PREVIEW"
-                          design={draft()}
-                          specimen
-                        />
+                    <option value="">Choose a tool</option>
+                    <option value="transfer">Transfer between mints</option>
+                    <option value="recovery">Seed recovery</option>
+                    <option value="mints">Mints & signing keys</option>
+                    <option value="activity">Activity</option>
+                    <option value="settings">Settings</option>
+                    <option value="device">
+                      Physical vault (USB / Bluetooth)
+                    </option>
+                  </select>
+                </label>
+                <Show when={preferences().offline}>
+                  <p class="notice">
+                    Offline mode · stored notes remain available. Enable network
+                    access in Settings to transact.
+                  </p>
+                </Show>
+                <Show when={lockWarning()}>
+                  <p class="notice" role="status">
+                    Wallet locks in less than 30 seconds.{' '}
+                    <button onClick={touch}>Keep unlocked</button>
+                  </p>
+                </Show>
+                <Show when={request()}>
+                  <section
+                    class="request"
+                    role="dialog"
+                    aria-label="Review wallet request"
+                  >
+                    <p class="eyebrow">REQUEST FROM ANOTHER NAPPLET</p>
+                    <h2>
+                      {request()?.action === 'design'
+                        ? 'A new note design'
+                        : request()?.action === 'pay'
+                          ? 'Review a payment'
+                          : 'Review an incoming note'}
+                    </h2>
+                    <p>Sender: {request()?.sender}</p>
+                    <Show
+                      when={receivedDesign()}
+                      fallback={
+                        <p>
+                          Review the details, then confirm the action yourself.
+                        </p>
+                      }
+                    >
+                      {draft => (
+                        <>
+                          <Banknote
+                            amount={21000}
+                            issuer="design.preview"
+                            serial="PREVIEW"
+                            design={draft()}
+                            specimen
+                          />
+                          <p>
+                            {selected().length
+                              ? `Apply to ${selected().length} selected notes.`
+                              : 'Apply as your collection’s default design.'}{' '}
+                            The amount and issuer of your notes stay unchanged.
+                          </p>
+                        </>
+                      )}
+                    </Show>
+                    <button class="primary" disabled={busy()} onClick={accept}>
+                      {request()?.action === 'design'
+                        ? 'Apply received design'
+                        : 'Review details'}
+                    </button>
+                    <button disabled={busy()} onClick={() => setRequest(null)}>
+                      Dismiss
+                    </button>
+                  </section>
+                </Show>
+                <Show when={tab() === 'wallet'}>
+                  <section class="panel">
+                    <div class="section-heading">
+                      <h2>Your notes</h2>
+                      <div class="section-tools">
+                        <button
+                          disabled={busy()}
+                          onClick={() => setDesignOpen(!designOpen())}
+                        >
+                          Import design
+                        </button>
+                        <button
+                          disabled={busy()}
+                          onClick={() =>
+                            void run(async () => {
+                              setNotes(await wallet.notes())
+                            })
+                          }
+                        >
+                          Reload
+                        </button>
+                      </div>
+                    </div>
+                    <Show when={designOpen()}>
+                      <div class="design-drawer">
+                        <h3>Apply a saved design</h3>
                         <p>
                           {selected().length
                             ? `Apply to ${selected().length} selected notes.`
-                            : 'Apply as your collection’s default design.'}{' '}
-                          The amount and issuer of your notes stay unchanged.
+                            : 'Choose a default design for your collection.'}
                         </p>
-                      </>
-                    )}
-                  </Show>
-                  <button class="primary" disabled={busy()} onClick={accept}>
-                    {request()?.action === 'design'
-                      ? 'Apply received design'
-                      : 'Review details'}
-                  </button>
-                  <button disabled={busy()} onClick={() => setRequest(null)}>
-                    Dismiss
-                  </button>
-                </section>
-              </Show>
-              <Show when={tab() === 'wallet'}>
-                <section class="panel">
-                  <div class="section-heading">
-                    <h2>Your notes</h2>
-                    <div class="section-tools">
-                      <button
-                        disabled={busy()}
-                        onClick={() => setDesignOpen(!designOpen())}
-                      >
-                        Import design
-                      </button>
-                      <button
-                        disabled={busy()}
-                        onClick={() =>
-                          void run(async () => {
-                            setNotes(await wallet.notes())
-                          })
-                        }
-                      >
-                        Reload
-                      </button>
-                    </div>
-                  </div>
-                  <Show when={designOpen()}>
-                    <div class="design-drawer">
-                      <h3>Apply a saved design</h3>
-                      <p>
-                        {selected().length
-                          ? `Apply to ${selected().length} selected notes.`
-                          : 'Choose a default design for your collection.'}
-                      </p>
-                      <p class="hint">
-                        Paste a saved design below. This changes the artwork;
-                        the amount and issuer stay tied to the actual note.
-                      </p>
-                      <label>
-                        Design JSON
-                        <textarea
-                          value={designText()}
-                          onInput={e => setDesignText(e.currentTarget.value)}
-                        />
-                      </label>
-                      <button
-                        disabled={busy() || !designText()}
-                        onClick={() =>
-                          void run(async () => {
-                            await applyDesign(
-                              parseDesign(JSON.parse(designText())),
-                              selected()
-                            )
-                            setDesignText('')
-                            setDesignOpen(false)
-                          })
-                        }
-                      >
-                        Apply design
-                      </button>
-                    </div>
-                  </Show>
-                  <Show
-                    when={notes().length}
-                    fallback={
-                      <div class="empty">
-                        <Banknote
-                          amount={21000}
-                          issuer="your.mint"
-                          serial="PREVIEW"
-                          design={DEFAULT_DESIGN}
-                          specimen
-                        />
-                        <h3>Your first note starts here.</h3>
-                        <p>
-                          Receive a note from someone, or mint one by paying a
-                          Lightning invoice.
+                        <p class="hint">
+                          Paste a saved design below. This changes the artwork;
+                          the amount and issuer stay tied to the actual note.
                         </p>
-                        <button
-                          class="primary"
-                          onClick={() => setTab('receive')}
-                        >
-                          Receive a note
-                        </button>
-                      </div>
-                    }
-                  >
-                    <Show when={selected().length}>
-                      <div class="actions">
-                        <button
-                          disabled={busy() || !selected().length}
-                          onClick={() =>
-                            void run(async () => {
-                              for (const id of selected())
-                                await wallet.refresh(id)
-                              setSelected([])
-                            })
-                          }
-                        >
-                          Check selected
-                        </button>
-                        <button
-                          disabled={busy() || selected().length !== 1}
-                          onClick={() =>
-                            void run(async () => {
-                              await wallet.transform(selected(), 'rotate')
-                              setSelected([])
-                            })
-                          }
-                        >
-                          Rotate
-                        </button>
-                        <button
-                          disabled={busy() || selected().length < 2}
-                          onClick={() =>
-                            void run(async () => {
-                              await wallet.transform(selected(), 'combine')
-                              setSelected([])
-                            })
-                          }
-                        >
-                          Combine
-                        </button>
-                        <button
-                          disabled={busy() || selected().length !== 1}
-                          onClick={() =>
-                            void run(async () => {
-                              setShared(
-                                await wallet.share(
-                                  selected()[0],
-                                  handoverFormat()
-                                )
-                              )
-                              setSelected([])
-                            })
-                          }
-                        >
-                          Hand over
-                        </button>
-                      </div>
-                      <label>
-                        Handover format
-                        <select
-                          value={handoverFormat()}
-                          onChange={e =>
-                            setHandoverFormat(
-                              e.currentTarget.value as ReturnType<
-                                typeof handoverFormat
-                              >
-                            )
-                          }
-                        >
-                          <option value="url">HTTPS note</option>
-                          <option value="lnurl">LNURL</option>
-                          <option value="lnurlw">LNURLw</option>
-                          <option value="claim">Webwallet claim link</option>
-                        </select>
-                      </label>
-                      <label class="split">
-                        Split amount (sats)
-                        <div class="input-action">
-                          <input
-                            aria-label="Split amount (sats)"
-                            inputmode="decimal"
-                            value={split()}
-                            onInput={e => setSplit(e.currentTarget.value)}
+                        <label>
+                          Design JSON
+                          <textarea
+                            value={designText()}
+                            onInput={e => setDesignText(e.currentTarget.value)}
                           />
+                        </label>
+                        <button
+                          disabled={busy() || !designText()}
+                          onClick={() =>
+                            void run(async () => {
+                              await applyDesign(
+                                parseDesign(JSON.parse(designText())),
+                                selected()
+                              )
+                              setDesignText('')
+                              setDesignOpen(false)
+                            })
+                          }
+                        >
+                          Apply design
+                        </button>
+                      </div>
+                    </Show>
+                    <Show
+                      when={notes().length}
+                      fallback={
+                        <div class="empty">
+                          <Banknote
+                            amount={21000}
+                            issuer="your.mint"
+                            serial="PREVIEW"
+                            design={DEFAULT_DESIGN}
+                            specimen
+                          />
+                          <h3>Your first note starts here.</h3>
+                          <p>
+                            Receive a note from someone, or mint one by paying a
+                            Lightning invoice.
+                          </p>
+                          <button
+                            class="primary"
+                            onClick={() => setTab('receive')}
+                          >
+                            Receive a note
+                          </button>
+                        </div>
+                      }
+                    >
+                      <Show when={selected().length}>
+                        <div class="actions">
                           <button
                             disabled={busy() || !selected().length}
                             onClick={() =>
                               void run(async () => {
-                                await wallet.transform(
-                                  selected(),
-                                  'split',
-                                  Number(split()) * 1000
+                                for (const id of selected())
+                                  await wallet.refresh(id)
+                                setSelected([])
+                              })
+                            }
+                          >
+                            Check selected
+                          </button>
+                          <button
+                            disabled={busy() || selected().length !== 1}
+                            onClick={() =>
+                              void run(async () => {
+                                await wallet.transform(selected(), 'rotate')
+                                setSelected([])
+                              })
+                            }
+                          >
+                            Rotate
+                          </button>
+                          <button
+                            disabled={busy() || selected().length < 2}
+                            onClick={() =>
+                              void run(async () => {
+                                await wallet.transform(selected(), 'combine')
+                                setSelected([])
+                              })
+                            }
+                          >
+                            Combine
+                          </button>
+                          <button
+                            disabled={busy() || selected().length !== 1}
+                            onClick={() =>
+                              void run(async () => {
+                                setShared(
+                                  await wallet.share(
+                                    selected()[0],
+                                    handoverFormat()
+                                  )
                                 )
                                 setSelected([])
                               })
                             }
                           >
-                            Split selected
+                            Hand over
                           </button>
                         </div>
-                      </label>
-                    </Show>
-                    <div class="collection-tools">
-                      <p class="hint">Tap a note to select it.</p>
-                      <button
-                        class="quiet"
-                        onClick={() => {
-                          setShowHistory(!showHistory())
-                          setSelected([])
-                        }}
-                      >
-                        {showHistory() ? 'Hide history' : 'Show history'}
-                      </button>
-                    </div>
-                    <div class="note-grid">
-                      <For each={visibleNotes()}>
-                        {note => (
-                          <article
-                            class="note"
-                            classList={{selected: selected().includes(note.id)}}
-                          >
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${sats(note.amount)} sats ${note.status}`}
-                              checked={selected().includes(note.id)}
-                              disabled={busy()}
-                              onChange={() => toggle(note.id)}
-                            />
-                            <div class="note-body">
-                              <button
-                                class="note-art-button"
-                                aria-label={`Select note artwork ${sats(note.amount)} sats`}
-                                disabled={busy()}
-                                onClick={() => toggle(note.id)}
-                              >
-                                <Banknote
-                                  amount={note.amount}
-                                  protocol={note.protocol}
-                                  issuer={serverOf(note.url)}
-                                  serial={note.id}
-                                  design={
-                                    designs()[note.designId ?? 'default'] ??
-                                    DEFAULT_DESIGN
-                                  }
-                                />
-                              </button>
-                              <div class="section-heading">
-                                <strong>
-                                  {sats(note.amount)}{' '}
-                                  <span class="soft">sats</span>
-                                </strong>
-                                <span class={`status ${note.status}`}>
-                                  {note.status === 'spent'
-                                    ? 'not outstanding'
-                                    : note.status}
-                                </span>
-                              </div>
-                              <p>
-                                <span class="badge">
-                                  {note.protocol === 'cashu'
-                                    ? 'CASHU'
-                                    : 'LNURLCASH'}
-                                </span>{' '}
-                                {serverOf(note.url)}
-                              </p>
-                              <Show when={note.label}>
-                                <p class="note-label">{note.label}</p>
-                              </Show>
-                              <Show when={signedNote(note, pins())}>
-                                <span class="badge">
-                                  ISSUER SIGNATURE VERIFIED
-                                </span>
-                              </Show>
-                              <small>{note.reason}</small>
-                              <Show when={selected().includes(note.id)}>
-                                <NoteTools
-                                  note={note}
-                                  wallet={wallet}
-                                  busy={busy()}
-                                  run={run}
-                                />
-                              </Show>
-                              <Show
-                                when={
-                                  note.invoice && note.invoiceType === 'funding'
-                                }
-                              >
-                                <button
-                                  class="quiet"
-                                  onClick={() => {
-                                    setFundingInvoice(note.invoice!)
-                                    setTab('mint')
-                                  }}
+                        <label>
+                          Handover format
+                          <select
+                            value={handoverFormat()}
+                            onChange={e =>
+                              setHandoverFormat(
+                                e.currentTarget.value as ReturnType<
+                                  typeof handoverFormat
                                 >
-                                  Show stored invoice
+                              )
+                            }
+                          >
+                            <option value="url">HTTPS note</option>
+                            <option value="lnurl">LNURL</option>
+                            <option value="lnurlw">LNURLw</option>
+                            <option value="claim">Webwallet claim link</option>
+                          </select>
+                        </label>
+                        <label class="split">
+                          Split amount (sats)
+                          <div class="input-action">
+                            <input
+                              aria-label="Split amount (sats)"
+                              inputmode="decimal"
+                              value={split()}
+                              onInput={e => setSplit(e.currentTarget.value)}
+                            />
+                            <button
+                              disabled={busy() || !selected().length}
+                              onClick={() =>
+                                void run(async () => {
+                                  await wallet.transform(
+                                    selected(),
+                                    'split',
+                                    Number(split()) * 1000
+                                  )
+                                  setSelected([])
+                                })
+                              }
+                            >
+                              Split selected
+                            </button>
+                          </div>
+                        </label>
+                      </Show>
+                      <div class="collection-tools">
+                        <p class="hint">Tap a note to select it.</p>
+                        <button
+                          class="quiet"
+                          onClick={() => {
+                            setShowHistory(!showHistory())
+                            setSelected([])
+                          }}
+                        >
+                          {showHistory() ? 'Hide history' : 'Show history'}
+                        </button>
+                      </div>
+                      <div class="note-grid">
+                        <For each={visibleNotes()}>
+                          {note => (
+                            <article
+                              class="note"
+                              classList={{
+                                selected: selected().includes(note.id)
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${sats(note.amount)} sats ${note.status}`}
+                                checked={selected().includes(note.id)}
+                                disabled={busy()}
+                                onChange={() => toggle(note.id)}
+                              />
+                              <div class="note-body">
+                                <button
+                                  class="note-art-button"
+                                  aria-label={`Select note artwork ${sats(note.amount)} sats`}
+                                  disabled={busy()}
+                                  onClick={() => toggle(note.id)}
+                                >
+                                  <Banknote
+                                    amount={note.amount}
+                                    protocol={note.protocol}
+                                    issuer={serverOf(note.url)}
+                                    serial={note.id}
+                                    design={
+                                      designs()[note.designId ?? 'default'] ??
+                                      DEFAULT_DESIGN
+                                    }
+                                  />
                                 </button>
-                              </Show>
-                            </div>
-                          </article>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                  <Show when={shared()}>
-                    <div class="reveal">
-                      <h3>Hand this note to its next holder.</h3>
-                      <p>
-                        Anyone with this link can spend it. It is now excluded
-                        from your balance.
-                      </p>
-                      <QRCodeSVG
-                        value={shared()}
-                        level={ErrorCorrectionLevel.LOW}
-                        width={180}
-                        height={180}
-                        backgroundColor="white"
-                        backgroundAlpha={1}
-                        foregroundColor="black"
-                        foregroundAlpha={1}
-                      />
-                      <textarea
-                        aria-label="Bearer note for handover"
-                        readonly
-                        value={shared()}
-                        onFocus={e => e.currentTarget.select()}
-                      />
-                      <button onClick={() => setShared('')}>Hide note</button>
-                    </div>
-                  </Show>
-                </section>
-              </Show>
-              <Show when={tab() === 'receive'}>
-                <section class="panel">
-                  <h2>Receive a note</h2>
-                  <p>
-                    Confirm to store the note and rotate its secret with the
-                    issuing mint.
-                  </p>
-                  <label>
-                    LNURLcash or Cashu note
-                    <textarea
-                      placeholder="lnurlw://… · LNURL1… · cashuA… · cashuB…"
-                      value={input()}
-                      onInput={e => setInput(e.currentTarget.value)}
-                    />
-                  </label>
-                  <Show when={/^(cashu:)?cashu[AB]/i.test(input().trim())}>
-                    <div class="transfer-record">
-                      <p>
-                        Cashu notes are received separately for each mint.
-                        Review all issuers before continuing.
-                      </p>
-                      <For
-                        each={(() => {
-                          try {
-                            return decodeCashu(input())
-                          } catch {
-                            return []
-                          }
-                        })()}
-                      >
-                        {token => (
-                          <p>
-                            <strong>
-                              {sumProofs(token.proofs).toNumber()} sats
-                            </strong>{' '}
-                            · {token.mint}
-                          </p>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                  <button
-                    class="primary"
-                    disabled={busy() || !input().trim()}
-                    onClick={() =>
-                      void run(async () => {
-                        await wallet.receive(input())
-                        setInput('')
-                        setTab('wallet')
-                        setMessage('Note received and rotated.')
-                      })
-                    }
-                  >
-                    Confirm receive & rotate
-                  </button>
-                </section>
-              </Show>
-              <Show when={tab() === 'pay'}>
-                <section class="panel">
-                  <details>
-                    <summary>Pay a Lightning address</summary>
+                                <div class="section-heading">
+                                  <strong>
+                                    {sats(note.amount)}{' '}
+                                    <span class="soft">sats</span>
+                                  </strong>
+                                  <span class={`status ${note.status}`}>
+                                    {note.status === 'spent'
+                                      ? 'not outstanding'
+                                      : note.status}
+                                  </span>
+                                </div>
+                                <p>
+                                  <span class="badge">
+                                    {note.protocol === 'cashu'
+                                      ? 'CASHU'
+                                      : 'LNURLCASH'}
+                                  </span>{' '}
+                                  {serverOf(note.url)}
+                                </p>
+                                <Show when={note.label}>
+                                  <p class="note-label">{note.label}</p>
+                                </Show>
+                                <Show when={signedNote(note, pins())}>
+                                  <span class="badge">
+                                    ISSUER SIGNATURE VERIFIED
+                                  </span>
+                                </Show>
+                                <small>{note.reason}</small>
+                                <Show when={selected().includes(note.id)}>
+                                  <NoteTools
+                                    note={note}
+                                    wallet={wallet}
+                                    busy={busy()}
+                                    run={run}
+                                  />
+                                </Show>
+                                <Show
+                                  when={
+                                    note.invoice &&
+                                    note.invoiceType === 'funding'
+                                  }
+                                >
+                                  <button
+                                    class="quiet"
+                                    onClick={() => {
+                                      setFundingInvoice(note.invoice!)
+                                      setTab('mint')
+                                    }}
+                                  >
+                                    Show stored invoice
+                                  </button>
+                                </Show>
+                              </div>
+                            </article>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <Show when={shared()}>
+                      <div class="reveal">
+                        <h3>Hand this note to its next holder.</h3>
+                        <p>
+                          Anyone with this link can spend it. It is now excluded
+                          from your balance.
+                        </p>
+                        <QRCodeSVG
+                          value={shared()}
+                          level={ErrorCorrectionLevel.LOW}
+                          width={180}
+                          height={180}
+                          backgroundColor="white"
+                          backgroundAlpha={1}
+                          foregroundColor="black"
+                          foregroundAlpha={1}
+                        />
+                        <textarea
+                          aria-label="Bearer note for handover"
+                          readonly
+                          value={shared()}
+                          onFocus={e => e.currentTarget.select()}
+                        />
+                        <button onClick={() => setShared('')}>Hide note</button>
+                      </div>
+                    </Show>
+                  </section>
+                </Show>
+                <Show when={tab() === 'receive'}>
+                  <section class="panel">
+                    <h2>Receive a note</h2>
+                    <p>
+                      Confirm to store the note and rotate its secret with the
+                      issuing mint.
+                    </p>
                     <label>
-                      Lightning address or LNURL-pay
-                      <input
-                        list="payment-addresses"
-                        value={paymentAddress()}
-                        onInput={e => setPaymentAddress(e.currentTarget.value)}
+                      LNURLcash or Cashu note
+                      <textarea
+                        placeholder="lnurlw://… · LNURL1… · cashuA… · cashuB…"
+                        value={input()}
+                        onInput={e => setInput(e.currentTarget.value)}
                       />
                     </label>
-                    <datalist id="payment-addresses">
-                      <For each={savedPaymentAddresses()}>
+                    <Show when={/^(cashu:)?cashu[AB]/i.test(input().trim())}>
+                      <div class="transfer-record">
+                        <p>
+                          Cashu notes are received separately for each mint.
+                          Review all issuers before continuing.
+                        </p>
+                        <For
+                          each={(() => {
+                            try {
+                              return decodeCashu(input())
+                            } catch {
+                              return []
+                            }
+                          })()}
+                        >
+                          {token => (
+                            <p>
+                              <strong>
+                                {sumProofs(token.proofs).toNumber()} sats
+                              </strong>{' '}
+                              · {token.mint}
+                            </p>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <button
+                      class="primary"
+                      disabled={busy() || !input().trim()}
+                      onClick={() =>
+                        void run(async () => {
+                          await wallet.receive(input())
+                          setInput('')
+                          setTab('wallet')
+                          setMessage('Note received and rotated.')
+                        })
+                      }
+                    >
+                      Confirm receive & rotate
+                    </button>
+                  </section>
+                </Show>
+                <Show when={tab() === 'pay'}>
+                  <section class="panel">
+                    <details>
+                      <summary>Pay a Lightning address</summary>
+                      <label>
+                        Lightning address or LNURL-pay
+                        <input
+                          list="payment-addresses"
+                          value={paymentAddress()}
+                          onInput={e =>
+                            setPaymentAddress(e.currentTarget.value)
+                          }
+                        />
+                      </label>
+                      <datalist id="payment-addresses">
+                        <For each={savedPaymentAddresses()}>
+                          {address => <option value={address} />}
+                        </For>
+                      </datalist>
+                      <label>
+                        Payment amount (sats)
+                        <input
+                          inputmode="decimal"
+                          value={paymentAmount()}
+                          onInput={e => setPaymentAmount(e.currentTarget.value)}
+                        />
+                      </label>
+                      <button
+                        disabled={
+                          busy() || !paymentAddress() || !paymentAmount()
+                        }
+                        onClick={() =>
+                          void run(async () => {
+                            setInvoice(
+                              await wallet.paymentInvoice(
+                                paymentAddress(),
+                                Number(paymentAmount()) * 1000
+                              )
+                            )
+                          })
+                        }
+                      >
+                        Get invoice for review
+                      </button>
+                    </details>
+                    <h2>Pay a Lightning invoice</h2>
+                    <label>
+                      BOLT11 invoice
+                      <textarea
+                        placeholder="lnbc…"
+                        value={invoice()}
+                        onInput={e => setInvoice(e.currentTarget.value)}
+                      />
+                    </label>
+                    <p class="amount-review">
+                      Invoice amount:{' '}
+                      <strong>
+                        {sats(decodeBolt11AmountMsat(invoice()) ?? 0)} sats
+                      </strong>
+                    </p>
+                    <label>
+                      Note to spend
+                      <select
+                        aria-label="Note to spend"
+                        value={selected()[0] ?? ''}
+                        onChange={e =>
+                          setSelected(
+                            e.currentTarget.value ? [e.currentTarget.value] : []
+                          )
+                        }
+                      >
+                        <option value="">Choose a note</option>
+                        <For each={notes().filter(n => n.status === 'ready')}>
+                          {note => (
+                            <option value={note.id}>
+                              {sats(note.amount)} sats · {serverOf(note.url)}
+                            </option>
+                          )}
+                        </For>
+                      </select>
+                    </label>
+                    <p class="hint">
+                      Select several notes in your collection to combine them,
+                      or prepare change from a larger note. Review the final
+                      amount before confirming payment. Settlement is checked
+                      automatically when the mint supplies a verification URL.
+                    </p>
+                    <Show when={selected().length && invoice()}>
+                      <button
+                        disabled={busy()}
+                        onClick={() =>
+                          void run(async () => {
+                            setSelected([
+                              await wallet.preparePayment(selected(), invoice())
+                            ])
+                            setMessage(
+                              'Payment prepared. Review its amount and fees before confirming.'
+                            )
+                          })
+                        }
+                      >
+                        Prepare payment & fees
+                      </button>
+                    </Show>
+                    <button
+                      class="primary"
+                      disabled={
+                        busy() || selected().length !== 1 || !invoice().trim()
+                      }
+                      onClick={() => {
+                        const confirmedId = selected()[0]
+                        const confirmedInvoice = invoice()
+                        void run(async () => {
+                          await wallet.pay(confirmedId, confirmedInvoice)
+                          setInvoice('')
+                          setSelected([])
+                          setTab('wallet')
+                          setMessage(
+                            'Payment submitted. Settlement is not yet confirmed.'
+                          )
+                        })
+                      }}
+                    >
+                      Confirm payment
+                    </button>
+                  </section>
+                </Show>
+                <Show when={tab() === 'mint'}>
+                  <section class="panel">
+                    <h2>Mint a new note</h2>
+                    <label>
+                      Mint protocol
+                      <select
+                        value={mintProtocol()}
+                        onChange={e =>
+                          setMintProtocol(
+                            e.currentTarget.value as 'cashu' | 'lnurlcash'
+                          )
+                        }
+                      >
+                        <option value="lnurlcash">LNURLcash</option>
+                        <option value="cashu" disabled={!wallet.cashu.host}>
+                          Cashu
+                        </option>
+                      </select>
+                    </label>
+                    <p>
+                      Choose a mint, then pay its invoice with your Lightning
+                      wallet.
+                    </p>
+                    <label>
+                      Mint URL or Lightning address
+                      <input
+                        placeholder="you@mint.example"
+                        list="mint-addresses"
+                        value={mint()}
+                        onInput={e => setMint(e.currentTarget.value)}
+                      />
+                    </label>
+                    <datalist id="mint-addresses">
+                      <For each={savedMintAddresses()}>
                         {address => <option value={address} />}
                       </For>
                     </datalist>
                     <label>
-                      Payment amount (sats)
+                      Amount (sats)
                       <input
                         inputmode="decimal"
-                        value={paymentAmount()}
-                        onInput={e => setPaymentAmount(e.currentTarget.value)}
+                        value={amount()}
+                        onInput={e => setAmount(e.currentTarget.value)}
                       />
                     </label>
                     <button
-                      disabled={busy() || !paymentAddress() || !paymentAmount()}
+                      class="primary"
+                      disabled={busy() || !mint() || !amount()}
                       onClick={() =>
                         void run(async () => {
-                          setInvoice(
-                            await wallet.paymentInvoice(
-                              paymentAddress(),
-                              Number(paymentAmount()) * 1000
-                            )
+                          setFundingInvoice(
+                            mintProtocol() === 'cashu'
+                              ? (
+                                  await wallet.cashu.mint(
+                                    mint(),
+                                    Number(amount())
+                                  )
+                                ).invoice!
+                              : await wallet.mint(
+                                  mint(),
+                                  Number(amount()) * 1000
+                                )
                           )
                         })
                       }
                     >
-                      Get invoice for review
+                      Create funding invoice
                     </button>
-                  </details>
-                  <h2>Pay a Lightning invoice</h2>
-                  <label>
-                    BOLT11 invoice
-                    <textarea
-                      placeholder="lnbc…"
-                      value={invoice()}
-                      onInput={e => setInvoice(e.currentTarget.value)}
-                    />
-                  </label>
-                  <p class="amount-review">
-                    Invoice amount:{' '}
-                    <strong>
-                      {sats(decodeBolt11AmountMsat(invoice()) ?? 0)} sats
-                    </strong>
-                  </p>
-                  <label>
-                    Note to spend
-                    <select
-                      aria-label="Note to spend"
-                      value={selected()[0] ?? ''}
-                      onChange={e =>
-                        setSelected(
-                          e.currentTarget.value ? [e.currentTarget.value] : []
-                        )
-                      }
-                    >
-                      <option value="">Choose a note</option>
-                      <For each={notes().filter(n => n.status === 'ready')}>
-                        {note => (
-                          <option value={note.id}>
-                            {sats(note.amount)} sats · {serverOf(note.url)}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                  </label>
-                  <p class="hint">
-                    Select several notes in your collection to combine them, or
-                    prepare change from a larger note. Review the final amount
-                    before confirming payment. Settlement is checked
-                    automatically when the mint supplies a verification URL.
-                  </p>
-                  <Show when={selected().length && invoice()}>
+                    <Show when={fundingInvoice()}>
+                      <div class="reveal">
+                        <QRCodeSVG
+                          value={fundingInvoice()}
+                          level={ErrorCorrectionLevel.LOW}
+                          width={180}
+                          height={180}
+                          backgroundColor="white"
+                          backgroundAlpha={1}
+                          foregroundColor="black"
+                          foregroundAlpha={1}
+                        />
+                        <textarea
+                          aria-label="Funding invoice"
+                          readonly
+                          value={fundingInvoice()}
+                          onFocus={e => e.currentTarget.select()}
+                        />
+                        <p>
+                          After paying, select the pending note under Wallet and
+                          choose “Check selected”. Mint fees may reduce its
+                          final value.
+                        </p>
+                      </div>
+                    </Show>
+                  </section>
+                </Show>
+                <Show when={tab() === 'backup'}>
+                  <section class="panel">
+                    <h2>Keep a recovery copy</h2>
+                    <p>
+                      Keep the encrypted backup and your password. Shell
+                      upgrades may use a new storage scope. Pending notes are
+                      included.
+                    </p>
                     <button
+                      class="primary"
                       disabled={busy()}
                       onClick={() =>
                         void run(async () => {
-                          setSelected([
-                            await wallet.preparePayment(selected(), invoice())
-                          ])
-                          setMessage(
-                            'Payment prepared. Review its amount and fees before confirming.'
-                          )
+                          setBackup(await vault.backup())
                         })
                       }
                     >
-                      Prepare payment & fees
+                      Prepare encrypted backup
                     </button>
-                  </Show>
-                  <button
-                    class="primary"
-                    disabled={
-                      busy() || selected().length !== 1 || !invoice().trim()
-                    }
-                    onClick={() => {
-                      const confirmedId = selected()[0]
-                      const confirmedInvoice = invoice()
-                      void run(async () => {
-                        await wallet.pay(confirmedId, confirmedInvoice)
-                        setInvoice('')
-                        setSelected([])
-                        setTab('wallet')
-                        setMessage(
-                          'Payment submitted. Settlement is not yet confirmed.'
-                        )
-                      })
-                    }}
-                  >
-                    Confirm payment
-                  </button>
-                </section>
-              </Show>
-              <Show when={tab() === 'mint'}>
-                <section class="panel">
-                  <h2>Mint a new note</h2>
-                  <label>
-                    Mint protocol
-                    <select
-                      value={mintProtocol()}
-                      onChange={e =>
-                        setMintProtocol(
-                          e.currentTarget.value as 'cashu' | 'lnurlcash'
-                        )
-                      }
-                    >
-                      <option value="lnurlcash">LNURLcash</option>
-                      <option value="cashu" disabled={!wallet.cashu.host}>
-                        Cashu
-                      </option>
-                    </select>
-                  </label>
-                  <p>
-                    Choose a mint, then pay its invoice with your Lightning
-                    wallet.
-                  </p>
-                  <label>
-                    Mint URL or Lightning address
-                    <input
-                      placeholder="you@mint.example"
-                      list="mint-addresses"
-                      value={mint()}
-                      onInput={e => setMint(e.currentTarget.value)}
-                    />
-                  </label>
-                  <datalist id="mint-addresses">
-                    <For each={savedMintAddresses()}>
-                      {address => <option value={address} />}
-                    </For>
-                  </datalist>
-                  <label>
-                    Amount (sats)
-                    <input
-                      inputmode="decimal"
-                      value={amount()}
-                      onInput={e => setAmount(e.currentTarget.value)}
-                    />
-                  </label>
-                  <button
-                    class="primary"
-                    disabled={busy() || !mint() || !amount()}
-                    onClick={() =>
-                      void run(async () => {
-                        setFundingInvoice(
-                          mintProtocol() === 'cashu'
-                            ? (
-                                await wallet.cashu.mint(
-                                  mint(),
-                                  Number(amount())
-                                )
-                              ).invoice!
-                            : await wallet.mint(mint(), Number(amount()) * 1000)
-                        )
-                      })
-                    }
-                  >
-                    Create funding invoice
-                  </button>
-                  <Show when={fundingInvoice()}>
-                    <div class="reveal">
-                      <QRCodeSVG
-                        value={fundingInvoice()}
-                        level={ErrorCorrectionLevel.LOW}
-                        width={180}
-                        height={180}
-                        backgroundColor="white"
-                        backgroundAlpha={1}
-                        foregroundColor="black"
-                        foregroundAlpha={1}
-                      />
-                      <textarea
-                        aria-label="Funding invoice"
-                        readonly
-                        value={fundingInvoice()}
-                        onFocus={e => e.currentTarget.select()}
-                      />
-                      <p>
-                        After paying, select the pending note under Wallet and
-                        choose “Check selected”. Mint fees may reduce its final
-                        value.
-                      </p>
-                    </div>
-                  </Show>
-                </section>
-              </Show>
-              <Show when={tab() === 'backup'}>
-                <section class="panel">
-                  <h2>Keep a recovery copy</h2>
-                  <p>
-                    Keep the encrypted backup and your password. Shell upgrades
-                    may use a new storage scope. Pending notes are included.
-                  </p>
-                  <button
-                    class="primary"
-                    disabled={busy()}
-                    onClick={() =>
-                      void run(async () => {
-                        setBackup(await vault.backup())
-                      })
-                    }
-                  >
-                    Prepare encrypted backup
-                  </button>
-                  <Show when={backup()}>
+                    <Show when={backup()}>
+                      <label>
+                        Encrypted backup — select and save as a .json file
+                        <textarea
+                          class="backup"
+                          readonly
+                          value={backup()}
+                          onFocus={e => e.currentTarget.select()}
+                        />
+                      </label>
+                    </Show>
+                    <hr />
+                    <h3>Import a napplet backup</h3>
+                    <p>
+                      Notes merge into this wallet; existing notes are kept.
+                    </p>
                     <label>
-                      Encrypted backup — select and save as a .json file
+                      Backup JSON
                       <textarea
-                        class="backup"
-                        readonly
-                        value={backup()}
-                        onFocus={e => e.currentTarget.select()}
+                        value={restoreText()}
+                        onInput={e => setRestoreText(e.currentTarget.value)}
                       />
                     </label>
-                  </Show>
-                  <hr />
-                  <h3>Import a napplet backup</h3>
-                  <p>Notes merge into this wallet; existing notes are kept.</p>
-                  <label>
-                    Backup JSON
-                    <textarea
-                      value={restoreText()}
-                      onInput={e => setRestoreText(e.currentTarget.value)}
-                    />
-                  </label>
-                  <label>
-                    Backup password
-                    <input
-                      type="password"
-                      autocomplete="off"
-                      value={backupPassword()}
-                      onInput={e => setBackupPassword(e.currentTarget.value)}
-                    />
-                  </label>
-                  <button
-                    disabled={busy() || !restoreText() || !backupPassword()}
-                    onClick={() =>
-                      void run(async () => {
-                        const added = await vault.restore(
-                          restoreText(),
-                          backupPassword(),
-                          {allowLegacy: allowLegacyBackup()}
-                        )
-                        setRestoreText('')
-                        setBackupPassword('')
-                        setAllowLegacyBackup(false)
-                        setMessage(
-                          `Imported ${added} notes. Check them online before using.`
-                        )
-                      }, true)
-                    }
-                  >
-                    Import encrypted notes
-                  </button>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={allowLegacyBackup()}
-                      onChange={e =>
-                        setAllowLegacyBackup(e.currentTarget.checked)
+                    <label>
+                      Backup password
+                      <input
+                        type="password"
+                        autocomplete="off"
+                        value={backupPassword()}
+                        onInput={e => setBackupPassword(e.currentTarget.value)}
+                      />
+                    </label>
+                    <button
+                      disabled={busy() || !restoreText() || !backupPassword()}
+                      onClick={() =>
+                        void run(async () => {
+                          const added = await vault.restore(
+                            restoreText(),
+                            backupPassword(),
+                            {allowLegacy: allowLegacyBackup()}
+                          )
+                          setRestoreText('')
+                          setBackupPassword('')
+                          setAllowLegacyBackup(false)
+                          setMessage(
+                            `Imported ${added} notes. Check them online before using.`
+                          )
+                        }, true)
                       }
-                    />{' '}
-                    Import an old v1 backup whose completeness cannot be
-                    verified. Keep the original file and reconcile all mints
-                    after importing.
-                  </label>
-                </section>
+                    >
+                      Import encrypted notes
+                    </button>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={allowLegacyBackup()}
+                        onChange={e =>
+                          setAllowLegacyBackup(e.currentTarget.checked)
+                        }
+                      />{' '}
+                      Import an old v1 backup whose completeness cannot be
+                      verified. Keep the original file and reconcile all mints
+                      after importing.
+                    </label>
+                  </section>
+                </Show>
+                <BearlettTools
+                  tab={tab()}
+                  wallet={wallet}
+                  notes={notes()}
+                  selected={selected()}
+                  revision={revision()}
+                  busy={busy()}
+                  run={run}
+                />
+                <WalletTools
+                  tab={tab() === 'transfer' ? '' : tab()}
+                  vault={vault}
+                  wallet={wallet}
+                  notes={notes().filter(n => n.protocol !== 'cashu')}
+                  busy={busy()}
+                  revision={revision()}
+                  preferences={preferences()}
+                  onPreferences={changePreferences}
+                  run={run}
+                />
               </Show>
-              <BearlettTools
-                tab={tab()}
-                wallet={wallet}
-                notes={notes()}
-                selected={selected()}
-                revision={revision()}
-                busy={busy()}
-                run={run}
-              />
-              <WalletTools
-                tab={tab() === 'transfer' ? '' : tab()}
-                vault={vault}
-                wallet={wallet}
-                notes={notes().filter(n => n.protocol !== 'cashu')}
-                busy={busy()}
-                revision={revision()}
-                preferences={preferences()}
-                onPreferences={changePreferences}
-                run={run}
-              />
-            </Show>
-            <Show when={busy()}>
-              <p class="notice" role="status">
-                Working… keep the wallet open.
-              </p>
-            </Show>
-            <Show when={message() && !busy()}>
-              <p class="notice" role="status">
-                {message()}
-              </p>
+              <Show when={busy()}>
+                <p class="notice" role="status">
+                  Working… keep the wallet open.
+                </p>
+              </Show>
+              <Show when={message() && !busy()}>
+                <p class="notice" role="status">
+                  {message()}
+                </p>
+              </Show>
             </Show>
           </Show>
-        </Show>
-      </main>
-      <footer>
-        Bearlett · LNURLcash & Cashu · MIT licensed
-        <br />A balance is a claim on its issuing mint. Back up after every
-        change.
-      </footer>
+        </main>
+        <footer>
+          Bearlett · LNURLcash & Cashu · MIT licensed
+          <br />A balance is a claim on its issuing mint. Back up after every
+          change.
+        </footer>
+      </div>
     </div>
   )
 }

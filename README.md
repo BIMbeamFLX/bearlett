@@ -140,9 +140,13 @@ BEARLETT_MINT=https://tcg.example npm run build:collection -- --mode 600b-e1
 # -> dist-collection-600b-e1/index.html   (one self-contained file, ~337 kB)
 ```
 
-Editions are `600b-e1` and `600b-g`. There is no development host for a
-collection yet: it needs a shell that grants the `nutft` capability, which the
-dev host does not.
+Editions are `600b-e1` and `600b-g`. The dev host previews a collection
+against an in-page fixture mint, so nothing reaches a network and no real
+cards exist:
+
+```sh
+npm run preview:collection # http://127.0.0.1:4188/collection
+```
 
 Use separate tabs for Wallet and Notes. The development host injects the
 official `@napplet/shim`, uses an in-memory test mint and volatile session

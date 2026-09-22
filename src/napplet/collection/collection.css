@@ -409,13 +409,43 @@
 
 /* ---------------------------------------------------------------- detail -- */
 
+.preview {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.preview li {
+  margin: 0 0 8px;
+}
+
+.preview__name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.preview__tier {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-quiet);
+}
+
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: 2;
+  z-index: 8;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: max(20px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
   background: rgba(9, 8, 11, 0.86);
 }
 
