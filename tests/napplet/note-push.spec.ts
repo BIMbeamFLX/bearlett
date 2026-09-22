@@ -26,7 +26,11 @@ test('pushes a design to a locked wallet without switching apps or importing sil
   await expect(wallet.locator('.status.ready')).toHaveCount(1)
   await wallet.getByRole('button', {name: 'Lock wallet'}).click()
   const before = await receiver.evaluate(() =>
-    JSON.stringify([...(window as any).hostStores.wallet])
+    JSON.stringify(
+      [...(window as any).hostStores.wallet].filter(
+        ([key]) => !String(key).endsWith(':meta:session-draft')
+      )
+    )
   )
   await page.goto('/notes')
   await page.bringToFront()
@@ -49,7 +53,11 @@ test('pushes a design to a locked wallet without switching apps or importing sil
   await expect(wallet.getByRole('dialog')).toHaveCount(0)
   expect(
     await receiver.evaluate(() =>
-      JSON.stringify([...(window as any).hostStores.wallet])
+      JSON.stringify(
+        [...(window as any).hostStores.wallet].filter(
+          ([key]) => !String(key).endsWith(':meta:session-draft')
+        )
+      )
     )
   ).toBe(before)
   const sent = await page.evaluate(
@@ -77,7 +85,11 @@ test('pushes a design to a locked wallet without switching apps or importing sil
   ).toBeVisible()
   expect(
     await receiver.evaluate(() =>
-      JSON.stringify([...(window as any).hostStores.wallet])
+      JSON.stringify(
+        [...(window as any).hostStores.wallet].filter(
+          ([key]) => !String(key).endsWith(':meta:session-draft')
+        )
+      )
     )
   ).toBe(before)
   await wallet.getByRole('button', {name: 'Apply received design'}).click()

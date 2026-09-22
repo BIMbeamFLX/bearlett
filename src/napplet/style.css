@@ -344,6 +344,15 @@ p {
 .balance h1 {
   margin-bottom: 12px;
 }
+.mint-lines {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mint-lines li {
+  font-size: 12px;
+  color: var(--brass-2);
+}
 .balance h1 span {
   font-family: var(--mono);
   font-size: 14px;

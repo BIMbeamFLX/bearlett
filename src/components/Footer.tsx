@@ -44,7 +44,7 @@ const Footer = () => {
       read fine together, unlike the longer privacy note and LUD list
       below them */}
       <div class="footer-item footer-row">
-        <span class="footer-row-item">LNURLwallet {__APP_VERSION__}</span>
+        <span class="footer-row-item">Bearlett {__APP_VERSION__}</span>
         <a
           class="footer-row-item"
           href="https://lnurlcash.com"
@@ -52,11 +52,11 @@ const Footer = () => {
           rel="noreferrer"
         >
           <IoGlobeSharp />
-          &nbsp;Website
+          &nbsp;LNURLcash
         </a>
         <a
           class="footer-row-item"
-          href="https://github.com/lnurlcash/lnurl-wallet"
+          href="https://github.com/BIMbeamFLX/bearlett"
           target="_blank"
           rel="noreferrer"
         >

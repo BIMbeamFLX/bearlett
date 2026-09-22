@@ -19,7 +19,7 @@ body {
   font-family: $font;
   margin: 0;
   padding: 42px;
-  padding-top: 64px;
+  padding-top: calc(64px + env(safe-area-inset-top));
 }
 
 .page {
@@ -95,7 +95,7 @@ footer {
 @media (max-width: 700px) {
   body {
     padding: 12px;
-    padding-top: 64px;
+    padding-top: calc(64px + env(safe-area-inset-top));
   }
   footer {
     position: static;
@@ -787,6 +787,7 @@ nav {
   left: 0;
   right: 0;
   z-index: 2;
+  padding-top: env(safe-area-inset-top);
 }
 
 .nav-brand {

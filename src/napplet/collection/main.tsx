@@ -38,6 +38,16 @@ import {
   receiveIntentToken,
   receiveProblem
 } from './receive'
+import {
+  copyRefs,
+  defaultPicks,
+  handoverLines,
+  pickedCopies,
+  togglePick
+} from './handover'
+import {previewsFromSecrets} from './preview'
+import type {CardPreview} from './preview'
+import SessionBar from '../SessionBar'
 import './collection.css'
 
 /**
@@ -137,6 +147,9 @@ function App() {
   const [selecting, setSelecting] = createSignal(false)
   const [selected, setSelected] = createSignal<readonly string[]>([])
   const [handover, setHandover] = createSignal(false)
+  const [picks, setPicks] = createSignal<readonly string[]>([])
+  const [preview, setPreview] = createSignal<CardPreview[]>([])
+  const [codecReady, setCodecReady] = createSignal(0)
   const [recipient, setRecipient] = createSignal('')
   const [sent, setSent] = createSignal<Array<{token: string; at?: string}>>([])
   const [mine, setMine] = createSignal('')
@@ -336,6 +349,7 @@ function App() {
       })
       const cashuModule = import('@cashu/cashu-ts')
       tools = cashuModule
+      void cashuModule.then(() => setCodecReady(count => count + 1))
       /* Another napplet may hand a card over. It is checked offline and waits
          in line; nothing is redeemed until the holder presses Redeem. */
       receives = inc?.on(RECEIVE_CONVENTION, event => {
@@ -538,6 +552,30 @@ function App() {
     if (idle() && deliveries().length) untrack(stageNext)
   })
 
+  createEffect(() => {
+    const text = token()
+    const assets = catalog()
+    codecReady()
+    if (!tools || !text.trim()) {
+      setPreview([])
+      return
+    }
+    void tools.then(codec => {
+      if (token() !== text) return
+      try {
+        const card = readCardToken(text, EDITION, codec)
+        setPreview(
+          previewsFromSecrets(
+            card.proofs.map(proof => proof.secret),
+            assets
+          )
+        )
+      } catch {
+        if (token() === text) setPreview([])
+      }
+    })
+  })
+
   /* A delivered card gets the same offline checks as a pasted one. One that
      fails them is not the holder's business and is dropped without a word;
      one that passes waits its turn, and never replaces a token in the field. */
@@ -633,30 +671,48 @@ function App() {
     setOpened(stack)
   }
 
+  const chosenCopies = createMemo(() =>
+    copyRefs(view()?.stacks ?? [], selected())
+  )
+  const openHandover = () => {
+    setPicks(defaultPicks(chosenCopies()))
+    setHandover(true)
+  }
+
   /* Every handed-over token comes back from storage, not from this loop: a
      handover that stops at the third card still shows the first two, and so
      does the next open, until the holder says they were passed on. */
   const hand = async () => {
     if (!session) return
-    const chosen = selected()
-    if (!chosen.length || !recipient().trim()) return
+    const copies = pickedCopies(chosenCopies(), picks())
+    if (!copies.length || !recipient().trim()) return
     setBusy('Handing over')
     setFailure('')
+    let sentCount = 0
     let problem = ''
     try {
-      for (const id of chosen) {
-        const stack = view()?.stacks.find(s => s.asset.asset_id === id)
-        const item = stack?.items[0] as {proof?: {secret?: string}} | undefined
-        if (!item?.proof?.secret) continue
-        await session.handOver(item.proof.secret, recipient().trim())
+      for (const copy of copies) {
+        try {
+          await session.handOver(copy.secret, recipient().trim())
+          sentCount += 1
+        } catch (error) {
+          problem = readable(error)
+          break
+        }
       }
-      setSelected([])
-      setSelecting(false)
     } catch (error) {
       problem = readable(error)
     }
     await refresh()
-    if (problem) setFailure(problem)
+    setPicks([])
+    setSelected([])
+    setSelecting(false)
+    if (problem)
+      setFailure(
+        sentCount
+          ? `${sentCount} ${sentCount === 1 ? 'card' : 'cards'} left this collection. ${problem}`
+          : problem
+      )
   }
 
   const passedOn = async () => {
@@ -669,8 +725,29 @@ function App() {
     }
   }
 
+  const barWaiting = (): string => {
+    if (token().trim()) return 'Card waiting'
+    if (handover() && picks().length) return 'Handover waiting'
+    if (move()) return 'Move waiting'
+    return ''
+  }
   return (
     <div class="collection">
+      <SessionBar
+        surface="Collection"
+        figure={
+          view()
+            ? `${view()!.counters.cards} ${view()!.counters.cards === 1 ? 'card' : 'cards'}`
+            : TITLE
+        }
+        detail={TITLE}
+        waiting={barWaiting()}
+        onWaiting={() => {
+          if (token().trim()) openReceive()
+          else if (selected().length || handover()) openHandover()
+          else openReceive()
+        }}
+      />
       <p class="collection__ghost" aria-hidden="true">
         {EDITION.units[0] ?? TITLE}
       </p>
@@ -903,9 +980,9 @@ function App() {
                 <button
                   class="button button--go"
                   disabled={frozen() || !selected().length}
-                  onClick={() => setHandover(true)}
+                  onClick={openHandover}
                 >
-                  Hand over{selected().length ? ` (${selected().length})` : ''}
+                  Hand over
                 </button>
                 <button
                   class="button"
@@ -1065,6 +1142,11 @@ function App() {
                     setSelecting(true)
                     setSelected([stack().asset.asset_id])
                     setOpened(null)
+                    setPicks(
+                      defaultPicks(
+                        copyRefs(view()?.stacks ?? [], [stack().asset.asset_id])
+                      )
+                    )
                     setHandover(true)
                   }}
                 >
@@ -1138,6 +1220,22 @@ function App() {
             </p>
             <p>{WEBSITE_CARDS}</p>
 
+            <Show when={preview().length}>
+              <ul class="preview">
+                <For each={preview()}>
+                  {card => (
+                    <li>
+                      <p class="preview__name">{card.name}</p>
+                      <Show when={card.tier}>
+                        <p class="preview__tier">{card.tier}</p>
+                      </Show>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              <p>This is the card. Redeem keeps it in this collection.</p>
+            </Show>
+
             <label class="collection__kicker" for="collection-token">
               Card token
             </label>
@@ -1207,11 +1305,40 @@ function App() {
               </button>
             </div>
 
-            <Show when={selected().length}>
-              <p class="collection__kicker">
-                Handing over {selected().length} card
-                {selected().length === 1 ? '' : 's'}
-              </p>
+            <Show when={chosenCopies().length}>
+              <p class="collection__kicker">Choose the copies that leave</p>
+              <ul class="preview">
+                <For each={chosenCopies()}>
+                  {copy => (
+                    <li>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={picks().includes(copy.y)}
+                          onChange={() => setPicks(togglePick(picks(), copy.y))}
+                        />{' '}
+                        {copy.name}, copy {copy.index} of {copy.of}
+                      </label>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              <Show when={chosenCopies().length > 1}>
+                <button
+                  class="button"
+                  onClick={() => setPicks(chosenCopies().map(copy => copy.y))}
+                >
+                  All copies
+                </button>
+              </Show>
+              <For each={handoverLines(chosenCopies(), picks())}>
+                {line => (
+                  <p>
+                    {line.name}: handing over {line.sending}. {line.staying}{' '}
+                    {line.staying === 1 ? 'stays' : 'stay'} here.
+                  </p>
+                )}
+              </For>
               <input
                 type="search"
                 class="handover__input"
@@ -1223,15 +1350,20 @@ function App() {
               <div class="actions">
                 <button
                   class="button button--go"
-                  disabled={Boolean(busy()) || frozen() || !recipient().trim()}
+                  disabled={
+                    Boolean(busy()) ||
+                    frozen() ||
+                    !recipient().trim() ||
+                    !picks().length
+                  }
                   onClick={hand}
                 >
                   Hand over
                 </button>
               </div>
               <p class="mono">
-                The mint re-binds each card to that address. Once it does, this
-                wallet no longer holds it.
+                The mint re-binds each chosen card to that address. Once it
+                does, this collection no longer holds it.
               </p>
             </Show>
 
