@@ -1405,7 +1405,9 @@ nav {
 .bearer-signed,
 .bearer-spent,
 .bearer-device,
-.bearer-sunset {
+.bearer-sunset,
+.bearer-plain,
+.bearer-script {
   display: inline-flex;
   align-items: center;
   font-size: 0.8em;
@@ -1431,6 +1433,11 @@ nav {
 }
 
 .bearer-sunset {
+  color: #e4c567;
+}
+
+.bearer-plain,
+.bearer-script {
   color: #e4c567;
 }
 

@@ -10,7 +10,8 @@ import {
   IoCopySharp,
   IoRefreshSharp,
   IoCheckmarkSharp,
-  IoWarningSharp
+  IoWarningSharp,
+  IoArrowUpCircleSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -23,7 +24,9 @@ import {
   serviceOriginOf,
   toBech32Lnurl,
   verifyNoteSignature,
-  verifyNoteSignatureHash
+  verifyNoteSignatureHash,
+  isCk1,
+  isCw1
 } from '../lnurlcash'
 import {
   deviceExportForHandoff,
@@ -56,6 +59,7 @@ export type BearerCardProps = {
   // encapsulates the full device/rotate-on-refresh flow shared with the
   // selection toolbar's own Refresh action; not worth duplicating here
   onRefresh: (bearer: Bearer) => Promise<void>
+  onUpgrade: (bearer: Bearer) => Promise<void>
 }
 
 const BearerCard: Component<BearerCardProps> = props => {
@@ -64,6 +68,7 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
   const [refreshing, setRefreshing] = createSignal(false)
+  const [upgrading, setUpgrading] = createSignal(false)
   // whether the "hand this note over" panel is open at all - separate from
   // revealedUrl below, since a device-backed note opens the panel before
   // its secret is actually known (see revealDeviceNote)
@@ -80,6 +85,8 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [qrRevealed, setQrRevealed] = createSignal(false)
 
   const k1 = () => noteK1(props.bearer.url) || ''
+  // A hash preimage. A ck1 or a cw1 script note is already the finished form.
+  const isPlainSecret = () => !!k1() && !isCk1(k1()) && !isCw1(k1())
   const isSpent = () => !!props.bearer.spent
 
   // this note's issuing mint's self-reported node color (cached via the
@@ -162,6 +169,16 @@ const BearerCard: Component<BearerCardProps> = props => {
       await props.onRefresh(props.bearer)
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  const upgradeThisNote = async () => {
+    if (upgrading()) return
+    setUpgrading(true)
+    try {
+      await props.onUpgrade(props.bearer)
+    } finally {
+      setUpgrading(false)
     }
   }
 
@@ -273,6 +290,22 @@ const BearerCard: Component<BearerCardProps> = props => {
                 &nbsp;signed
               </span>
             </Show>
+            <Show when={isPlainSecret()}>
+              <span
+                class="bearer-plain"
+                title="This note's secret is a hash preimage. Upgrade it to a recoverable pub/sig secret."
+              >
+                plain secret
+              </span>
+            </Show>
+            <Show when={!!k1() && isCw1(k1())}>
+              <span
+                class="bearer-script"
+                title="This note is spent by revealing a script, not a plain signature."
+              >
+                script
+              </span>
+            </Show>
             <Show when={props.bearer.deviceId}>
               <span
                 class="bearer-device"
@@ -358,6 +391,24 @@ const BearerCard: Component<BearerCardProps> = props => {
                     <IoRefreshSharp class="spin" />
                   </Show>
                 </button>
+                <Show when={isPlainSecret()}>
+                  <button
+                    class="icon-btn"
+                    disabled={upgrading()}
+                    title="Upgrade to a recoverable pub/sig secret"
+                    onClick={e => {
+                      e.stopPropagation()
+                      upgradeThisNote()
+                    }}
+                  >
+                    <Show
+                      when={upgrading()}
+                      fallback={<IoArrowUpCircleSharp />}
+                    >
+                      <IoArrowUpCircleSharp class="spin" />
+                    </Show>
+                  </button>
+                </Show>
               </div>
             </div>
           }

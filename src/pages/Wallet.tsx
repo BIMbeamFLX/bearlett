@@ -43,6 +43,7 @@ import {
   withNewK1,
   fetchNoteInfo,
   rotateNote,
+  upgradeNote,
   mergeNotes,
   splitNote,
   settleNote,
@@ -671,6 +672,76 @@ const Wallet: Component = () => {
           `${serverOf(bearer.url)} reports ${msatToSats(bearer.amount)} sats as already spent - marked spent locally.`,
           bearer.label
         )
+      }
+      notify((err as Error).message, NotifyKind.ERROR)
+    }
+  }
+
+  // A plain hash preimage stays plain across an ordinary rotate. Upgrade is
+  // the explicit step that replaces it with a seed-recoverable pub/sig note.
+  // The kit refuses rather than quietly rotating in place when no seed is loaded.
+  const upgradeOneBearer = async (bearer: Bearer) => {
+    if (bearer.deviceId) {
+      notify(
+        'A vault-backed note cannot be upgraded yet. Pub/sig notes stay in this browser for now.',
+        NotifyKind.ERROR
+      )
+      return
+    }
+    if (!bearer.callback) {
+      notify(
+        'This note has not been verified yet. Refresh it first.',
+        NotifyKind.ERROR
+      )
+      return
+    }
+    try {
+      const k1 = requireNoteK1(bearer.url)
+      const result = await upgradeNote(bearer.callback, k1)
+      await updateBearer(bearer.id, {
+        url: withNewK1(bearer.url, result.k1, bearer.amount, result.signature)
+      })
+      logActivity(
+        'refresh',
+        `Upgraded a ${msatToSats(bearer.amount)} sat note at ${serverOf(bearer.url)} to a recoverable pub/sig secret.`,
+        bearer.label
+      )
+      notify(
+        'Note upgraded to a recoverable pub/sig secret.',
+        NotifyKind.SUCCESS
+      )
+    } catch (err) {
+      if (err instanceof AmbiguousMutationError) {
+        const outcome = await probeBurnedNote(bearer.url)
+        if (outcome === 'gone') {
+          await updateBearer(bearer.id, {
+            url: withNewK1(bearer.url, err.newSecrets[0], bearer.amount)
+          })
+          logActivity(
+            'refresh',
+            `Upgraded a ${msatToSats(bearer.amount)} sat note at ${serverOf(bearer.url)} to a recoverable pub/sig secret (confirmed on re-check after an uncertain response).`,
+            bearer.label
+          )
+          notify(
+            'Note upgraded to a recoverable pub/sig secret.',
+            NotifyKind.SUCCESS
+          )
+          return
+        }
+        if (outcome === 'unknown') {
+          await addBearer({
+            url: withNewK1(bearer.url, err.newSecrets[0], bearer.amount),
+            callback: bearer.callback,
+            amount: bearer.amount,
+            verified: false,
+            mintPubkey: bearer.mintPubkey
+          })
+          notify(
+            `${(err as Error).message} The upgrade may still have gone through. The possible new copy is stored unverified alongside this one. Refresh both to reconcile.`,
+            NotifyKind.ERROR
+          )
+          return
+        }
       }
       notify((err as Error).message, NotifyKind.ERROR)
     }
@@ -2223,6 +2294,7 @@ const Wallet: Component = () => {
                           toggleSelect(bearer.id, isSelected)
                         }
                         onRefresh={refreshOneBearer}
+                        onUpgrade={upgradeOneBearer}
                       />
                     )}
                   </For>
@@ -2243,6 +2315,7 @@ const Wallet: Component = () => {
                               toggleSelect(bearer.id, isSelected)
                             }
                             onRefresh={refreshOneBearer}
+                            onUpgrade={upgradeOneBearer}
                           />
                         )}
                       </For>
