@@ -17,6 +17,11 @@ import {createSignal} from 'solid-js'
 export type StoreableLink = {
   address: string
   addedAt: number
+  // melt addresses only: whether the address advertised LUD-25 internal
+  // transfer support (text/xpub) the last time it was looked up - a
+  // confirmed fact from that lookup, shown as a badge so the holder knows
+  // paying it can skip Lightning when notes at its mint are held
+  internalTransfer?: boolean
 }
 
 const readStored = (key: string): StoreableLink[] => {
@@ -27,9 +32,15 @@ const readStored = (key: string): StoreableLink[] => {
     if (!Array.isArray(parsed)) return []
     // shape-check every entry - a tampered/corrupt record must not plant
     // junk entries into the registry
-    return parsed.filter(
-      l => typeof l?.address === 'string' && typeof l?.addedAt === 'number'
-    )
+    return parsed
+      .filter(
+        l => typeof l?.address === 'string' && typeof l?.addedAt === 'number'
+      )
+      .map(l => ({
+        address: l.address,
+        addedAt: l.addedAt,
+        ...(l.internalTransfer === true && {internalTransfer: true})
+      }))
   } catch {
     return []
   }
@@ -45,12 +56,37 @@ const makeRegistry = (storageKey: string) => {
     setLinksSignal(next)
   }
 
-  const add = (address: string): void => {
+  // `internalTransfer`, when given, records what the latest lookup said;
+  // a re-add of a known address updates that fact and nothing else
+  const add = (address: string, internalTransfer?: boolean): void => {
     const trimmed = address.trim()
     if (!trimmed) return
     const current = links()
-    if (current.some(l => l.address === trimmed)) return
-    persist([...current, {address: trimmed, addedAt: Date.now()}])
+    const existing = current.find(l => l.address === trimmed)
+    if (existing) {
+      if (internalTransfer === undefined) return
+      if (Boolean(existing.internalTransfer) === internalTransfer) return
+      persist(
+        current.map(l =>
+          l === existing
+            ? {
+                address: l.address,
+                addedAt: l.addedAt,
+                ...(internalTransfer && {internalTransfer: true})
+              }
+            : l
+        )
+      )
+      return
+    }
+    persist([
+      ...current,
+      {
+        address: trimmed,
+        addedAt: Date.now(),
+        ...(internalTransfer && {internalTransfer: true})
+      }
+    ])
   }
 
   const remove = (address: string): void => {

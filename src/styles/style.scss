@@ -1610,6 +1610,12 @@ nav {
 // tighter than .mint-picker's own 8px between separate entries (so the pair
 // still reads as one unit), but large enough to actually read as a margin
 // rather than the icon sitting flush against the button
+// a saved melt address that advertised LUD-25 internal transfers last time
+.mint-picker-transfer-badge {
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
 .mint-picker-entry {
   display: inline-flex;
   align-items: center;
