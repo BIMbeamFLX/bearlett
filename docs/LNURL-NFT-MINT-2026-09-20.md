@@ -1,6 +1,9 @@
 # An LNURL NFT mint on dni's stack: what holds, what is missing
 
-Checked on 20 September 2026 against the sources listed at the end. Nothing
+Checked on 20 September 2026 against the sources listed at the end.
+On 22 September the kit moved to 0.19.5 and the open mint work was written
+down again in [LNURL-KIT-AND-NUTFT-2026-09-22.md](LNURL-KIT-AND-NUTFT-2026-09-22.md).
+The gaps below were still open. Nothing
 here was run against a live mint; every claim about lnurl-mint comes from
 reading `main` at `66c77e8`, every claim about the draft from `25.md` at
 `265759f`, and every claim about the wallet side from `@lnurlcash/kit` 0.18.2

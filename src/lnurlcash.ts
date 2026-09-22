@@ -22,13 +22,14 @@ import {msatToSats} from './helpers'
 // LUD-25 LNURLcash - bearer assets. Draft spec:
 // https://github.com/lnurl/luds/blob/lnurlcash/25.md
 //
-// The protocol implementation is @lnurlcash/kit, published from dni's
+// The protocol implementation is @lnurlcash/kit 0.19.3, published from dni's
 // lnurl-wallet (src/lib there) so the reference wallet and this one share
 // one implementation and one test suite. Everything protocol-shaped is
 // re-exported from the kit unchanged: LNURL and note parsing, BOLT-11
-// checks, Part 1 hash-keyed notes, Part 2 cp1/ck1/cs1/cx1 codecs and
-// Schnorr ownership proofs, offline certificates, mint fees, LN address
-// registration and recovery scans, and internal transfers.
+// checks, Part 1 hash-keyed notes, Part 2 cp1/ck1/cs1/cx1 codecs, script-path
+// ct1/cw1 notes, Schnorr ownership proofs, the explicit plain-secret upgrade,
+// offline certificates, mint fees, LN address registration and recovery
+// scans, and internal transfers.
 //
 // What stays here is this wallet's own policy rather than protocol:
 // the offline toggle and the napplet host transport, seed-derived
