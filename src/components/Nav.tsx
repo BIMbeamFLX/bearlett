@@ -1,4 +1,4 @@
-import {Show, createSignal} from 'solid-js'
+import {Show, createMemo, createSignal} from 'solid-js'
 import {A, useNavigate} from '@solidjs/router'
 import {
   IoMenuSharp,
@@ -13,9 +13,12 @@ import {
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
+import {serverOf} from '../lnurlcash'
+import SessionBar from '../napplet/SessionBar'
+import {spendableLine, spendableMints} from '../napplet/bar'
 
 const Nav = () => {
-  const {state, encrypted, lock} = useWallet()
+  const {state, encrypted, lock, bearers} = useWallet()
   const {connectionState} = useDevice()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = createSignal(false)
@@ -27,9 +30,37 @@ const Nav = () => {
     lock()
     navigate('/wallet')
   }
+  const line = createMemo(() =>
+    spendableLine(
+      spendableMints(
+        bearers()
+          .filter(bearer => !bearer.spent)
+          .map(bearer => ({
+            mint: serverOf(bearer.url),
+            amount: bearer.amount,
+            ready: true
+          }))
+      )
+    )
+  )
 
   return (
     <nav>
+      <SessionBar
+        embedded
+        surface="Wallet"
+        figure={state() === 'unlocked' ? line().figure : 'Bearlett'}
+        detail={
+          state() === 'unlocked' ? line().detail : 'Cards and notes, held here'
+        }
+        locked={state() === 'locked'}
+        onHome={() => {
+          closeMenu()
+          navigate('/')
+        }}
+        onLock={state() === 'unlocked' && encrypted() ? lock_action : undefined}
+        lockLabel="Lock wallet"
+      />
       <button
         class="nav-toggle"
         title={menuOpen() ? 'Close menu' : 'Open menu'}
@@ -37,9 +68,6 @@ const Nav = () => {
       >
         {menuOpen() ? <IoCloseSharp /> : <IoMenuSharp />}
       </button>
-      <A href="/" class="nav-brand" onClick={closeMenu}>
-        LNURLwallet
-      </A>
       {/* wraps both groups so they collapse into one dropdown on mobile -
       Docs always renders regardless of wallet state, so this is never
       empty when opened (see .nav-menu in style.scss) */}

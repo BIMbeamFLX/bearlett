@@ -21,12 +21,11 @@ const Hero: Component = () => {
   return (
     <div id="hero" class="page">
       <section class="hero-intro">
-        <h1>Your LNURLcash wallet</h1>
+        <h1>Bearlett</h1>
         <p class="hero-subtitle">
-          LNURLwallet is a static page with no backend of its own. It holds
-          LNURLcash bearer notes - LNURL-withdraw links whose k1 is the asset -
-          from any number of mints, encrypted with a key derived from your seed
-          phrase and stored only in this browser's local storage.
+          Cards and notes you hold on this device. The bar at the top is the
+          same everywhere: what you can spend, and anything still waiting if you
+          had to leave.
         </p>
         <div class="hero-actions">
           <Show

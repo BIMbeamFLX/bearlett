@@ -7,13 +7,14 @@ const Docs: Component = () => {
       <h2>Documentation</h2>
 
       <div class="docs-card">
-        <h3>What LNURLwallet is</h3>
+        <h3>What Bearlett is</h3>
         <p>
-          LNURLwallet is a static page with no backend, database or account
-          system of its own. Everything it holds lives in your browser's local
-          storage, and every network request it makes goes directly from your
-          browser to the LNURLcash service that issued a note. One wallet holds
-          notes from any number of independent services side by side.
+          Bearlett holds bearer notes and bearer cards on this device. This page
+          is the note wallet. It has no account system of its own. Everything it
+          holds lives in this browser, and every network request goes to the
+          service that issued the note. One wallet holds notes from any number
+          of mints, and each mint stays its own balance. The collection is a
+          separate napplet, with the same bar.
         </p>
       </div>
 
