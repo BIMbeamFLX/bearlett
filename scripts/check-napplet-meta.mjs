@@ -3,7 +3,9 @@
  * as <meta name="napplet-type"> and <meta name="napplet-requires">, for a
  * shell that reads the page alone, and in .nip5a-manifest.json, as the d tag
  * and the requires tags, for a shell that reads the kind 35129 manifest.
- * This checks that every build carries both and that they say the same.
+ * This checks that every build carries both, that <meta charset> and the two
+ * metas end inside the first 1024 bytes (where the HTML prescan and a shell
+ * that reads only the start of the page look), and that they say the same.
  *
  *   node scripts/check-napplet-meta.mjs
  */
@@ -23,6 +25,11 @@ const meta = (html, name) => {
   return found[0][1]
 }
 const sorted = list => [...list].filter(Boolean).sort().join(',')
+const HEAD_TAGS = [
+  '<meta charset',
+  '<meta name="napplet-type"',
+  '<meta name="napplet-requires"'
+]
 const tagValues = (manifest, name) =>
   manifest.tags.filter(tag => tag[0] === name).map(tag => tag[1])
 
@@ -37,7 +44,14 @@ for (const {dir, script, env} of NAPPLET_BUILDS) {
     continue
   }
   try {
-    const html = readFileSync(page, 'utf8')
+    const bytes = readFileSync(page)
+    const html = bytes.toString('utf8')
+    const start = bytes.subarray(0, 1024).toString('latin1').toLowerCase()
+    for (const tag of HEAD_TAGS) {
+      const at = start.indexOf(tag)
+      if (at === -1 || start.indexOf('>', at) === -1)
+        throw new Error(`${tag}> does not end inside the first 1024 bytes`)
+    }
     const manifest = JSON.parse(readFileSync(sidecar, 'utf8'))
     const type = meta(html, 'napplet-type')
     const requires = sorted(meta(html, 'napplet-requires').split(','))

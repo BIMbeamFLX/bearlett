@@ -244,8 +244,8 @@ capability with its storage-scope writer lease; see
 [docs/KEHTO.md](docs/KEHTO.md). Each build states its NAP domains twice, in the
 manifest's `requires` tags and in `<meta name="napplet-requires">` beside
 `<meta name="napplet-type">` (the d-tag); `npm run check:napplets` fails a build
-where the two differ. `cashu` and `nutft` are host channels, not NAP domains, so
-they are in neither: a shell has to answer them itself (the reference services
+where the two differ. `cashu` and `nutft` are custom shell objects, not NAP domains,
+so they are in neither: a shell has to answer them itself (the reference services
 are `src/host/cashu-service.ts` and `src/host/nutft-service.ts`). Full contract
 details and the planned
 twelve-napplet catalogue: [docs/NAPPLETS.md](docs/NAPPLETS.md),

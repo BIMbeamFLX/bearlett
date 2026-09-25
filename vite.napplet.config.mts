@@ -19,28 +19,37 @@ type NappletOptions = Parameters<typeof nip5aManifest>[0] & {
 
 /* The manifest and the page declare the same napplet. A shell that loads the
    page on its own reads `napplet-type` (the manifest's d-tag) and
-   `napplet-requires` (the NAP domains the code uses from the shell) from
-   meta tags; the plugin writes neither into the HTML, so both are put in here
-   from the very options the manifest is built from, and cannot drift from it. */
+   `napplet-requires` (every domain the code asks the shell for) from meta
+   tags; the plugin writes neither into the HTML, so both are put in here from
+   the very options the manifest is built from. The manifest side also trims,
+   keeps only NAP domains and drops duplicates; `npm run check:napplets` fails
+   when the two differ.
+   The hook runs `pre`, after the entry plugin has swapped in the page and
+   before Vite adds the entry script. A normal hook runs later, and the inlined
+   bundle then pushes the metas past the first 1024 bytes, where the HTML
+   prescan and a shell that reads only the start of the page look. */
 const declaredNapplet = (options: NappletOptions): Plugin[] => [
   nip5aManifest(options),
   {
     name: 'napplet-meta',
-    transformIndexHtml: () => [
-      {
-        tag: 'meta',
-        attrs: {name: 'napplet-type', content: options.nappletType},
-        injectTo: 'head'
-      },
-      {
-        tag: 'meta',
-        attrs: {
-          name: 'napplet-requires',
-          content: [...options.requires].sort().join(',')
+    transformIndexHtml: {
+      order: 'pre',
+      handler: () => [
+        {
+          tag: 'meta',
+          attrs: {name: 'napplet-type', content: options.nappletType},
+          injectTo: 'head'
         },
-        injectTo: 'head'
-      }
-    ]
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'napplet-requires',
+            content: [...options.requires].sort().join(',')
+          },
+          injectTo: 'head'
+        }
+      ]
+    }
   }
 ]
 
@@ -142,8 +151,8 @@ export default defineConfig(({mode}) => {
            wallet with intent.open (src/napplet/note-interface.ts). The wallet's
            `fs` (src/napplet/files.ts), `link` (src/napplet/WalletTools.tsx),
            `ble` and `serial` (src/napplet/HardwareTools.tsx) only show their
-           buttons where the shell granted the domain. `cashu` is a host
-           channel, not a NAP domain, and is documented instead. */
+           buttons where the shell granted the domain. `cashu` is a custom
+           shell object, not a NAP domain, and is documented instead. */
         requires: designer
           ? ['storage', 'inc', 'intent', 'theme']
           : [
