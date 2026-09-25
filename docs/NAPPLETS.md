@@ -98,10 +98,18 @@ Each production output is self-contained:
 
 | Output                                  | Manifest d-tag                 | Capabilities                 |
 | --------------------------------------- | ------------------------------ | ---------------------------- |
-| `dist-napplet/index.html`               | `bearlett-wallet`              | `storage`, `resource`, `inc` |
-| `dist-notes/index.html`                 | `bearlett-notes`               | `storage`, `inc`             |
+| `dist-napplet/index.html`               | `bearlett-wallet`              | `storage`, `resource`, `inc`, `theme`; `cashu` optional (not declared) |
+| `dist-notes/index.html`                 | `bearlett-notes`               | `storage`, `inc`, `intent`, `theme` |
 | `dist-collection-<edition>/index.html`  | `bearlett-collection-<edition>` | `storage`, `resource`, `inc`, and `nutft` (not declared) |
 | `dist-collection-<edition>-accounts/index.html` | `bearlett-collection-<edition>` | as above; account wallets on, for tests only |
+
+Each `index.html` also carries the declaration in its head, from the same
+options the manifest is built from (`vite.napplet.config.mts`):
+`<meta name="napplet-type">` with the d-tag and `<meta name="napplet-requires">`
+with the declared NAP domains, comma separated, for a shell that reads the page
+without the manifest. The wallet also uses `fs`, `link`, `ble` and `serial`,
+but only shows those buttons where the shell has the domain, so none of them is
+required.
 
 A collection needs the shell's `nutft` capability as much as `storage`, but the
 manifest cannot say so: the official plugin keeps only registered NAP domains in

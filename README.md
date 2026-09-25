@@ -164,6 +164,7 @@ npm test                      # unit and fault tests (509 passing, 1 skipped, 10
 npm run tsc
 npm run format:check
 npm run test:napplet:browser  # Playwright, needs: npx playwright install chromium
+npm run test:conformance      # @napplet/conformance-cli on the three builds (build them first)
 npm run test:regtest          # optional, real mints on Bitcoin regtest
 ```
 
@@ -230,11 +231,16 @@ flowchart LR
 
 These are local, unregistered contract proposals following the NAP-INTENT
 convention model; the official archetype registry has no wallet role yet. Wallet
-requires `storage`, `resource` and `inc`; Notes requires `storage` and `inc`;
-Collection requires `storage`, `resource` and `inc` plus the Bearlett `nutft`
-capability. Cashu additionally needs the optional Bearlett `cashu` host
-capability with its storage-scope writer lease; see
-[docs/KEHTO.md](docs/KEHTO.md). Full contract details and the planned
+requires `storage`, `resource`, `inc` and `theme`; Notes requires `storage`,
+`inc`, `intent` and `theme`; Collection requires `storage`, `resource` and `inc`
+plus the Bearlett `nutft` capability. Cashu additionally needs the optional
+Bearlett `cashu` host capability with its storage-scope writer lease; see
+[docs/KEHTO.md](docs/KEHTO.md). Each build states its NAP domains twice, in the
+manifest's `requires` tags and in `<meta name="napplet-requires">` beside
+`<meta name="napplet-type">` (the d-tag). `cashu` and `nutft` are host channels,
+not NAP domains, so they are in neither: a shell has to answer them itself (the
+reference services are `src/host/cashu-service.ts` and
+`src/host/nutft-service.ts`). Full contract details and the planned
 twelve-napplet catalogue: [docs/NAPPLETS.md](docs/NAPPLETS.md),
 [docs/UI-DESIGN-2026-09-09.md](docs/UI-DESIGN-2026-09-09.md).
 

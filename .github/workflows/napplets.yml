@@ -34,6 +34,12 @@ jobs:
           BEARLETT_ACCOUNT_WALLETS: '1'
       - run: npx playwright install --with-deps chromium
       - run: npm run test:napplet:browser
+      # Informational until the three builds pass: the static scan finds
+      # fetch( and localStorage in the bundles (Vite's modulepreload
+      # polyfill, the LNURL service transport, the vendored NutFT wallet),
+      # and Notes calls inc.on on the reference shell's empty inc object.
+      - run: npm run test:conformance
+        continue-on-error: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: bearlett-napplets

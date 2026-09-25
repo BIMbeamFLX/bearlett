@@ -1,4 +1,5 @@
 import {defineConfig} from 'vite'
+import type {Plugin} from 'vite'
 import solid from 'vite-plugin-solid'
 import {nip5aManifest} from '@napplet/vite-plugin'
 import {readFileSync} from 'node:fs'
@@ -11,6 +12,37 @@ import {
 
 /* Vite's own default modes, which mean "build the wallet napplet". */
 const WALLET_MODES = new Set(['production', 'development', 'napplet'])
+
+type NappletOptions = Parameters<typeof nip5aManifest>[0] & {
+  requires: string[]
+}
+
+/* The manifest and the page declare the same napplet. A shell that loads the
+   page on its own reads `napplet-type` (the manifest's d-tag) and
+   `napplet-requires` (the NAP domains the code uses from the shell) from
+   meta tags; the plugin writes neither into the HTML, so both are put in here
+   from the very options the manifest is built from, and cannot drift from it. */
+const declaredNapplet = (options: NappletOptions): Plugin[] => [
+  nip5aManifest(options),
+  {
+    name: 'napplet-meta',
+    transformIndexHtml: () => [
+      {
+        tag: 'meta',
+        attrs: {name: 'napplet-type', content: options.nappletType},
+        injectTo: 'head'
+      },
+      {
+        tag: 'meta',
+        attrs: {
+          name: 'napplet-requires',
+          content: [...options.requires].sort().join(',')
+        },
+        injectTo: 'head'
+      }
+    ]
+  }
+]
 
 export default defineConfig(({mode}) => {
   /* A collection builds once per edition, and the mode names which one.
@@ -47,7 +79,7 @@ export default defineConfig(({mode}) => {
             handler: () => readFileSync('napplet/collection.html', 'utf8')
           }
         },
-        nip5aManifest({
+        declaredNapplet({
           nappletType: `bearlett-collection-${edition}`,
           title,
           description: `Hold, inspect and hand over the ${title} cards you own.`,
@@ -95,7 +127,7 @@ export default defineConfig(({mode}) => {
             )
         }
       },
-      nip5aManifest({
+      declaredNapplet({
         nappletType: designer ? 'bearlett-notes' : 'bearlett-wallet',
         title: designer ? 'Bearlett Notes' : 'Bearlett Wallet',
         description: designer
@@ -103,9 +135,13 @@ export default defineConfig(({mode}) => {
           : 'A bearer wallet for LNURLcash and Cashu sats, connected through Lightning.',
         artifactMode: 'single-file',
         /* `theme`: NAP-THEME, so the shell paints its skin onto the Hypershell
-           chrome (src/napplet/theme.ts); a shell without it leaves the defaults. */
+           chrome (src/napplet/theme.ts); a shell without it leaves the defaults.
+           `intent`: Notes pushes a design to a wallet with intent.open
+           (src/napplet/note-interface.ts). The wallet's fs, link, ble and
+           serial buttons only appear where the shell has them, so they are
+           not required. */
         requires: designer
-          ? ['storage', 'inc', 'theme']
+          ? ['storage', 'inc', 'intent', 'theme']
           : ['storage', 'resource', 'inc', 'theme'],
         archetypes: designer
           ? [
