@@ -28,7 +28,7 @@
     "build:collection": "vite build --config vite.napplet.config.mts --mode 600b-e1"
   },
   "dependencies": {
-    "@cashu/cashu-ts": "4.10.1",
+    "@cashu/cashu-ts": "4.10.2",
     "@fontsource/noto-sans": "^5.3.0",
     "@lnurlcash/kit": "0.19.5",
     "@napplet/sdk": "0.28.0",
