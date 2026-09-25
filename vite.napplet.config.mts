@@ -134,15 +134,28 @@ export default defineConfig(({mode}) => {
           ? 'Design bearer notes with your own images, colors and words.'
           : 'A bearer wallet for LNURLcash and Cashu sats, connected through Lightning.',
         artifactMode: 'single-file',
-        /* `theme`: NAP-THEME, so the shell paints its skin onto the Hypershell
-           chrome (src/napplet/theme.ts); a shell without it leaves the defaults.
-           `intent`: Notes pushes a design to a wallet with intent.open
-           (src/napplet/note-interface.ts). The wallet's fs, link, ble and
-           serial buttons only appear where the shell has them, so they are
-           not required. */
+        /* Every NAP domain the code asks the shell for, the optional ones
+           included: a shell grants only what is declared here, and the napplet
+           degrades where the shell refuses one. `theme`: NAP-THEME, so the
+           shell paints its skin onto the Hypershell chrome (src/napplet/theme.ts);
+           without it the defaults stay. `intent`: Notes pushes a design to a
+           wallet with intent.open (src/napplet/note-interface.ts). The wallet's
+           `fs` (src/napplet/files.ts), `link` (src/napplet/WalletTools.tsx),
+           `ble` and `serial` (src/napplet/HardwareTools.tsx) only show their
+           buttons where the shell granted the domain. `cashu` is a host
+           channel, not a NAP domain, and is documented instead. */
         requires: designer
           ? ['storage', 'inc', 'intent', 'theme']
-          : ['storage', 'resource', 'inc', 'theme'],
+          : [
+              'storage',
+              'resource',
+              'inc',
+              'theme',
+              'fs',
+              'link',
+              'ble',
+              'serial'
+            ],
         archetypes: designer
           ? [
               {

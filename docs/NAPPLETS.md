@@ -98,18 +98,25 @@ Each production output is self-contained:
 
 | Output                                  | Manifest d-tag                 | Capabilities                 |
 | --------------------------------------- | ------------------------------ | ---------------------------- |
-| `dist-napplet/index.html`               | `bearlett-wallet`              | `storage`, `resource`, `inc`, `theme`; `cashu` optional (not declared) |
+| `dist-napplet/index.html`               | `bearlett-wallet`              | `storage`, `resource`, `inc`, `theme`, `fs`, `link`, `ble`, `serial`; `cashu` optional (not declared) |
 | `dist-notes/index.html`                 | `bearlett-notes`               | `storage`, `inc`, `intent`, `theme` |
 | `dist-collection-<edition>/index.html`  | `bearlett-collection-<edition>` | `storage`, `resource`, `inc`, and `nutft` (not declared) |
 | `dist-collection-<edition>-accounts/index.html` | `bearlett-collection-<edition>` | as above; account wallets on, for tests only |
+
+The list is every NAP domain the build's code asks the shell for, the optional
+ones included: a shell grants a napplet only the domains it declares, and the
+napplet degrades where the shell refuses one. The wallet opens only with
+`storage` and `resource`; without `fs`, `link`, `ble` or `serial` it hides the
+file, link and hardware buttons, without `theme` it keeps its default chrome,
+without `inc` it takes no requests from other napplets.
 
 Each `index.html` also carries the declaration in its head, from the same
 options the manifest is built from (`vite.napplet.config.mts`):
 `<meta name="napplet-type">` with the d-tag and `<meta name="napplet-requires">`
 with the declared NAP domains, comma separated, for a shell that reads the page
-without the manifest. The wallet also uses `fs`, `link`, `ble` and `serial`,
-but only shows those buttons where the shell has the domain, so none of them is
-required.
+without the manifest. `npm run check:napplets` (`scripts/check-napplet-meta.mjs`)
+reads every build and fails when a page lacks either tag or says something other
+than its `.nip5a-manifest.json`; CI runs it after the builds.
 
 A collection needs the shell's `nutft` capability as much as `storage`, but the
 manifest cannot say so: the official plugin keeps only registered NAP domains in
