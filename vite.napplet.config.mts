@@ -1,4 +1,5 @@
 import {defineConfig} from 'vite'
+import type {Plugin} from 'vite'
 import solid from 'vite-plugin-solid'
 import {nip5aManifest} from '@napplet/vite-plugin'
 import {readFileSync} from 'node:fs'
@@ -11,6 +12,46 @@ import {
 
 /* Vite's own default modes, which mean "build the wallet napplet". */
 const WALLET_MODES = new Set(['production', 'development', 'napplet'])
+
+type NappletOptions = Parameters<typeof nip5aManifest>[0] & {
+  requires: string[]
+}
+
+/* The manifest and the page declare the same napplet. A shell that loads the
+   page on its own reads `napplet-type` (the manifest's d-tag) and
+   `napplet-requires` (every domain the code asks the shell for) from meta
+   tags; the plugin writes neither into the HTML, so both are put in here from
+   the very options the manifest is built from. The manifest side also trims,
+   keeps only NAP domains and drops duplicates; `npm run check:napplets` fails
+   when the two differ.
+   The hook runs `pre`, after the entry plugin has swapped in the page and
+   before Vite adds the entry script. A normal hook runs later, and the inlined
+   bundle then pushes the metas past the first 1024 bytes, where the HTML
+   prescan and a shell that reads only the start of the page look. */
+const declaredNapplet = (options: NappletOptions): Plugin[] => [
+  nip5aManifest(options),
+  {
+    name: 'napplet-meta',
+    transformIndexHtml: {
+      order: 'pre',
+      handler: () => [
+        {
+          tag: 'meta',
+          attrs: {name: 'napplet-type', content: options.nappletType},
+          injectTo: 'head'
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'napplet-requires',
+            content: [...options.requires].sort().join(',')
+          },
+          injectTo: 'head'
+        }
+      ]
+    }
+  }
+]
 
 export default defineConfig(({mode}) => {
   /* A collection builds once per edition, and the mode names which one.
@@ -47,7 +88,7 @@ export default defineConfig(({mode}) => {
             handler: () => readFileSync('napplet/collection.html', 'utf8')
           }
         },
-        nip5aManifest({
+        declaredNapplet({
           nappletType: `bearlett-collection-${edition}`,
           title,
           description: `Hold, inspect and hand over the ${title} cards you own.`,
@@ -95,18 +136,35 @@ export default defineConfig(({mode}) => {
             )
         }
       },
-      nip5aManifest({
+      declaredNapplet({
         nappletType: designer ? 'bearlett-notes' : 'bearlett-wallet',
         title: designer ? 'Bearlett Notes' : 'Bearlett Wallet',
         description: designer
           ? 'Design bearer notes with your own images, colors and words.'
           : 'A bearer wallet for LNURLcash and Cashu sats, connected through Lightning.',
         artifactMode: 'single-file',
-        /* `theme`: NAP-THEME, so the shell paints its skin onto the Hypershell
-           chrome (src/napplet/theme.ts); a shell without it leaves the defaults. */
+        /* Every NAP domain the code asks the shell for, the optional ones
+           included: a shell grants only what is declared here, and the napplet
+           degrades where the shell refuses one. `theme`: NAP-THEME, so the
+           shell paints its skin onto the Hypershell chrome (src/napplet/theme.ts);
+           without it the defaults stay. `intent`: Notes pushes a design to a
+           wallet with intent.open (src/napplet/note-interface.ts). The wallet's
+           `fs` (src/napplet/files.ts), `link` (src/napplet/WalletTools.tsx),
+           `ble` and `serial` (src/napplet/HardwareTools.tsx) only show their
+           buttons where the shell granted the domain. `cashu` is a custom
+           shell object, not a NAP domain, and is documented instead. */
         requires: designer
-          ? ['storage', 'inc', 'theme']
-          : ['storage', 'resource', 'inc', 'theme'],
+          ? ['storage', 'inc', 'intent', 'theme']
+          : [
+              'storage',
+              'resource',
+              'inc',
+              'theme',
+              'fs',
+              'link',
+              'ble',
+              'serial'
+            ],
         archetypes: designer
           ? [
               {

@@ -16,6 +16,8 @@
     "build:napplet": "vite build --config vite.napplet.config.mts",
     "preview:napplet": "node scripts/napplet-host.mjs",
     "test:napplet:browser": "playwright test --config playwright.napplet.config.ts",
+    "test:conformance": "node scripts/conformance-all.mjs",
+    "check:napplets": "node scripts/check-napplet-meta.mjs",
     "build:notes": "vite build --config vite.napplet.config.mts --mode notes",
     "build:designer": "npm run build:notes",
     "preview:wallet": "node scripts/napplet-host.mjs --app wallet",
@@ -42,6 +44,7 @@
     "solid-toast": "^0.5.0"
   },
   "devDependencies": {
+    "@napplet/conformance-cli": "0.2.19",
     "@napplet/shim": "0.30.0",
     "@napplet/vite-plugin": "0.14.1",
     "@playwright/test": "1.63.0",
