@@ -32,12 +32,17 @@ jobs:
         env:
           BEARLETT_MINT: https://tcg.nappelin.com
           BEARLETT_ACCOUNT_WALLETS: '1'
+      # Each build names its type and its requires in the page and in the
+      # manifest; a shell may read either, so they have to say the same.
+      - run: npm run check:napplets
       - run: npx playwright install --with-deps chromium
       - run: npm run test:napplet:browser
       # Informational until the three builds pass: the static scan finds
       # fetch( and localStorage in the bundles (Vite's modulepreload
       # polyfill, the LNURL service transport, the vendored NutFT wallet),
       # and Notes calls inc.on on the reference shell's empty inc object.
+      # The script runs all three and prints every report, so the log shows
+      # each build's result, not only the first that failed.
       - run: npm run test:conformance
         continue-on-error: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
