@@ -69,6 +69,9 @@ export default defineConfig({
     })
   ],
   build: {
+    /* Vite's modulepreload polyfill fetches; a single-file napplet has
+       nothing to preload and must not touch fetch at all (NIP-5D) */
+    modulePreload: {polyfill: false},
     outDir: 'dist-napplet',
     emptyOutDir: true,
     target: 'esnext',

@@ -12,7 +12,6 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build:napplet": "vite build --config vite.napplet.config.mts",
-    "preview:napplet": "node scripts/napplet-host.mjs",
     "check:napplets": "node scripts/check-napplet-meta.mjs",
     "test:conformance": "node scripts/conformance-all.mjs"
   },

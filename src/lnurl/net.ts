@@ -1,6 +1,7 @@
 // The one door to the network. The wallet core only ever asks for LNURL
 // JSON; how the bytes travel (fetch in the web app, the shell's
-// NAP-RESOURCE in the Hangar) is a port each platform plugs in.
+// NAP-RESOURCE in the Hangar) is a port each platform plugs in, under
+// src/platform: the napplet bundle must not carry fetch at all.
 import {ServiceError, TransportError} from './errors.ts'
 
 export type RequestOptions = {
@@ -80,39 +81,4 @@ export const parseLnurlJson = (text: string): Record<string, unknown> => {
       typeof record.reason === 'string' ? record.reason : 'unspecified error'
     )
   return record
-}
-
-/** fetch() for browsers: the web app's Net. */
-export const fetchNet: Net = {
-  async get(url, options = {}) {
-    requireServiceUrl(url)
-    let response: Response
-    try {
-      response = await fetch(url, {
-        signal: options.signal,
-        redirect: options.secret ? 'error' : 'follow',
-        headers: {accept: 'application/json'}
-      })
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err
-      throw new TransportError(`No answer from ${new URL(url).host}.`)
-    }
-    return parseLnurlJson(await response.text())
-  },
-  async send(method, url, options = {}) {
-    requireServiceUrl(url)
-    let response: Response
-    try {
-      response = await fetch(url, {
-        method,
-        signal: options.signal,
-        redirect: 'error',
-        headers: {accept: 'application/json'}
-      })
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err
-      throw new TransportError(`No answer from ${new URL(url).host}.`)
-    }
-    return parseLnurlJson(await response.text())
-  }
 }

@@ -11,7 +11,7 @@ import {toast, watchWallet} from './session.ts'
 import {holdWalletLock, type Platform} from '../platform/platform.ts'
 import {Wallet} from '../wallet/wallet.ts'
 
-type Phase = 'boot' | 'elsewhere' | 'setup' | 'unlock' | 'ready'
+type Phase = 'boot' | 'elsewhere' | 'broken' | 'setup' | 'unlock' | 'ready'
 type Tab = 'wallet' | 'receive' | 'send' | 'settings'
 
 const SETTLE_EVERY_MS = 15_000
@@ -22,6 +22,7 @@ export const App = (props: {platform: Platform}) => {
   const [phase, setPhase] = createSignal<Phase>('boot')
   const [wallet, setWallet] = createSignal<(() => Wallet) | null>(null)
   const [tab, setTab] = createSignal<Tab>('wallet')
+  const [problem, setProblem] = createSignal('')
   const timers: ReturnType<typeof setInterval>[] = []
   onCleanup(() => timers.forEach(clearInterval))
 
@@ -30,7 +31,15 @@ export const App = (props: {platform: Platform}) => {
       setPhase('elsewhere')
       return
     }
-    setPhase((await Wallet.exists(props.platform.store)) ? 'unlock' : 'setup')
+    try {
+      setPhase((await Wallet.exists(props.platform.store)) ? 'unlock' : 'setup')
+    } catch (err) {
+      // a shell that does not answer storage requests: say so, do not crash
+      setProblem(
+        `Bearlett cannot read its storage here: ${(err as Error).message}`
+      )
+      setPhase('broken')
+    }
   })
 
   const ready = (opened: Wallet, restored = false) => {
@@ -82,6 +91,13 @@ export const App = (props: {platform: Platform}) => {
       <Switch>
         <Match when={phase() === 'boot'}>
           <main />
+        </Match>
+        <Match when={phase() === 'broken'}>
+          <main>
+            <section class="panel">
+              <p class="warn">{problem()}</p>
+            </section>
+          </main>
         </Match>
         <Match when={phase() === 'elsewhere'}>
           <main>

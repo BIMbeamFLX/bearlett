@@ -5,6 +5,7 @@
 import {TransportError} from '../lnurl/errors.ts'
 import {parseLnurlJson, requireServiceUrl, type Net} from '../lnurl/net.ts'
 import type {Store} from '../wallet/store.ts'
+import type {Platform} from './platform.ts'
 
 type Resource = {
   bytes(url: string, options?: {signal?: AbortSignal}): Promise<Blob>
@@ -88,5 +89,20 @@ export const shellStore = (parent: Window = window.parent): Store => {
     async remove(key) {
       await request('storage.remove', {key})
     }
+  }
+}
+
+/** The napplet's ports, or an error naming what the shell did not grant. */
+export const nappletPlatform = (): Platform => {
+  const resource = shell()?.resource as Resource | undefined
+  if (typeof resource?.bytes !== 'function')
+    throw new Error(
+      'This shell does not let Bearlett reach mints (NAP-RESOURCE). Open it in the Nappelin Hangar.'
+    )
+  return {
+    kind: 'napplet',
+    net: resourceNet(resource),
+    store: shellStore(),
+    canScan: false
   }
 }

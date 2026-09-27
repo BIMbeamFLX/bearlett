@@ -10,18 +10,6 @@ export type Store = {
 export const VAULT_KEY = 'bearlett:vault:v1'
 export const STATE_KEY = 'bearlett:state:v1'
 
-export const localStore = (storage: Storage = localStorage): Store => ({
-  async get(key) {
-    return storage.getItem(key)
-  },
-  async set(key, value) {
-    storage.setItem(key, value)
-  },
-  async remove(key) {
-    storage.removeItem(key)
-  }
-})
-
 /** In memory: previews and tests. */
 export const memoryStore = (): Store => {
   const data = new Map<string, string>()

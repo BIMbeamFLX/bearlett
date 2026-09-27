@@ -1,7 +1,6 @@
 // What differs between the web app and the Hangar napplet, in one place.
-import {fetchNet, type Net} from '../lnurl/net.ts'
-import {localStore, type Store} from '../wallet/store.ts'
-import {resourceNet, shell, shellStore} from './napplet.ts'
+import type {Net} from '../lnurl/net.ts'
+import type {Store} from '../wallet/store.ts'
 
 export type Platform = {
   kind: 'web' | 'napplet'
@@ -9,28 +8,6 @@ export type Platform = {
   store: Store
   /** a camera to scan QR codes with */
   canScan: boolean
-}
-
-export const webPlatform = (): Platform => ({
-  kind: 'web',
-  net: fetchNet,
-  store: localStore(),
-  canScan: Boolean(navigator.mediaDevices?.getUserMedia)
-})
-
-export const nappletPlatform = (): Platform => {
-  const resource = shell()?.resource as
-    Parameters<typeof resourceNet>[0] | undefined
-  if (!resource)
-    throw new Error(
-      'Open Bearlett in a napplet shell that grants NAP-RESOURCE.'
-    )
-  return {
-    kind: 'napplet',
-    net: resourceNet(resource),
-    store: shellStore(),
-    canScan: false
-  }
 }
 
 /**
