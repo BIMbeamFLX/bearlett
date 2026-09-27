@@ -374,9 +374,25 @@ const readBody = (req: IncomingMessage): Promise<string> =>
     req.on('error', reject)
   })
 
-/** The gate behind HTTP-01 on a free port of this machine. */
+/**
+ * Origins a TollGate answers across: this machine and private networks, as
+ * tollgate-module-basic-go does; never a wildcard.
+ */
+const LOCAL_HOST =
+  /^(([a-z0-9-]+\.)*localhost|127\.[\d.]+|\[::1\]|10\.[\d.]+|192\.168\.[\d.]+|172\.(1[6-9]|2\d|3[01])\.[\d.]+)$/
+
+const isLocalOrigin = (origin: string): boolean => {
+  try {
+    return LOCAL_HOST.test(new URL(origin).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** The gate behind HTTP-01, on `port` or a free one of this machine. */
 export const startGate = async (
-  options: GateOptions
+  options: GateOptions,
+  port = 0
 ): Promise<Gate & {url: string; close(): Promise<void>}> => {
   const gate = createGate(options)
   const server = createServer(async (req, res) => {
@@ -384,9 +400,19 @@ export const startGate = async (
       (req.headers['x-test-device'] as string | undefined) ??
       req.socket.remoteAddress ??
       'unknown'
+    const origin = req.headers.origin
+    if (origin && isLocalOrigin(origin)) {
+      res.setHeader('access-control-allow-origin', origin)
+      res.setHeader('vary', 'Origin')
+    }
     const send = ({status, event}: Answer) => {
       res.writeHead(status, {'content-type': 'application/json'})
       res.end(JSON.stringify(event))
+    }
+    if (req.method === 'OPTIONS') {
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
+      res.setHeader('access-control-allow-headers', 'Content-Type')
+      return res.writeHead(200).end()
     }
     if (req.url !== '/') return res.writeHead(404).end()
     if (req.method === 'GET')
@@ -395,11 +421,11 @@ export const startGate = async (
       return send(await gate.pay(await readBody(req), device))
     res.writeHead(405).end()
   })
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  const {port} = server.address() as AddressInfo
+  await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve))
+  const {port: bound} = server.address() as AddressInfo
   return {
     ...gate,
-    url: `http://127.0.0.1:${port}/`,
+    url: `http://127.0.0.1:${bound}/`,
     close: () => new Promise<void>(resolve => server.close(() => resolve()))
   }
 }
