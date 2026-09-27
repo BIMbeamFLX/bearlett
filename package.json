@@ -35,7 +35,7 @@
     "lnurlcash-conformance": "0.14.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
+    "vite": "^8.3.1",
     "vite-plugin-solid": "^2.11.14",
     "vitest": "5.0.2"
   },
