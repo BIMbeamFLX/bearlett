@@ -34,6 +34,8 @@ jobs:
       - run: npm run check:napplets
       # NIP-5D conformance: boot, forbidden globals, degradation without
       # domains. The wallet napplet passes it; a regression fails the build.
+      # The suite boots the napplet in Chromium, which the runner lacks.
+      - run: npx playwright install --with-deps chromium
       - run: npm run test:conformance
       # informational only - surfaces newly disclosed advisories without
       # failing an otherwise-green build over an unmaintained transitive dep
