@@ -4,7 +4,7 @@ import {Action, Copy, Qr} from '../kit.tsx'
 import {formatSats, formatTime, shorten} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
-import type {Operation} from '../../wallet/state.ts'
+import type {Note, Operation} from '../../wallet/state.ts'
 
 const describeOperation = (op: Operation): string => {
   if (op.kind === 'mint')
@@ -25,6 +25,9 @@ export const Home = (props: {wallet: () => Wallet}) => {
   const operations = () => Object.values(w().snapshot.operations)
   const outgoing = () => w().notes({role: 'outgoing', status: 'live'})
   const incoming = () => w().notes({role: 'incoming', status: 'live'})
+  const locked = () => w().notes({role: 'locked', status: 'live'})
+  const unlocksAt = (note: Note): number =>
+    note.spend.kind === 'timelock' ? note.spend.locktime * 1000 : 0
 
   return (
     <>
@@ -113,6 +116,34 @@ export const Home = (props: {wallet: () => Wallet}) => {
           >
             Check now
           </Action>
+        </section>
+      </Show>
+
+      <Show when={locked().length}>
+        <section class="panel">
+          <h2>Locked</h2>
+          <ul class="list">
+            <For each={locked()}>
+              {note => (
+                <li>
+                  <div>
+                    <div>Unlocks {formatTime(unlocksAt(note))}</div>
+                    <Show when={unlocksAt(note) <= Date.now()}>
+                      <button
+                        class="link"
+                        onClick={() =>
+                          run('Unlocking', () => w().unlock(note.q))
+                        }
+                      >
+                        Unlock now
+                      </button>
+                    </Show>
+                  </div>
+                  <span class="amount">{formatSats(note.amountMsat)}</span>
+                </li>
+              )}
+            </For>
+          </ul>
         </section>
       </Show>
 

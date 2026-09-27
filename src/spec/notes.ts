@@ -10,7 +10,7 @@ import {
   encodeCk1,
   encodeCw1
 } from './encoding.ts'
-import {OP, compileScript, hasSuccessOpcode} from './script.ts'
+import {OP, compileScript, hasSuccessOpcode, scriptNum} from './script.ts'
 import {
   LEAF_VERSION,
   NUMS_H,
@@ -79,6 +79,63 @@ export const signKeySpend = (secretKey: Uint8Array, domain: string): string => {
   return encodeCk1(q, sig)
 }
 
+// ---- timelocked notes (Timelocks) ----
+
+export const LOCKTIME_THRESHOLD = 500_000_000
+
+/**
+ * `<pk> OP_CHECKSIGVERIFY <T> OP_CHECKLOCKTIMEVERIFY`: `pk` may spend from
+ * Unix time T on, by SERVICE's clock (BIP-46 v3's leaf, and/or of
+ * pk(K) and after(T)). A custodial policy, never a trustless lock.
+ */
+export const timelockLeaf = (
+  pubkey: Uint8Array,
+  locktime: number
+): Uint8Array => {
+  if (
+    !Number.isInteger(locktime) ||
+    locktime < LOCKTIME_THRESHOLD ||
+    locktime >= 2 ** 32
+  )
+    throw new Error('A timelock is a Unix time.')
+  return compileScript([
+    pubkey,
+    OP.CHECKSIGVERIFY,
+    scriptNum(locktime),
+    OP.CHECKLOCKTIMEVERIFY
+  ])
+}
+
+/** Claims `locktime`, with the non-final sequence CHECKLOCKTIMEVERIFY needs. */
+export const timelockClaim = (locktime: number): TimeClaim => ({
+  locktime,
+  sequence: 0xfffffffe
+})
+
+/** A leaf spend's BIP-342 signature, aux_rand zero like every other. */
+export const signLeaf = (
+  note: LeafNote,
+  secretKey: Uint8Array,
+  domain: string,
+  claim: TimeClaim
+): Uint8Array =>
+  schnorr.sign(
+    spendSighash(note.q, domain, claim, tapleafHash(note.leaf)),
+    secretKey,
+    ZERO_AUX
+  )
+
+/** The cw1 that opens a timelocked note once T has passed. */
+export const timelockSpend = (
+  secretKey: Uint8Array,
+  locktime: number,
+  domain: string
+): string => {
+  const note = leafNote(timelockLeaf(schnorr.getPublicKey(secretKey), locktime))
+  const claim = timelockClaim(locktime)
+  return leafSpend(note, [signLeaf(note, secretKey, domain, claim)], claim)
+}
+
 // ---- references and spends ----
 
 /** Q named by a cp1, or by a bearer note's hex h (the cp1 short form). */
@@ -129,7 +186,6 @@ export const decodeSpend = (k1: string): Spend | null => {
   }
 }
 
-const LOCKTIME_THRESHOLD = 500_000_000
 const SEQUENCE_DISABLE = 0x80000000
 const SEQUENCE_TYPE_TIME = 0x00400000
 

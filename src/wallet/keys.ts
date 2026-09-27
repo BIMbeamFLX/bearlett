@@ -14,7 +14,12 @@ import {
   type Purpose
 } from '../spec/derivation.ts'
 import {encodeCp1, encodeCx1, type BranchExport} from '../spec/encoding.ts'
-import {signKeySpend} from '../spec/notes.ts'
+import {
+  leafNote,
+  signKeySpend,
+  timelockLeaf,
+  timelockSpend
+} from '../spec/notes.ts'
 
 export type KeyRef = {purpose: Purpose; index: number}
 
@@ -55,6 +60,17 @@ export class KeyRing {
 
   secretKey(domain: string, key: KeyRef): Uint8Array {
     return noteSecretKey(this.branch(domain), key.purpose, key.index)
+  }
+
+  /** Q of this key locked behind a CLTV leaf until `locktime`. */
+  timelockQ(domain: string, key: KeyRef, locktime: number): string {
+    const pubkey = notePubkey(this.export(domain), key.purpose, key.index)
+    return bytesToHex(leafNote(timelockLeaf(pubkey, locktime)).q)
+  }
+
+  /** The cw1 that opens it once `locktime` has passed. */
+  timelockSpend(domain: string, key: KeyRef, locktime: number): string {
+    return timelockSpend(this.secretKey(domain, key), locktime, domain)
   }
 
   /** The note's ck1: deterministic, so it never needs storing. */

@@ -28,6 +28,8 @@ export type SpendRef =
   | {kind: 'preimage'; preimage: Hex}
   /** a spend received as is (ck1 or cw1), until it is rotated */
   | {kind: 'k1'; k1: string}
+  /** this wallet's own key behind a CLTV leaf: spendable from `locktime` on */
+  | {kind: 'timelock'; key: KeyRef; locktime: number}
 
 export type NoteRole =
   /** part of the balance */
@@ -36,6 +38,8 @@ export type NoteRole =
   | 'incoming'
   /** made to be handed out; reclaimable until the recipient rotates it */
   | 'outgoing'
+  /** this wallet's own, but only spendable from its locktime on */
+  | 'locked'
 
 export type NoteStatus = 'live' | 'pending' | 'spent'
 
@@ -112,6 +116,7 @@ export type Activity = {
     | 'reclaim'
     | 'recover'
     | 'address'
+    | 'lock'
   mint?: string
   amountMsat?: number
   text: string

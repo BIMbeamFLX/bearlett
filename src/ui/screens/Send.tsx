@@ -10,7 +10,7 @@ import type {PayRequest} from '../../lnurl/pay.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 import type {Platform} from '../../platform/platform.ts'
 
-type Tab = 'note' | 'pay' | 'key'
+type Tab = 'note' | 'pay' | 'key' | 'lock'
 
 export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
   const w = () => props.wallet()
@@ -96,6 +96,21 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
       setKey('')
     })
 
+  // ---- a timelock ----
+  const [until, setUntil] = createSignal('')
+  const lockNow = () =>
+    run('Locking', async () => {
+      const msat = parseSats(amount())
+      const at = Date.parse(until())
+      if (!msat) throw new Error('Enter an amount in sats.')
+      if (!Number.isFinite(at)) throw new Error('Pick the time it unlocks.')
+      await w().lock(domain(), msat, Math.floor(at / 1000))
+      notify(
+        `Locked ${formatSats(msat)} until ${new Date(at).toLocaleString()}.`
+      )
+      setAmount('')
+    })
+
   const pick = () => (
     <MintSelect
       mints={mints()}
@@ -125,6 +140,12 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
           onClick={() => setTab('key')}
         >
           To key
+        </button>
+        <button
+          aria-current={tab() === 'lock' ? 'page' : undefined}
+          onClick={() => setTab('lock')}
+        >
+          Lock
         </button>
       </nav>
       <section class="panel">
@@ -273,6 +294,31 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
                 />
               </Field>
               <Action onClick={sendToKey}>Send</Action>
+            </Match>
+            <Match when={tab() === 'lock'}>
+              <h2>Lock until a time</h2>
+              <p class="quiet">
+                Moves sats into a note only you can spend, and only from the
+                time you pick. The mint enforces it by its own clock: a promise
+                the mint keeps, not a trustless lock. Keep your wallet's
+                records: a locked note is not found again from the words alone.
+              </p>
+              {pick()}
+              <Field label="Amount (sat)">
+                <input
+                  inputmode="numeric"
+                  value={amount()}
+                  onInput={e => setAmount(e.currentTarget.value)}
+                />
+              </Field>
+              <Field label="Unlocks at">
+                <input
+                  type="datetime-local"
+                  value={until()}
+                  onInput={e => setUntil(e.currentTarget.value)}
+                />
+              </Field>
+              <Action onClick={lockNow}>Lock</Action>
             </Match>
           </Switch>
         </Show>

@@ -382,6 +382,8 @@ export class Wallet {
     const spend: SpendRef = note.spend
     if (spend.kind === 'key') return this.keys.spend(note.mint, spend.key)
     if (spend.kind === 'preimage') return spend.preimage
+    if (spend.kind === 'timelock')
+      return this.keys.timelockSpend(note.mint, spend.key, spend.locktime)
     return spend.k1
   }
 
@@ -572,6 +574,52 @@ export class Wallet {
       })
     })
     return note
+  }
+
+  /**
+   * Timelocks: moves `amountMsat` into a note only this wallet can spend,
+   * and only from `locktime` (Unix seconds) on. SERVICE enforces it by its
+   * own clock: a custodial policy, not a trustless lock. The locktime is
+   * not in the seed, so this note is found again only with the wallet's
+   * records, not by a scan from the words alone.
+   */
+  async lock(
+    domain: string,
+    amountMsat: number,
+    locktime: number
+  ): Promise<Note> {
+    if (locktime <= Math.floor(this.now() / 1000))
+      throw new Error('Pick a time in the future.')
+    const key = await this.nextKey(domain, PURPOSE.wallet)
+    const p1: Output = {
+      q: this.keys.timelockQ(domain, key, locktime),
+      spend: {kind: 'timelock', key, locktime},
+      role: 'locked',
+      label: 'locked'
+    }
+    await this.spendInto(domain, amountMsat, p1, 'rotate')
+    await this.commit(state =>
+      this.log(state, {
+        kind: 'lock',
+        mint: domain,
+        amountMsat,
+        text: `Locked until ${new Date(locktime * 1000).toISOString().slice(0, 16)}Z`
+      })
+    )
+    return this.state.notes[p1.q]
+  }
+
+  /** Moves a locked note whose time has come back into the balance. */
+  async unlock(q: Hex): Promise<void> {
+    const note = this.state.notes[q]
+    if (!note || note.role !== 'locked' || note.status !== 'live') return
+    if (
+      note.spend.kind === 'timelock' &&
+      note.spend.locktime > Math.floor(this.now() / 1000)
+    )
+      throw new Error('This note is still locked.')
+    const p1 = await this.ownOutput(note.mint, PURPOSE.wallet, 'unlocked')
+    await this.runBurn({purpose: 'rotate', mint: note.mint, inputs: [note], p1})
   }
 
   /** Takes back a sent note nobody has rotated yet. */
