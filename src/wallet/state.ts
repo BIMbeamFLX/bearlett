@@ -7,7 +7,11 @@ import type {MintFee} from '../lnurl/pay.ts'
 export type Hex = string
 
 export type Mint = {
-  /** the spend domain: the withdraw endpoint's hostname, lowercased */
+  /**
+   * the mint's key everywhere in the state: its withdraw endpoint's host,
+   * lowercased, port included, which is also what its branch is derived
+   * from. Signatures bind the hostname alone (keys.ts's spendDomainOfHost).
+   */
   domain: string
   /** LUD-03 informational endpoint, e.g. https://mint.example/w */
   withdrawLink: string

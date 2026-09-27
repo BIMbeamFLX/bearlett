@@ -64,11 +64,21 @@ const parseCpub = (entries: MetadataEntry[]): PayRequest['cpub'] => {
   return undefined
 }
 
-/** The value a mint payment of `amountMsat` should credit (Minting). */
-export const expectedMintValue = (amountMsat: number, fee?: MintFee): number =>
-  fee
-    ? amountMsat - fee.baseMsat - Math.floor((amountMsat * fee.ppm) / 1_000_000)
-    : amountMsat
+/**
+ * The value a mint payment of `amountMsat` should credit (Minting):
+ * gross - base - floor(gross * ppm / 1e6), never below 0. The proportional
+ * part is split so it stays exact past 2^53 msat · ppm.
+ */
+export const expectedMintValue = (
+  amountMsat: number,
+  fee?: MintFee
+): number => {
+  if (!fee) return amountMsat
+  const proportional =
+    Math.floor(amountMsat / 1_000_000) * fee.ppm +
+    Math.floor(((amountMsat % 1_000_000) * fee.ppm) / 1_000_000)
+  return Math.max(0, amountMsat - fee.baseMsat - proportional)
+}
 
 const number = (value: unknown): number =>
   typeof value === 'number' && Number.isSafeInteger(value) ? value : NaN

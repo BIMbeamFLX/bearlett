@@ -13,7 +13,9 @@
     "format:check": "prettier --check .",
     "build:napplet": "vite build --config vite.napplet.config.mts",
     "check:napplets": "node scripts/check-napplet-meta.mjs",
-    "test:conformance": "node scripts/conformance-all.mjs"
+    "test:conformance": "node scripts/conformance-all.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@napplet/sdk": "0.28.0",
@@ -29,10 +31,13 @@
     "@napplet/conformance-cli": "0.2.19",
     "@napplet/shim": "0.30.0",
     "@napplet/vite-plugin": "0.14.1",
+    "kit-0.19.5": "npm:@lnurlcash/kit@0.19.5",
+    "lnurlcash-conformance": "0.14.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
-    "vite-plugin-solid": "^2.11.14"
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "5.0.2"
   },
   "version": "0.1.0",
   "repository": {

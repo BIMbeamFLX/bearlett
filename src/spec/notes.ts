@@ -172,8 +172,7 @@ export const decodeSpend = (k1: string): Spend | null => {
   const script = decodeCw1(text)
   if (!script) return null
   const block = parseControlBlock(script.control)
-  if (!block || block.leafVersion !== LEAF_VERSION) return null
-  if (hasSuccessOpcode(script.script)) return null
+  if (!block || leafProblem(block.leafVersion, script.script)) return null
   const q = scriptPathOutputKey(script.script, script.control)
   if (!q) return null
   return {
@@ -189,7 +188,22 @@ export const decodeSpend = (k1: string): Spend | null => {
 const SEQUENCE_DISABLE = 0x80000000
 const SEQUENCE_TYPE_TIME = 0x00400000
 
-/** Timelocks: a time claim SERVICE could ever honour, on SERVICE's clock. */
+const SEQUENCE_UNITS = 0x0000ffff
+
+/**
+ * Output keys and spends: only leaf version 0xc0, and no OP_SUCCESSx
+ * outside pushed data (consensus would accept either unconditionally).
+ */
+export const leafProblem = (
+  leafVersion: number,
+  script: Uint8Array
+): string | null => {
+  if (leafVersion !== LEAF_VERSION) return 'an unknown tapleaf version'
+  if (hasSuccessOpcode(script)) return 'a reserved OP_SUCCESS opcode'
+  return null
+}
+
+/** Timelocks: a time claim SERVICE could ever honour, whatever its clock. */
 export const claimProblem = (claim: TimeClaim): string | null => {
   if (claim.locktime !== 0 && claim.locktime < LOCKTIME_THRESHOLD)
     return 'a non-zero locktime must be a Unix time'
@@ -198,6 +212,28 @@ export const claimProblem = (claim: TimeClaim): string | null => {
     !(claim.sequence & SEQUENCE_TYPE_TIME)
   )
     return 'a relative lock must be time-based'
+  return null
+}
+
+/**
+ * Timelocks, on a clock: a non-zero locktime must have passed `now`, and an
+ * enabled relative lock (512-second units, BIP-68) must have elapsed since
+ * SERVICE credited the note at `lockedAt`. SERVICE judges this with its own
+ * clock; a wallet uses it to tell whether a note is due yet.
+ */
+export const timeClaimProblem = (
+  claim: TimeClaim,
+  now: number,
+  lockedAt: number
+): string | null => {
+  const problem = claimProblem(claim)
+  if (problem) return problem
+  if (claim.locktime > now) return `locktime ${claim.locktime} is in the future`
+  if (!(claim.sequence & SEQUENCE_DISABLE)) {
+    const needed = (claim.sequence & SEQUENCE_UNITS) * 512
+    if (now - lockedAt < needed)
+      return `relative lock of ${needed}s not yet elapsed`
+  }
   return null
 }
 

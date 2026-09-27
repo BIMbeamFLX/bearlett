@@ -27,7 +27,7 @@ export const spendDomain = (url: string): string =>
 
 /** prevout txid of input 0: binds the mint. */
 export const mintOutpointTxid = (domain: string): Uint8Array =>
-  taggedHash('LNURLcash/mint', utf8ToBytes(domain))
+  taggedHash('LNURLcash/mint', utf8ToBytes(domain.toLowerCase()))
 
 const OP_1 = 0x51
 

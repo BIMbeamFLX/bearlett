@@ -36,7 +36,7 @@ import {
   type Certificates,
   type NoteInfo
 } from '../lnurl/withdraw.ts'
-import {KeyRing, type KeyRef} from './keys.ts'
+import {KeyRing, hostOf, spendDomainOfHost, type KeyRef} from './keys.ts'
 import {selectNotes} from './select.ts'
 import {legacyCandidates} from './legacy.ts'
 import {
@@ -283,8 +283,8 @@ export class Wallet {
   /** The mint an internal transfer to this payee would go through, if this wallet has it. */
   transferMint(pay: PayRequest): string | null {
     if (!pay.cpub || !pay.withdrawLink) return null
-    const domain = spendDomain(pay.withdrawLink)
-    return this.state.mints[domain] ? domain : null
+    const host = hostOf(pay.withdrawLink)
+    return this.state.mints[host] ? host : null
   }
 
   // ---- mints ----
@@ -310,7 +310,8 @@ export class Wallet {
     withdrawLink: string,
     extra: Partial<Pick<Mint, 'payUrl' | 'fee' | 'name'>>
   ): Promise<Mint> {
-    const domain = spendDomain(withdrawLink)
+    // mints are known by their host, port included: the branch is derived from it
+    const domain = hostOf(withdrawLink)
     await this.commit(state => {
       const known = state.mints[domain]
       state.mints[domain] = {
@@ -489,11 +490,11 @@ export class Wallet {
    * and rotates it into a fresh key of this wallet's own at once.
    */
   async receive(link: NoteLink): Promise<Note> {
-    const domain = spendDomain(link.endpoint)
+    const domain = hostOf(link.endpoint)
     if (!this.state.mints[domain]) throw new UnknownMintError(domain)
     const spend = decodeSpend(link.k1)
     if (!spend) throw new Error('This is not an LNURLcash note.')
-    const check = checkSpend(spend, domain)
+    const check = checkSpend(spend, spendDomain(link.endpoint))
     if (check.status === 'invalid')
       throw new Error(`This note's spend does not open it: ${check.reason}.`)
     const q = bytesToHex(spend.q)
@@ -665,7 +666,7 @@ export class Wallet {
   async transfer(pay: PayRequest, amountMsat: number): Promise<void> {
     if (!pay.cpub || !pay.withdrawLink)
       throw new Error('This address takes no internal transfers.')
-    const domain = spendDomain(pay.withdrawLink)
+    const domain = hostOf(pay.withdrawLink)
     for (let attempt = 0; attempt < MAX_INDEX_RETRIES; attempt++) {
       const q = notePubkey(
         pay.cpub.branch,
@@ -1177,7 +1178,11 @@ export class Wallet {
       let gap = 0
       for (let index = 0; gap < gapLimit; index++) {
         let used = false
-        for (const candidate of legacyCandidates(branch, domain, index)) {
+        for (const candidate of legacyCandidates(
+          branch,
+          spendDomainOfHost(domain),
+          index
+        )) {
           let info: NoteInfo | null
           try {
             info = await this.lookup(domain, candidate.q)
