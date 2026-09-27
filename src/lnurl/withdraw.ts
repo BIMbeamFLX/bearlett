@@ -2,7 +2,7 @@
 // (by spend, or by `?p=` without exposing it) and the callback's melt,
 // rotate, split and merge.
 import {secp256k1} from '@noble/curves/secp256k1.js'
-import {ServiceError, TransportError} from './errors.ts'
+import {ProtocolError, ServiceError, TransportError} from './errors.ts'
 import {requireServiceUrl, type Net} from './net.ts'
 
 export type NoteInfo = {
@@ -71,35 +71,33 @@ export const parseNoteInfo = (
 ): NoteInfo => {
   const byK1 = 'k1' in query
   if (body.tag !== 'withdrawRequest' || typeof body.callback !== 'string')
-    throw new TransportError('The mint did not answer with a withdrawRequest.')
+    throw new ProtocolError('The mint did not answer with a withdrawRequest.')
   // a spend only ever travels to the origin that issued the note
   if (requireServiceUrl(body.callback).origin !== new URL(endpoint).origin)
-    throw new TransportError('The mint named a callback on another origin.')
+    throw new ProtocolError('The mint named a callback on another origin.')
   if (
     byK1 &&
     (typeof body.k1 !== 'string' ||
       body.k1.toLowerCase() !== query.k1.toLowerCase())
   )
-    throw new TransportError(
+    throw new ProtocolError(
       'The mint did not echo the note it was asked about.'
     )
   const amount = body.maxWithdrawable
   if (!isMsat(amount))
-    throw new TransportError('The mint gave no value for this note.')
+    throw new ProtocolError('The mint gave no value for this note.')
   if (
     body.minWithdrawable !== undefined &&
     (!isMsat(body.minWithdrawable) || body.minWithdrawable > amount)
   )
-    throw new TransportError('The mint gave a minimum above the note value.')
+    throw new ProtocolError('The mint gave a minimum above the note value.')
   let mintPubkey: string | undefined
   if (body.mintPubkey !== undefined && body.mintPubkey !== null) {
     if (
       typeof body.mintPubkey !== 'string' ||
       !isCompressedPoint(body.mintPubkey)
     )
-      throw new TransportError(
-        'The mint key is not a compressed secp256k1 key.'
-      )
+      throw new ProtocolError('The mint key is not a compressed secp256k1 key.')
     mintPubkey = body.mintPubkey.toLowerCase()
   }
   return {

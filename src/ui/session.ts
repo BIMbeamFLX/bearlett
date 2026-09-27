@@ -2,7 +2,7 @@
 // wallet change, a toast, and a helper that runs an action and reports how
 // it went in words a holder can act on.
 import {createSignal} from 'solid-js'
-import {ServiceError, TransportError} from '../lnurl/errors.ts'
+import {ProtocolError, ServiceError, TransportError} from '../lnurl/errors.ts'
 import {MintKeyChangedError, type Wallet} from '../wallet/wallet.ts'
 import {WrongPassphraseError} from '../wallet/vault.ts'
 
@@ -22,6 +22,8 @@ export const notify = (text: string, error = false): void => {
 /** What went wrong, for a holder: SERVICE's reason verbatim, else ours. */
 export const describe = (err: unknown): string => {
   if (err instanceof ServiceError) return `The mint says: ${err.reason}`
+  if (err instanceof ProtocolError)
+    return `The mint answered in a way Bearlett cannot trust: ${err.message}`
   if (err instanceof TransportError)
     return `${err.message} If a payment was underway, Bearlett will check it again.`
   if (err instanceof MintKeyChangedError)

@@ -93,6 +93,8 @@ const id = (): string => crypto.randomUUID()
 
 export class Wallet {
   private readonly listeners = new Set<() => void>()
+  /** journal entries this session is sending right now: settle() leaves them be */
+  private readonly sending = new Set<string>()
   private saving: Promise<void> = Promise.resolve()
 
   private readonly ports: Ports
@@ -545,7 +547,26 @@ export class Wallet {
     const note = this.state.notes[q]
     if (!note || note.role !== 'incoming' || note.status !== 'live') return
     const p1 = await this.ownOutput(note.mint, PURPOSE.wallet, 'claimed')
-    await this.runBurn({purpose: 'claim', mint: note.mint, inputs: [note], p1})
+    try {
+      await this.runBurn({
+        purpose: 'claim',
+        mint: note.mint,
+        inputs: [note],
+        p1
+      })
+    } catch (err) {
+      if (!(err instanceof ServiceError && reason.spent(err.reason))) throw err
+      // whoever handed it over spent it first: say so, loudly
+      await this.refreshNote(q)
+      await this.commit(state =>
+        this.log(state, {
+          kind: 'receive',
+          mint: note.mint,
+          amountMsat: note.amountMsat,
+          text: 'A received note was spent by someone else before it could be rotated'
+        })
+      )
+    }
   }
 
   // ---- sending ----
@@ -766,6 +787,7 @@ export class Wallet {
       state.operations[op.id] = op
       state.notes[note!.q].status = 'pending'
     })
+    this.sending.add(op.id)
     try {
       const result = await melt(this.net, op.callback, op.k1, op.pr)
       await this.commit(state => {
@@ -785,6 +807,8 @@ export class Wallet {
         })
       }
       throw err
+    } finally {
+      this.sending.delete(op.id)
     }
     return this.state.operations[op.id] as Melt
   }
@@ -851,7 +875,12 @@ export class Wallet {
       state.operations[op.id] = op
       for (const q of op.inputs) state.notes[q].status = 'pending'
     })
-    await this.sendBurn(op)
+    this.sending.add(op.id)
+    try {
+      await this.sendBurn(op)
+    } finally {
+      this.sending.delete(op.id)
+    }
   }
 
   /** The callback comes from the informational GET; any live input will do. */
@@ -930,24 +959,29 @@ export class Wallet {
   /** Settles every journal entry that is still open. */
   async settle(): Promise<void> {
     const tasks: (() => Promise<unknown>)[] = [
-      ...Object.values(this.state.operations).map(op => () => {
-        if (op.kind === 'mint') return this.settleMint(op)
-        if (op.kind === 'melt') return this.settleMelt(op)
-        return this.resolveBurn(op)
-      }),
+      ...Object.values(this.state.operations)
+        .filter(op => !this.sending.has(op.id))
+        .map(op => () => {
+          if (op.kind === 'mint') return this.settleMint(op)
+          if (op.kind === 'melt') return this.settleMelt(op)
+          return this.resolveBurn(op)
+        }),
       // notes received offline are rotated as soon as the mint answers
       ...this.notes({role: 'incoming', status: 'live'}).map(
         note => () => this.claim(note.q)
       ),
       () => this.checkOutgoing()
     ]
+    // one entry going wrong must not keep the others from settling
+    let first: unknown = null
     for (const task of tasks) {
       try {
         await task()
       } catch (err) {
-        if (!(err instanceof TransportError)) throw err
+        if (!(err instanceof TransportError)) first ??= err
       }
     }
+    if (first) throw first
   }
 
   /** Re-reads one note's status from its mint. */
@@ -977,21 +1011,20 @@ export class Wallet {
    * mutation). If SERVICE refuses the replay, p1 tells whether it landed.
    */
   private async resolveBurn(op: Burn): Promise<void> {
-    if (op.state !== 'unknown') {
-      // prepared but never sent: nothing happened yet
-      await this.commit(state => {
-        delete state.operations[op.id]
-        for (const q of op.inputs) state.notes[q].status = 'live'
-      })
-      return
-    }
+    // Prepared or unknown alike, the request may have reached the mint (a
+    // crash can come between sending and writing down the answer). A burn
+    // is atomic, so p1 existing says it landed; only when it does not is
+    // sending again safe. That also covers a mint that refuses replays.
+    let landed: boolean
     try {
-      await this.sendBurn(op)
+      landed = (await this.lookup(op.mint, op.p1.q)) !== null
     } catch (err) {
-      if (!(err instanceof ServiceError)) return
-      const landed = await this.lookup(op.mint, op.p1.q).catch(() => null)
-      if (landed) await this.applyBurn(op, {c: landed.c})
+      // p1 already spent onward (a payee rotating it): the burn happened
+      if (!(err instanceof ServiceError && reason.spent(err.reason))) throw err
+      landed = true
     }
+    if (landed) await this.applyBurn(op, {})
+    else await this.sendBurn(op)
   }
 
   // ---- recovery and Lightning Address ----

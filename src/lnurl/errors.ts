@@ -1,7 +1,8 @@
-// Two kinds of failure, kept apart because they mean opposite things for a
-// bearer note: SERVICE's own {"status": "ERROR", "reason"} is a definitive
-// answer (LUD-01), while a transport failure leaves it unknown whether the
-// request ever reached SERVICE.
+// Three kinds of failure, kept apart because they mean different things
+// for a bearer note: SERVICE's own {"status": "ERROR", "reason"} is a
+// definitive answer (LUD-01); a transport failure leaves it unknown whether
+// the request ever reached SERVICE; and a protocol failure is an answer that
+// breaks the spec, which no retry and no offline fallback may paper over.
 
 /** SERVICE answered, and said no. Nothing was burned or minted. */
 export class ServiceError extends Error {
@@ -10,6 +11,14 @@ export class ServiceError extends Error {
     super(reason)
     this.name = 'ServiceError'
     this.reason = reason
+  }
+}
+
+/** SERVICE answered, but not the way LUD-25 says it must: trust nothing in it. */
+export class ProtocolError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProtocolError'
   }
 }
 

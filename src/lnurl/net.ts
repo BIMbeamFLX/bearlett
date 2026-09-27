@@ -2,7 +2,7 @@
 // JSON; how the bytes travel (fetch in the web app, the shell's
 // NAP-RESOURCE in the Hangar) is a port each platform plugs in, under
 // src/platform: the napplet bundle must not carry fetch at all.
-import {ServiceError, TransportError} from './errors.ts'
+import {ProtocolError, ServiceError, TransportError} from './errors.ts'
 
 export type RequestOptions = {
   signal?: AbortSignal
@@ -60,7 +60,7 @@ export const isAllowedServiceUrl = (url: string): boolean => {
 
 export const requireServiceUrl = (url: string): URL => {
   if (!isAllowedServiceUrl(url))
-    throw new TransportError(`Refusing to contact ${url}: not https.`)
+    throw new ProtocolError(`Refusing to contact ${url}: not https.`)
   return new URL(url)
 }
 

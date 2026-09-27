@@ -19,3 +19,5 @@ docs/checks/*.json
 STARTPROMPT.md
 docs/*-infographic-prompt.txt
 dist-collection-*/
+.kernel/
+kernel-cases.json

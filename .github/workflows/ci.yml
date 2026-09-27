@@ -24,6 +24,9 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run tsc
+      # LUD-25's and the conformance suite's vectors, and the wallet's flows
+      # against the suite's adversarial mock mint
+      - run: npm test
       - run: npm run build
       - run: npm run build:napplet
       # The page and the manifest must name the same napplet and domains,
@@ -36,3 +39,18 @@ jobs:
       # failing an otherwise-green build over an unmaintained transitive dep
       - run: npm audit --audit-level=high
         continue-on-error: true
+
+  kernel:
+    # Bitcoin Core's own interpreter judges the spends Bearlett builds:
+    # lnurlcash-kernel ships Linux wheels only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: python3 -m venv .kernel && .kernel/bin/pip install lnurlcash-kernel==0.1.0
+      - run: node tests/kernel/cases.ts > kernel-cases.json
+      - run: .kernel/bin/python tests/kernel/judge.py kernel-cases.json

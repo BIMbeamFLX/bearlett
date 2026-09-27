@@ -2,7 +2,7 @@
 // naming the note), the mint fee, and the text/cpub hint for internal
 // transfers. LUD-21 verify for settlement.
 import {decodeCx1, type BranchExport} from '../spec/encoding.ts'
-import {ServiceError, TransportError} from './errors.ts'
+import {ProtocolError, ServiceError} from './errors.ts'
 import {fromLud17, invoiceAmountMsat, isInvoice} from './links.ts'
 import {requireServiceUrl, type Net} from './net.ts'
 
@@ -116,7 +116,7 @@ export const parsePayRequest = (
   body: Record<string, unknown>
 ): PayRequest => {
   if (body.tag !== 'payRequest' || typeof body.callback !== 'string')
-    throw new TransportError('This link is not a payRequest.')
+    throw new ProtocolError('This link is not a payRequest.')
   requireServiceUrl(body.callback)
   const metadata = typeof body.metadata === 'string' ? body.metadata : '[]'
   const entries = parseMetadata(metadata)
@@ -131,7 +131,7 @@ export const parsePayRequest = (
     : 0
   // Minting: a payLink advertising withdrawLink MUST allow 64 characters
   if (withdrawLink && commentAllowed < 64)
-    throw new TransportError(
+    throw new ProtocolError(
       'This mint cannot take the note it would mint (commentAllowed below 64).'
     )
   return {
@@ -180,12 +180,12 @@ export const requestInvoice = async (
   if (comment) url.searchParams.set('comment', comment)
   const body = await net.get(url.toString(), {signal})
   if (typeof body.pr !== 'string' || !isInvoice(body.pr))
-    throw new TransportError('The service answered without an invoice.')
+    throw new ProtocolError('The service answered without an invoice.')
   // an amountless invoice passes: nothing to check it against, and the
   // SERVICE that issued it judges what it is paid
   const invoiced = invoiceAmountMsat(body.pr)
   if (invoiced !== null && invoiced !== amountMsat)
-    throw new TransportError('The invoice is not for the amount requested.')
+    throw new ProtocolError('The invoice is not for the amount requested.')
   const verify = typeof body.verify === 'string' ? body.verify : undefined
   if (verify) requireServiceUrl(verify)
   return {pr: body.pr, verify}
@@ -205,7 +205,7 @@ export const parseSettlement = (
   body: Record<string, unknown>
 ): {settled: boolean; preimage?: string} => {
   if (typeof body.settled !== 'boolean' || typeof body.pr !== 'string')
-    throw new TransportError(
+    throw new ProtocolError(
       'The verify answer does not say whether it settled.'
     )
   return {
