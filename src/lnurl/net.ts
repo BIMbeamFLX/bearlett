@@ -1,0 +1,118 @@
+// The one door to the network. The wallet core only ever asks for LNURL
+// JSON; how the bytes travel (fetch in the web app, the shell's
+// NAP-RESOURCE in the Hangar) is a port each platform plugs in.
+import {ServiceError, TransportError} from './errors.ts'
+
+export type RequestOptions = {
+  signal?: AbortSignal
+  /** the URL carries a bearer secret: never follow a redirect with it */
+  secret?: boolean
+}
+
+export type Net = {
+  /** GET an LNURL endpoint and return its JSON (LUD-01 errors thrown). */
+  get(url: string, options?: RequestOptions): Promise<Record<string, unknown>>
+  /**
+   * POST or DELETE without a body, parameters in the query string - only
+   * lnurl-mint's username registration needs it. Absent where the platform
+   * can only GET (the Hangar's NAP-RESOURCE).
+   */
+  send?(
+    method: 'POST' | 'DELETE',
+    url: string,
+    options?: RequestOptions
+  ): Promise<Record<string, unknown>>
+}
+
+const MAX_RESPONSE_BYTES = 1024 * 1024
+
+/**
+ * https everywhere, plain http only for a local mint or an onion service:
+ * the same admission rule for every URL a secret may travel in.
+ */
+export const isAllowedServiceUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.username || parsed.password) return false
+    if (parsed.protocol === 'https:') return true
+    if (parsed.protocol !== 'http:') return false
+    const host = parsed.hostname
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host.endsWith('.localhost') ||
+      host.endsWith('.onion')
+    )
+  } catch {
+    return false
+  }
+}
+
+export const requireServiceUrl = (url: string): URL => {
+  if (!isAllowedServiceUrl(url))
+    throw new TransportError(`Refusing to contact ${url}: not https.`)
+  return new URL(url)
+}
+
+/**
+ * Parses an LNURL response body. LUD-01 makes HTTP status codes meaningless,
+ * so only the JSON counts: an ERROR status becomes a ServiceError, anything
+ * that is not a JSON object is a transport problem.
+ */
+export const parseLnurlJson = (text: string): Record<string, unknown> => {
+  if (text.length > MAX_RESPONSE_BYTES)
+    throw new TransportError('The response is too large.')
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new TransportError('The service did not answer with JSON.')
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    throw new TransportError('The service answered with something unexpected.')
+  const record = body as Record<string, unknown>
+  if (
+    typeof record.status === 'string' &&
+    record.status.toUpperCase() === 'ERROR'
+  )
+    throw new ServiceError(
+      typeof record.reason === 'string' ? record.reason : 'unspecified error'
+    )
+  return record
+}
+
+/** fetch() for browsers: the web app's Net. */
+export const fetchNet: Net = {
+  async get(url, options = {}) {
+    requireServiceUrl(url)
+    let response: Response
+    try {
+      response = await fetch(url, {
+        signal: options.signal,
+        redirect: options.secret ? 'error' : 'follow',
+        headers: {accept: 'application/json'}
+      })
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err
+      throw new TransportError(`No answer from ${new URL(url).host}.`)
+    }
+    return parseLnurlJson(await response.text())
+  },
+  async send(method, url, options = {}) {
+    requireServiceUrl(url)
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method,
+        signal: options.signal,
+        redirect: 'error',
+        headers: {accept: 'application/json'}
+      })
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err
+      throw new TransportError(`No answer from ${new URL(url).host}.`)
+    }
+    return parseLnurlJson(await response.text())
+  }
+}
