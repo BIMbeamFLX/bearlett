@@ -263,6 +263,29 @@ export class Wallet {
     })
   }
 
+  // ---- payees ----
+
+  /** A payRequest to pay, through this wallet's network and offline guard. */
+  async payRequest(url: string): Promise<PayRequest> {
+    return fetchPayRequest(this.net, url)
+  }
+
+  /** A plain LUD-06 invoice from a payee, to melt into. */
+  async invoiceFor(
+    pay: PayRequest,
+    amountMsat: number,
+    comment?: string
+  ): Promise<string> {
+    return (await requestInvoice(this.net, pay, amountMsat, comment)).pr
+  }
+
+  /** The mint an internal transfer to this payee would go through, if this wallet has it. */
+  transferMint(pay: PayRequest): string | null {
+    if (!pay.cpub || !pay.withdrawLink) return null
+    const domain = spendDomain(pay.withdrawLink)
+    return this.state.mints[domain] ? domain : null
+  }
+
   // ---- mints ----
 
   /** Adds a mint by its payRequest (a domain, Lightning Address or LNURL). */
