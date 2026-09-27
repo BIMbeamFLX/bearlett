@@ -1,8 +1,9 @@
 #!/bin/bash
 # LNURLcash over FIPS (fips.network), end to end, on one Linux host: two
 # FIPS nodes in two network namespaces joined by a veth pair over UDP. Node
-# B serves the conformance mock mint on its mesh address only; node A runs
-# Bearlett's wallet core against http://<npub of node B>.fips.
+# B serves the conformance mock mint and a reference TollGate taking its
+# notes, on its mesh address only; node A runs Bearlett's wallet core
+# against http://<npub of node B>.fips, and pays the TollGate on :2121.
 #
 #   sudo FIPS_BIN=<dir with the fips binary> bash tests/mesh/run.sh
 #
@@ -85,6 +86,7 @@ ip netns exec fips-b env RUST_LOG=info "$FIPS" -c "$WORK/b.yaml" > "$WORK/b.log"
 logs() {
   echo "--- node A"; tail -20 "$WORK/a.log"
   echo "--- node B"; tail -20 "$WORK/b.log"
+  echo "--- TollGate"; tail -20 "$WORK/gate.log" 2>/dev/null
 }
 
 # ---- wait for node B's mesh address, then for A to reach B by name ----
@@ -103,9 +105,11 @@ done
 [ $reached = 1 ] || { echo "node A cannot reach $NPUB_B.fips"; logs; exit 1; }
 echo "node A reaches $NPUB_B.fips at $ADDR_B"
 
-# ---- the mint lives only on node B's mesh address ----
+# ---- the mint and a TollGate live only on node B's mesh address ----
 (cd "$REPO" && ip netns exec fips-b "$NODE" "$MESH/mock.mjs") > "$WORK/mock.log" 2>&1 & pids+=($!)
 ip netns exec fips-b python3 "$MESH/proxy.py" "$ADDR_B" 80 > "$WORK/proxy.log" 2>&1 & pids+=($!)
+(cd "$REPO" && ip netns exec fips-b "$NODE" --no-warnings "$MESH/gate.ts" "$NPUB_B") > "$WORK/gate.log" 2>&1 & pids+=($!)
+ip netns exec fips-b python3 "$MESH/proxy.py" "$ADDR_B" 2121 2121 > "$WORK/proxy-gate.log" 2>&1 & pids+=($!)
 sleep 1.5
 
 # ---- the wallet on node A ----

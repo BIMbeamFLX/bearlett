@@ -57,9 +57,9 @@ jobs:
 
   mesh:
     # LNURLcash over FIPS (fips.network) end to end: two FIPS nodes in network
-    # namespaces, a mint that exists only on the mesh, and the wallet core
-    # minting, handing out, receiving, paying and recovering through
-    # http://<npub>.fips
+    # namespaces, a mint and a TollGate that exist only on the mesh, and the
+    # wallet core minting, handing out, receiving, paying, recovering and
+    # buying network access through http://<npub>.fips
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
