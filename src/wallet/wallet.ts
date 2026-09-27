@@ -18,6 +18,8 @@ import {ServiceError, TransportError, reason} from '../lnurl/errors.ts'
 import {
   buildNoteLink,
   invoiceAmountMsat,
+  resolveLnurlInput,
+  resolveMintInput,
   type NoteLink
 } from '../lnurl/links.ts'
 import type {Net} from '../lnurl/net.ts'
@@ -88,15 +90,6 @@ type MintOp = Extract<Operation, {kind: 'mint'}>
 const MAX_INDEX_RETRIES = 10
 const cp1Of = (output: Output): string => encodeCp1(hexToBytes(output.q))
 const id = (): string => crypto.randomUUID()
-
-/** A bare domain names lnurl-mint's own identity, `_`. */
-export const mintPayUrl = (input: string): string => {
-  const text = input.trim()
-  if (/^https?:\/\//i.test(text)) return text
-  const host = text.replace(/\/.*$/, '').toLowerCase()
-  const scheme = host.endsWith('.onion') ? 'http' : 'https'
-  return `${scheme}://${host}/.well-known/lnurlp/_`
-}
 
 export class Wallet {
   private readonly listeners = new Set<() => void>()
@@ -289,8 +282,13 @@ export class Wallet {
 
   // ---- mints ----
 
-  /** Adds a mint by its payRequest (a domain, Lightning Address or LNURL). */
-  async addMint(input: string, payUrl = mintPayUrl(input)): Promise<Mint> {
+  /**
+   * Adds a mint by its Lightning Address, LNURL, bare domain (its `_`
+   * identity) or, for a developer, the payRequest URL itself.
+   */
+  async addMint(input: string): Promise<Mint> {
+    const payUrl = resolveMintInput(input) ?? resolveLnurlInput(input)
+    if (!payUrl) throw new Error('That is not a mint address.')
     const pay = await fetchPayRequest(this.net, payUrl)
     if (!canMint(pay))
       throw new ServiceError('This service does not mint LNURLcash notes.')

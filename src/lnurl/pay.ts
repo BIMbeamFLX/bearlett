@@ -3,7 +3,7 @@
 // transfers. LUD-21 verify for settlement.
 import {decodeCx1, type BranchExport} from '../spec/encoding.ts'
 import {ServiceError, TransportError} from './errors.ts'
-import {fromLud17, invoiceAmountMsat} from './links.ts'
+import {fromLud17, invoiceAmountMsat, isInvoice} from './links.ts'
 import {requireServiceUrl, type Net} from './net.ts'
 
 export type MintFee = {baseMsat: number; ppm: number}
@@ -41,12 +41,22 @@ const parseMetadata = (metadata: string): MetadataEntry[] => {
   }
 }
 
-/** `Mint fees: <base_fee_msat>,<fee_percent_ppm>` in a text/plain entry. */
-const parseMintFee = (entries: MetadataEntry[]): MintFee | undefined => {
-  for (const [type, value] of entries) {
-    const match = /^Mint fees: (\d+),(\d+)$/.exec(value.trim())
-    if (type === 'text/plain' && match)
-      return {baseMsat: Number(match[1]), ppm: Number(match[2])}
+const FEE_ENTRY = /^Mint fees:\s*(\d+)\s*,\s*(\d+)\s*$/
+
+/**
+ * `Mint fees: <base_fee_msat>,<fee_percent_ppm>` in a text/plain entry; the
+ * first valid one wins. A zero fee reads as none, and a fee of 100% or more
+ * (which can never net anything) or past 2^53 is not a valid entry.
+ */
+export const parseMintFee = (metadata: string): MintFee | undefined => {
+  for (const [type, value] of parseMetadata(metadata)) {
+    const match = type === 'text/plain' ? FEE_ENTRY.exec(value.trim()) : null
+    if (!match) continue
+    const baseMsat = Number(match[1])
+    const ppm = Number(match[2])
+    if (!Number.isSafeInteger(baseMsat) || !Number.isSafeInteger(ppm)) continue
+    if (ppm >= 1_000_000) continue
+    return baseMsat === 0 && ppm === 0 ? undefined : {baseMsat, ppm}
   }
   return undefined
 }
@@ -80,6 +90,24 @@ export const expectedMintValue = (
   return Math.max(0, amountMsat - fee.baseMsat - proportional)
 }
 
+/**
+ * The smallest payment that nets `netMsat` after the fee: apply is
+ * non-decreasing, so a binary search finds the exact minimum even at a
+ * near-100% fee, where walking up from an estimate would not end.
+ */
+export const grossForNet = (netMsat: number, fee?: MintFee): number => {
+  if (!fee || netMsat <= 0) return Math.max(0, netMsat)
+  let low = netMsat
+  let high = netMsat + fee.baseMsat
+  while (expectedMintValue(high, fee) < netMsat) high *= 2
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (expectedMintValue(middle, fee) >= netMsat) high = middle
+    else low = middle + 1
+  }
+  return low
+}
+
 const number = (value: unknown): number =>
   typeof value === 'number' && Number.isSafeInteger(value) ? value : NaN
 
@@ -98,19 +126,25 @@ export const parsePayRequest = (
       ? fromLud17(body.withdrawLink)
       : undefined
   if (withdrawLink) requireServiceUrl(withdrawLink)
+  const commentAllowed = Number.isSafeInteger(body.commentAllowed)
+    ? (body.commentAllowed as number)
+    : 0
+  // Minting: a payLink advertising withdrawLink MUST allow 64 characters
+  if (withdrawLink && commentAllowed < 64)
+    throw new TransportError(
+      'This mint cannot take the note it would mint (commentAllowed below 64).'
+    )
   return {
     url,
     callback: body.callback,
     minSendable: number(body.minSendable),
     maxSendable: number(body.maxSendable),
     metadata,
-    commentAllowed: Number.isSafeInteger(body.commentAllowed)
-      ? (body.commentAllowed as number)
-      : 0,
+    commentAllowed,
     withdrawLink,
     identifier: entries.find(([type]) => type === 'text/identifier')?.[1],
     description: entries.find(([type]) => type === 'text/plain')?.[1],
-    mintFee: parseMintFee(entries),
+    mintFee: parseMintFee(metadata),
     cpub: parseCpub(entries)
   }
 }
@@ -145,9 +179,12 @@ export const requestInvoice = async (
   url.searchParams.set('amount', String(amountMsat))
   if (comment) url.searchParams.set('comment', comment)
   const body = await net.get(url.toString(), {signal})
-  if (typeof body.pr !== 'string')
+  if (typeof body.pr !== 'string' || !isInvoice(body.pr))
     throw new TransportError('The service answered without an invoice.')
-  if (invoiceAmountMsat(body.pr) !== amountMsat)
+  // an amountless invoice passes: nothing to check it against, and the
+  // SERVICE that issued it judges what it is paid
+  const invoiced = invoiceAmountMsat(body.pr)
+  if (invoiced !== null && invoiced !== amountMsat)
     throw new TransportError('The invoice is not for the amount requested.')
   const verify = typeof body.verify === 'string' ? body.verify : undefined
   if (verify) requireServiceUrl(verify)
@@ -160,9 +197,19 @@ export const fetchSettlement = async (
   verify: string,
   signal?: AbortSignal
 ): Promise<{settled: boolean; preimage?: string}> => {
-  const body = await net.get(verify, {signal})
+  return parseSettlement(await net.get(verify, {signal}))
+}
+
+/** A LUD-21 answer binds its result to an invoice, and says settled as a boolean. */
+export const parseSettlement = (
+  body: Record<string, unknown>
+): {settled: boolean; preimage?: string} => {
+  if (typeof body.settled !== 'boolean' || typeof body.pr !== 'string')
+    throw new TransportError(
+      'The verify answer does not say whether it settled.'
+    )
   return {
-    settled: body.settled === true,
+    settled: body.settled,
     preimage: typeof body.preimage === 'string' ? body.preimage : undefined
   }
 }

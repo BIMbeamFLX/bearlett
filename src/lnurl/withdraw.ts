@@ -1,6 +1,7 @@
 // LUD-03 withdrawRequests as LUD-25 extends them: the informational GET
 // (by spend, or by `?p=` without exposing it) and the callback's melt,
 // rotate, split and merge.
+import {secp256k1} from '@noble/curves/secp256k1.js'
 import {ServiceError, TransportError} from './errors.ts'
 import {requireServiceUrl, type Net} from './net.ts'
 
@@ -35,31 +36,77 @@ export const fetchNoteInfo = async (
 ): Promise<NoteInfo> => {
   const byK1 = 'k1' in query
   const url = withQuery(endpoint, [byK1 ? ['k1', query.k1] : ['p', query.p]])
-  const body = await net.get(url, {signal, secret: byK1})
+  return parseNoteInfo(
+    endpoint,
+    query,
+    await net.get(url, {signal, secret: byK1})
+  )
+}
+
+const isMsat = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+
+/** A 33-byte compressed secp256k1 point, as hex; anything else verifies nothing. */
+const isCompressedPoint = (value: string): boolean => {
+  if (!/^0[23][0-9a-f]{64}$/i.test(value)) return false
+  try {
+    secp256k1.Point.fromHex(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Checks an informational GET's answer for the note it was asked about. The
+ * k1 must be echoed (casing aside: it is bytes), the value is the
+ * authoritative maxWithdrawable, and a mintPubkey, when given, must be a
+ * compressed key. A missing one is allowed: LUD-25 makes certifying a SHOULD,
+ * so such a note is simply not checkable offline.
+ */
+export const parseNoteInfo = (
+  endpoint: string,
+  query: {k1: string} | {p: string},
+  body: Record<string, unknown>
+): NoteInfo => {
+  const byK1 = 'k1' in query
   if (body.tag !== 'withdrawRequest' || typeof body.callback !== 'string')
     throw new TransportError('The mint did not answer with a withdrawRequest.')
   // a spend only ever travels to the origin that issued the note
   if (requireServiceUrl(body.callback).origin !== new URL(endpoint).origin)
     throw new TransportError('The mint named a callback on another origin.')
-  if (byK1 && body.k1 !== query.k1)
+  if (
+    byK1 &&
+    (typeof body.k1 !== 'string' ||
+      body.k1.toLowerCase() !== query.k1.toLowerCase())
+  )
     throw new TransportError(
       'The mint did not echo the note it was asked about.'
     )
   const amount = body.maxWithdrawable
-  if (
-    typeof amount !== 'number' ||
-    !Number.isSafeInteger(amount) ||
-    amount <= 0
-  )
+  if (!isMsat(amount))
     throw new TransportError('The mint gave no value for this note.')
+  if (
+    body.minWithdrawable !== undefined &&
+    (!isMsat(body.minWithdrawable) || body.minWithdrawable > amount)
+  )
+    throw new TransportError('The mint gave a minimum above the note value.')
+  let mintPubkey: string | undefined
+  if (body.mintPubkey !== undefined && body.mintPubkey !== null) {
+    if (
+      typeof body.mintPubkey !== 'string' ||
+      !isCompressedPoint(body.mintPubkey)
+    )
+      throw new TransportError(
+        'The mint key is not a compressed secp256k1 key.'
+      )
+    mintPubkey = body.mintPubkey.toLowerCase()
+  }
   return {
     callback: body.callback,
     k1: byK1 ? query.k1 : undefined,
     amountMsat: amount,
-    mintPubkey:
-      typeof body.mintPubkey === 'string'
-        ? body.mintPubkey.toLowerCase()
-        : undefined,
+    mintPubkey,
     c: typeof body.c === 'string' ? body.c : undefined
   }
 }

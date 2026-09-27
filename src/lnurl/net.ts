@@ -28,23 +28,31 @@ export type Net = {
 const MAX_RESPONSE_BYTES = 1024 * 1024
 
 /**
- * https everywhere, plain http only for a local mint or an onion service:
- * the same admission rule for every URL a secret may travel in.
+ * Hosts reached over plain http: this machine, and onion services, whose
+ * transport authenticates the name itself (LUD-01's exception).
+ */
+export const plainHttpHost = (hostname: string): boolean => {
+  const host = hostname.toLowerCase()
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.onion')
+  )
+}
+
+/**
+ * https everywhere, plain http only where plainHttpHost allows it: the same
+ * admission rule for every URL a secret may travel in.
  */
 export const isAllowedServiceUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url)
     if (parsed.username || parsed.password) return false
     if (parsed.protocol === 'https:') return true
-    if (parsed.protocol !== 'http:') return false
-    const host = parsed.hostname
-    return (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '[::1]' ||
-      host.endsWith('.localhost') ||
-      host.endsWith('.onion')
-    )
+    return parsed.protocol === 'http:' && plainHttpHost(parsed.hostname)
   } catch {
     return false
   }
