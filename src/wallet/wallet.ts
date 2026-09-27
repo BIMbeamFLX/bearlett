@@ -6,7 +6,7 @@
 import {bytesToHex, hexToBytes, sha256} from '../spec/bytes.ts'
 import {verifyCertificate} from '../spec/certificate.ts'
 import {PURPOSE, notePubkey, type Purpose} from '../spec/derivation.ts'
-import {encodeCp1} from '../spec/encoding.ts'
+import {encodeCp1, type BranchExport} from '../spec/encoding.ts'
 import {
   bearerNote,
   checkSpend,
@@ -246,11 +246,11 @@ export class Wallet {
     return mint
   }
 
-  /** The note link for a note this wallet made to hand out. */
+  /** The note link for a note this wallet made or chose to hand out. */
   noteLink(q: Hex): string {
     const note = this.state.notes[q]
-    if (!note || note.spend.kind === 'key')
-      throw new Error('Only bearer notes are handed out as links.')
+    if (!note || note.role !== 'outgoing')
+      throw new Error('Only notes handed out have links.')
     return buildNoteLink({
       endpoint: this.mint(note.mint).withdrawLink,
       k1: this.spendOf(note),
@@ -643,6 +643,28 @@ export class Wallet {
     await this.runBurn({purpose: 'rotate', mint: note.mint, inputs: [note], p1})
   }
 
+  /**
+   * Paying offline: hands out a whole note of this wallet's own as it is.
+   * Its spend is signed here without asking the mint, and like any sent
+   * note it can be taken back until the recipient rotates it.
+   */
+  async handOut(q: Hex, memo?: string): Promise<Note> {
+    const note = this.state.notes[q]
+    if (!note || note.role !== 'own' || note.status !== 'live')
+      throw new Error('Only a live note of your own can be handed out.')
+    await this.commit(state => {
+      Object.assign(state.notes[q], {role: 'outgoing', updatedAt: this.now()})
+      if (memo) state.notes[q].memo = memo
+      this.log(state, {
+        kind: 'send',
+        mint: note.mint,
+        amountMsat: note.amountMsat,
+        text: 'Handed out a whole note'
+      })
+    })
+    return this.state.notes[q]
+  }
+
   /** Takes back a sent note nobody has rotated yet. */
   async reclaim(q: Hex): Promise<void> {
     const note = this.state.notes[q]
@@ -677,37 +699,45 @@ export class Wallet {
     )
   }
 
-  /**
-   * Internal transfer: pays a Lightning Address at the same mint by minting
-   * straight onto the payee's purpose-2 key, retrying at the next index
-   * whenever SERVICE says the hinted one is already in use.
-   */
+  /** Internal transfer: pays a Lightning Address at the same mint. */
   async transfer(pay: PayRequest, amountMsat: number): Promise<void> {
     if (!pay.cpub || !pay.withdrawLink)
       throw new Error('This address takes no internal transfers.')
-    const domain = hostOf(pay.withdrawLink)
+    await this.transferToBranch(
+      hostOf(pay.withdrawLink),
+      amountMsat,
+      pay.cpub,
+      `Sent to ${pay.identifier ?? 'an address'}`
+    )
+  }
+
+  /**
+   * Internal transfer onto someone's published branch (a `text/cpub`
+   * hint): mints straight onto their purpose-2 key, retrying at the next
+   * index whenever SERVICE says the hinted one is already in use. Returns
+   * the key that was paid.
+   */
+  async transferToBranch(
+    domain: string,
+    amountMsat: number,
+    cpub: {branch: BranchExport; index: number},
+    text: string
+  ): Promise<Hex> {
     for (let attempt = 0; attempt < MAX_INDEX_RETRIES; attempt++) {
-      const q = notePubkey(
-        pay.cpub.branch,
-        PURPOSE.lightningAddress,
-        pay.cpub.index + attempt
+      const q = bytesToHex(
+        notePubkey(cpub.branch, PURPOSE.lightningAddress, cpub.index + attempt)
       )
       try {
         await this.spendInto(
           domain,
           amountMsat,
-          {q: bytesToHex(q), label: 'transfer'},
+          {q, label: 'transfer'},
           'transfer'
         )
         await this.commit(state =>
-          this.log(state, {
-            kind: 'transfer',
-            mint: domain,
-            amountMsat,
-            text: `Sent to ${pay.identifier ?? 'an address'}`
-          })
+          this.log(state, {kind: 'transfer', mint: domain, amountMsat, text})
         )
-        return
+        return q
       } catch (err) {
         if (!(err instanceof ServiceError && reason.alreadyInUse(err.reason)))
           throw err
@@ -885,7 +915,18 @@ export class Wallet {
 
   /** The callback comes from the informational GET; any live input will do. */
   private async lookupCallback(domain: string, note: Note): Promise<string> {
-    const info = await this.lookup(domain, note.q)
+    let info: NoteInfo | null
+    try {
+      info = await this.lookup(domain, note.q)
+    } catch (err) {
+      // e.g. taking back a note its recipient has rotated already
+      if (err instanceof ServiceError && reason.spent(err.reason))
+        await this.commit(state => {
+          state.notes[note.q].status = 'spent'
+          state.notes[note.q].updatedAt = this.now()
+        })
+      throw err
+    }
     if (!info) throw new Error('The mint does not know this note.')
     return info.callback
   }
@@ -982,6 +1023,26 @@ export class Wallet {
       }
     }
     if (first) throw first
+  }
+
+  /** Re-reads a note's status from its mint, e.g. after handing it out. */
+  async refresh(q: Hex): Promise<void> {
+    await this.refreshNote(q)
+  }
+
+  /**
+   * Whether the mint answers right now: a lookup of one of this wallet's
+   * notes there, which changes nothing. Behind a captive portal it does not.
+   */
+  async reachable(domain: string): Promise<boolean> {
+    const [note] = this.notes({mint: domain, status: 'live'})
+    if (!note) return false
+    try {
+      await this.lookup(domain, note.q)
+      return true
+    } catch (err) {
+      return !(err instanceof TransportError)
+    }
   }
 
   /** Re-reads one note's status from its mint. */

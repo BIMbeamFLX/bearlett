@@ -1,6 +1,7 @@
 // What differs between the web app and the Hangar napplet, in one place.
 import type {Net} from '../lnurl/net.ts'
 import type {Store} from '../wallet/store.ts'
+import type {TollGateHttp} from '../tollgate/tollgate.ts'
 
 export type Platform = {
   kind: 'web' | 'napplet'
@@ -8,6 +9,8 @@ export type Platform = {
   store: Store
   /** a camera to scan QR codes with */
   canScan: boolean
+  /** HTTP-01 to TollGates: a napplet reaches nothing but GETs through its shell */
+  tollgate?: TollGateHttp
 }
 
 /**

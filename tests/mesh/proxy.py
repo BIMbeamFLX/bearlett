@@ -1,11 +1,15 @@
-# Forwards TCP from this node's FIPS address (port 80) to the mock mint on
-# 127.0.0.1:3338, inside node B's namespace: the mock only listens on
-# loopback, while mesh peers reach node B at its fips0 address.
+# Forwards TCP from this node's FIPS address to a service on loopback,
+# inside node B's namespace: the mock mint (127.0.0.1:3338, the default) and
+# the reference TollGate only listen on loopback, while mesh peers reach
+# node B at its fips0 address.
+#
+#   python3 proxy.py <fips0 address> <port> [<loopback port>]
 import asyncio
 import sys
 
 LISTEN_HOST, LISTEN_PORT = sys.argv[1], int(sys.argv[2])
-TARGET_HOST, TARGET_PORT = '127.0.0.1', 3338
+TARGET_HOST = '127.0.0.1'
+TARGET_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 3338
 
 
 async def pipe(reader, writer):

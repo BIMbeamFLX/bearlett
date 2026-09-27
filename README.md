@@ -36,6 +36,10 @@ draft's test vectors 1-5 byte for byte.
 - **Register a Lightning Address** at an lnurl-mint (web app only: the
   Hangar lets napplets read from mints, not post to them).
 - **Import** notes made by the Bearlett before the rebuild (September 2026).
+- **Pay a TollGate** for network access (web app only), per a draft TIP in
+  [docs/TOLLGATE-LNURLCASH-TIP.md](docs/TOLLGATE-LNURLCASH-TIP.md): the
+  exact price onto the TollGate's own key while the mint is in reach, and
+  a whole note signed offline behind its captive portal.
 
 ## How it is built
 
@@ -44,6 +48,7 @@ draft's test vectors 1-5 byte for byte.
 | Spec core | `src/spec` | LUD-25 itself: encodings (`cp1 ck1 cw1 cs1 cx1`), taproot leaves and output keys, the canonical spend transaction and its sighash, notes and spends, certificates, the purpose-split derivation, and a small BIP-342 evaluator for offline checks. No I/O. |
 | LNURL | `src/lnurl` | payRequests (LUD-06/12/16/21), the withdraw endpoint and its callback (LUD-03 as LUD-25 extends it), links and inputs. The network is a port. |
 | Wallet | `src/wallet` | The flows, a journal of every mint call that changes state, the sealed seed and bookkeeping, the key ring. |
+| TollGate | `src/tollgate` | The draft TIP's customer side: the TollGate's signed advertisement (a Nostr event), its offers, what paying will do, and delivering a payment over HTTP-01. |
 | Platform | `src/platform` | Ports: `fetch` and `localStorage` for the web app; the shell's NAP-RESOURCE and storage for the napplet. |
 | UI | `src/ui` | One Solid app for both homes, in the Nappelin Hypershell chrome, repainted by NAP-THEME. |
 

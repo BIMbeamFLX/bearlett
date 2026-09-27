@@ -118,6 +118,17 @@ describe('handing out and receiving', () => {
     expect(alice.balanceMsat()).toBe(10_000)
   })
 
+  it('marks a note spent when taking it back finds it rotated', async () => {
+    const mint = await start()
+    const alice = await walletAt(mint, 10_000)
+    const bob = await walletAt(mint)
+    const sent = await alice.send(hostOfMint(mint), 4_000)
+    await bob.receive(parseNoteLink(alice.noteLink(sent.q))!)
+    await expect(alice.reclaim(sent.q)).rejects.toThrow(/already spent/)
+    expect(alice.snapshot.notes[sent.q].status).toBe('spent')
+    expect(alice.notes({role: 'outgoing', status: 'live'})).toEqual([])
+  })
+
   it('keeps a note received offline and rotates it once the mint answers', async () => {
     const mint = await start()
     const alice = await walletAt(mint, 10_000)

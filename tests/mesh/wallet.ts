@@ -1,13 +1,16 @@
 // Bearlett's wallet core on FIPS node A, paying with LNURLcash notes at a
-// mint that exists only on the mesh, as http://<npub of node B>.fips.
+// mint that exists only on the mesh, as http://<npub of node B>.fips, and
+// paying a TollGate there, at http://<npub of node B>.fips:2121.
 //
 //   node tests/mesh/wallet.ts <npub of node B>
 import {Wallet} from '../../src/wallet/wallet.ts'
 import {memoryStore} from '../../src/wallet/store.ts'
 import {newMnemonic} from '../../src/wallet/vault.ts'
-import {fetchNet} from '../../src/platform/web.ts'
+import {fetchNet, fetchTollGate} from '../../src/platform/web.ts'
 import {parseNoteLink} from '../../src/lnurl/links.ts'
 import {decodeSpend} from '../../src/spec/notes.ts'
+import {parseAdvertisement} from '../../src/tollgate/tollgate.ts'
+import {choicesFor, payTollGate} from '../../src/tollgate/customer.ts'
 
 const MINT = `${process.argv[2]}.fips`
 const PAY = `http://${MINT}/.well-known/lnurlp/mint`
@@ -77,6 +80,42 @@ try {
   check(
     'recovered from the words over the mesh',
     restored.balanceMsat() === alice.balanceMsat()
+  )
+
+  // ---- a TollGate on the mesh, taking notes of the mesh mint ----
+  const GATE = `http://${MINT}:2121/`
+  const ad = parseAdvertisement(await fetchTollGate.get(GATE))
+  check(
+    'the TollGate advertises the mesh mint, and its key there',
+    ad.offers[0]?.mint === `http://${MINT}/w` && Boolean(ad.offers[0]?.cpub)
+  )
+  const carol = await wallet()
+  await carol.addMint(PAY)
+  const topUp = await carol.requestMint(MINT, 20_000)
+  await pay(topUp.verify!)
+  await carol.settleMint(topUp)
+  const [choice] = choicesFor(ad, carol)
+  const byKey = await payTollGate(carol, fetchTollGate, GATE, ad, choice, 3)
+  check(
+    'paid the TollGate by key over the mesh',
+    byKey.payment.via === 'key' && byKey.session.allotment === 3 * 60_000,
+    byKey.payment.body
+  )
+  // behind a portal: the TollGate answers, the mint does not
+  await carol.setOffline(true)
+  const whole = await payTollGate(carol, fetchTollGate, GATE, ad, choice, 2)
+  check(
+    'paid it with a whole note while the mint was out of reach',
+    whole.payment.via === 'whole note' &&
+      whole.payment.amountMsat === 15_000 &&
+      whole.session.allotment === (3 + 15) * 60_000,
+    `${whole.session.allotment} ms in all`
+  )
+  await carol.setOffline(false)
+  await carol.settle()
+  check(
+    'the TollGate rotated the note it was handed',
+    carol.snapshot.notes[whole.payment.q]?.status === 'spent'
   )
 } catch (err) {
   failed++
