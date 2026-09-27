@@ -885,7 +885,18 @@ export class Wallet {
 
   /** The callback comes from the informational GET; any live input will do. */
   private async lookupCallback(domain: string, note: Note): Promise<string> {
-    const info = await this.lookup(domain, note.q)
+    let info: NoteInfo | null
+    try {
+      info = await this.lookup(domain, note.q)
+    } catch (err) {
+      // e.g. taking back a note its recipient has rotated already
+      if (err instanceof ServiceError && reason.spent(err.reason))
+        await this.commit(state => {
+          state.notes[note.q].status = 'spent'
+          state.notes[note.q].updatedAt = this.now()
+        })
+      throw err
+    }
     if (!info) throw new Error('The mint does not know this note.')
     return info.callback
   }
