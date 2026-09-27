@@ -38,6 +38,7 @@ import {
 } from '../lnurl/withdraw.ts'
 import {KeyRing, type KeyRef} from './keys.ts'
 import {selectNotes} from './select.ts'
+import {legacyCandidates} from './legacy.ts'
 import {
   ACTIVITY_LIMIT,
   emptyState,
@@ -1156,6 +1157,75 @@ export class Wallet {
     await this.commit(state => {
       delete state.addresses[domain]
     })
+  }
+
+  /**
+   * The one-time import (legacy.ts): walks the old Bearlett's two ladders at
+   * a mint and rotates whatever is still outstanding into today's keys. The
+   * old wallet derived with the host as the URL gave it, port included, so
+   * both spellings are walked when they differ.
+   */
+  async importLegacy(domain: string): Promise<number> {
+    const url = new URL(this.mint(domain).withdrawLink)
+    const spellings = [
+      ...new Set([url.hostname.toLowerCase(), url.host.toLowerCase()])
+    ]
+    const gapLimit = this.state.settings.gapLimit
+    let found = 0
+    for (const spelling of spellings) {
+      const branch = this.keys.legacyBranch(spelling)
+      let gap = 0
+      for (let index = 0; gap < gapLimit; index++) {
+        let used = false
+        for (const candidate of legacyCandidates(branch, domain, index)) {
+          let info: NoteInfo | null
+          try {
+            info = await this.lookup(domain, candidate.q)
+          } catch (err) {
+            if (err instanceof ServiceError && reason.spent(err.reason)) {
+              used = true
+              continue
+            }
+            throw err
+          }
+          if (!info) continue
+          used = true
+          if (this.state.notes[candidate.q]) continue
+          found++
+          await this.commit(state => {
+            state.notes[candidate.q] = {
+              q: candidate.q,
+              mint: domain,
+              amountMsat: info!.amountMsat,
+              spend:
+                candidate.spend === 'preimage'
+                  ? {kind: 'preimage', preimage: candidate.k1}
+                  : {kind: 'k1', k1: candidate.k1},
+              role: 'incoming',
+              status: 'live',
+              createdAt: this.now(),
+              updatedAt: this.now()
+            }
+          })
+        }
+        gap = used ? 0 : gap + 1
+      }
+    }
+    for (const note of this.notes({
+      mint: domain,
+      role: 'incoming',
+      status: 'live'
+    }))
+      await this.claim(note.q)
+    if (found)
+      await this.commit(state =>
+        this.log(state, {
+          kind: 'recover',
+          mint: domain,
+          text: `Imported ${found} notes from the old Bearlett`
+        })
+      )
+    return found
   }
 
   /** Whether sent notes were rotated by their recipients yet. */

@@ -40,6 +40,11 @@ export class KeyRing {
     return node
   }
 
+  /** The branch node itself, for the one-time import in legacy.ts only. */
+  legacyBranch(domain: string): HDKey {
+    return this.branch(domain)
+  }
+
   /** P and chain code: the watch-only export, cx1 on the wire. */
   export(domain: string): BranchExport {
     return branchExport(this.branch(domain))

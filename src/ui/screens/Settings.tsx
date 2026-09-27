@@ -58,6 +58,24 @@ export const Settings = (props: {
                     <button
                       class="link"
                       onClick={() =>
+                        run(
+                          `Looking for old notes at ${mint.domain}`,
+                          async () => {
+                            const found = await w().importLegacy(mint.domain)
+                            notify(
+                              found
+                                ? `Moved ${found} notes from the old Bearlett.`
+                                : 'No notes from the old Bearlett here.'
+                            )
+                          }
+                        )
+                      }
+                    >
+                      Import from old Bearlett
+                    </button>
+                    <button
+                      class="link"
+                      onClick={() =>
                         run('Removing', () => w().removeMint(mint.domain))
                       }
                     >
