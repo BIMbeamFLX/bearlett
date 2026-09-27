@@ -3,7 +3,7 @@
 // transfers. LUD-21 verify for settlement.
 import {decodeCx1, type BranchExport} from '../spec/encoding.ts'
 import {ServiceError, TransportError} from './errors.ts'
-import {invoiceAmountMsat} from './links.ts'
+import {fromLud17, invoiceAmountMsat} from './links.ts'
 import {requireServiceUrl, type Net} from './net.ts'
 
 export type MintFee = {baseMsat: number; ppm: number}
@@ -82,8 +82,11 @@ export const parsePayRequest = (
   requireServiceUrl(body.callback)
   const metadata = typeof body.metadata === 'string' ? body.metadata : '[]'
   const entries = parseMetadata(metadata)
+  // LUD-17 lets it arrive as lnurlw://
   const withdrawLink =
-    typeof body.withdrawLink === 'string' ? body.withdrawLink : undefined
+    typeof body.withdrawLink === 'string'
+      ? fromLud17(body.withdrawLink)
+      : undefined
   if (withdrawLink) requireServiceUrl(withdrawLink)
   return {
     url,

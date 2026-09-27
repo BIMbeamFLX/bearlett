@@ -102,7 +102,8 @@ export const buildNoteLink = (link: NoteLink): string => {
 
 // ---- BOLT-11 ----
 
-const INVOICE = /^ln(bcrt|bc|tbs|tb|sb)(\d*[munp]?)1[02-9ac-hj-np-z]+$/
+// the amount is all a wallet reads here: the mint that pays checks the rest
+const INVOICE = /^ln(bcrt|bc|tbs|tb|sb)(\d*[munp]?)1[0-9a-z]+$/
 
 /** Whether the text is a BOLT-11 invoice (optionally lightning:-prefixed). */
 export const isInvoice = (text: string): boolean =>

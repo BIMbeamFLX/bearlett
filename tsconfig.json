@@ -12,6 +12,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "skipLibCheck": true
