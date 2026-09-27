@@ -12,21 +12,22 @@ import {
 import {schnorr} from '@noble/curves/secp256k1.js'
 import {ProtocolError, TransportError} from '../../src/lnurl/errors.ts'
 import type {Net} from '../../src/lnurl/net.ts'
-import {fetchNet} from '../../src/platform/web.ts'
+import {fetchNet, fetchTollGate} from '../../src/platform/web.ts'
 import {parseNoteLink} from '../../src/lnurl/links.ts'
 import {fetchNoteInfo} from '../../src/lnurl/withdraw.ts'
 import {bytesToHex, randomBytes} from '../../src/spec/bytes.ts'
 import {encodeCp1, encodeCx1} from '../../src/spec/encoding.ts'
 import {isValidEvent, signEvent} from '../../src/tollgate/nostr.ts'
+import {formatAllotment} from '../../src/ui/format.ts'
 import {
   choicesFor,
   deliverPayment,
   payTollGate,
+  planPayment,
   preparePayment,
   type Retry
 } from '../../src/tollgate/customer.ts'
 import {
-  fetchTollGateHttp,
   keyPaymentBody,
   parseAdvertisement,
   parseKeyPayment,
@@ -306,6 +307,15 @@ describe('addresses and bodies', () => {
     expect(parseKeyPayment('lnurlw://mint.example/w?k1=00')).toBeNull()
   })
 
+  it('shows an allotment in the unit a person thinks in', () => {
+    expect(formatAllotment(5 * MINUTE, 'milliseconds')).toBe('5 min')
+    expect(formatAllotment(90 * MINUTE, 'milliseconds')).toBe('1.5 h')
+    expect(formatAllotment(30_000, 'milliseconds')).toBe('30 s')
+    expect(formatAllotment(22_020_096, 'bytes')).toBe('22 MB')
+    expect(formatAllotment(1_500, 'bytes')).toBe('1.5 kB')
+    expect(formatAllotment(512, 'bytes')).toBe('512 bytes')
+  })
+
   it('charges at least the minimum purchase', () => {
     const offer = {mint: 'https://mint.example/w', priceMsat: 1000, minSteps: 5}
     expect(priceMsat(offer, 1)).toBe(5000)
@@ -340,14 +350,14 @@ const setup = async (options: Parameters<typeof gateAt>[1] = {}) => {
   const mint = await start()
   const gate = await gateAt(mint, options)
   const wallet = await walletAt(mint, 50_000)
-  const ad = parseAdvertisement(await fetchTollGateHttp.get(gate.url))
+  const ad = parseAdvertisement(await fetchTollGate.get(gate.url))
   const [choice] = choicesFor(ad, wallet)
   return {mint, gate, wallet, ad, choice, domain: hostOfMint(mint)}
 }
 
 /** HTTP-01 from another device on the same network. */
 const fromDevice = (device: string): TollGateHttp => ({
-  get: url => fetchTollGateHttp.get(url),
+  get: url => fetchTollGate.get(url),
   post: async (url, body) =>
     (
       await fetch(url, {
@@ -364,7 +374,7 @@ describe('paying a TollGate', () => {
     expect(choice.offer.cpub).toBeDefined()
     const receipt = await payTollGate(
       wallet,
-      fetchTollGateHttp,
+      fetchTollGate,
       gate.url,
       ad,
       choice,
@@ -390,7 +400,7 @@ describe('paying a TollGate', () => {
     const {gate, wallet, ad, choice} = await setup()
     const receipt = await payTollGate(
       wallet,
-      fetchTollGateHttp,
+      fetchTollGate,
       gate.url,
       ad,
       choice,
@@ -420,7 +430,7 @@ describe('paying a TollGate', () => {
     await wallet.setOffline(true)
     const receipt = await payTollGate(
       wallet,
-      fetchTollGateHttp,
+      fetchTollGate,
       gate.url,
       ad,
       choice,
@@ -447,7 +457,7 @@ describe('paying a TollGate', () => {
       refuse: 'upstream-error-not-connected'
     })
     await expect(
-      payTollGate(wallet, fetchTollGateHttp, gate.url, ad, choice, 5, fast)
+      payTollGate(wallet, fetchTollGate, gate.url, ad, choice, 5, fast)
     ).rejects.toMatchObject({
       name: 'TollGateNotice',
       code: 'upstream-error-not-connected'
@@ -460,7 +470,7 @@ describe('paying a TollGate', () => {
   it('takes the note back when the answer is not signed by the TollGate', async () => {
     const {gate, wallet, ad, choice} = await setup()
     const forging: TollGateHttp = {
-      get: url => fetchTollGateHttp.get(url),
+      get: url => fetchTollGate.get(url),
       post: async () =>
         signEvent(randomBytes(32), {
           kind: 1022,
@@ -480,9 +490,9 @@ describe('paying a TollGate', () => {
       const {gate, wallet, ad, choice} = await setup({byKey})
       let lose = 1
       const lossy: TollGateHttp = {
-        get: url => fetchTollGateHttp.get(url),
+        get: url => fetchTollGate.get(url),
         post: async (url, body) => {
-          const answer = await fetchTollGateHttp.post(url, body)
+          const answer = await fetchTollGate.post(url, body)
           if (lose-- > 0) throw new TransportError('The answer was lost.')
           return answer
         }
@@ -506,13 +516,13 @@ describe('paying a TollGate', () => {
       const mint = await start({retriedMutation})
       const gate = await gateAt(mint, {net: losing(isBurn, 1)})
       const wallet = await walletAt(mint, 50_000)
-      const ad = parseAdvertisement(await fetchTollGateHttp.get(gate.url))
+      const ad = parseAdvertisement(await fetchTollGate.get(gate.url))
       const [choice] = choicesFor(ad, wallet)
       const seen: number[] = []
       const watching: TollGateHttp = {
-        get: url => fetchTollGateHttp.get(url),
+        get: url => fetchTollGate.get(url),
         post: async (url, body) => {
-          const answer = (await fetchTollGateHttp.post(url, body)) as {
+          const answer = (await fetchTollGate.post(url, body)) as {
             kind: number
           }
           seen.push(answer.kind)
@@ -551,18 +561,11 @@ describe('paying a TollGate', () => {
     }
     const gate = await gateAt(mint, {net: upstream})
     const wallet = await walletAt(mint, 50_000)
-    const ad = parseAdvertisement(await fetchTollGateHttp.get(gate.url))
+    const ad = parseAdvertisement(await fetchTollGate.get(gate.url))
     const [choice] = choicesFor(ad, wallet)
     const payment = await preparePayment(wallet, choice, 5, true)
     await expect(
-      deliverPayment(
-        wallet,
-        fetchTollGateHttp,
-        gate.url,
-        ad.pubkey,
-        payment,
-        fast
-      )
+      deliverPayment(wallet, fetchTollGate, gate.url, ad.pubkey, payment, fast)
     ).rejects.toMatchObject({code: 'payment-outcome-unknown'})
     // not taken back: the TollGate may still grant it
     expect(wallet.snapshot.notes[payment.q]).toMatchObject({
@@ -572,7 +575,7 @@ describe('paying a TollGate', () => {
     down = false
     const session = await deliverPayment(
       wallet,
-      fetchTollGateHttp,
+      fetchTollGate,
       gate.url,
       ad.pubkey,
       payment,
@@ -582,11 +585,39 @@ describe('paying a TollGate', () => {
     expect(wallet.snapshot.notes[payment.q].status).toBe('spent')
   })
 
+  it('shows before paying what paying does: the exact price online, a whole note offline', async () => {
+    const {wallet, choice} = await setup({byKey: true})
+    expect(planPayment(wallet, choice, 5, true)).toEqual({
+      via: 'key',
+      amountMsat: 5000,
+      steps: 5
+    })
+    expect(planPayment(wallet, choice, 5, false)).toMatchObject({
+      via: 'whole note',
+      amountMsat: 49_000,
+      steps: 49
+    })
+    expect(
+      planPayment(
+        wallet,
+        {...choice, offer: {...choice.offer, cpub: undefined}},
+        5,
+        true
+      )?.via
+    ).toBe('note')
+    // offline, nothing covers more than the one note holds
+    expect(planPayment(wallet, choice, 50, false)).toBeNull()
+    await expect(preparePayment(wallet, choice, 50, false)).rejects.toThrow(
+      /out of reach/
+    )
+    expect(wallet.balanceMsat()).toBe(49_000)
+  })
+
   it('charges the minimum purchase for fewer steps', async () => {
     const {gate, wallet, ad, choice} = await setup({byKey: true, minSteps: 10})
     const receipt = await payTollGate(
       wallet,
-      fetchTollGateHttp,
+      fetchTollGate,
       gate.url,
       ad,
       choice,
@@ -602,7 +633,7 @@ describe('paying a TollGate', () => {
     const other = await start()
     const gate = await gateAt(mint)
     const wallet = await walletAt(other, 50_000)
-    const ad = parseAdvertisement(await fetchTollGateHttp.get(gate.url))
+    const ad = parseAdvertisement(await fetchTollGate.get(gate.url))
     expect(choicesFor(ad, wallet)).toEqual([])
   })
 })
@@ -612,10 +643,10 @@ describe('what the air can do', () => {
     const {mint, gate, wallet, ad, choice} = await setup()
     const thief = await walletAt(mint)
     const racing: TollGateHttp = {
-      get: url => fetchTollGateHttp.get(url),
+      get: url => fetchTollGate.get(url),
       post: async (url, body) => {
         await thief.receive(parseNoteLink(body)!)
-        return fetchTollGateHttp.post(url, body)
+        return fetchTollGate.post(url, body)
       }
     }
     await expect(
@@ -629,10 +660,10 @@ describe('what the air can do', () => {
   it('lets an eavesdropper take a key payment’s session, never its sats', async () => {
     const {gate, wallet, ad, choice} = await setup({byKey: true})
     const racing: TollGateHttp = {
-      get: url => fetchTollGateHttp.get(url),
+      get: url => fetchTollGate.get(url),
       post: async (url, body) => {
         await fromDevice('thief').post(url, body)
-        return fetchTollGateHttp.post(url, body)
+        return fetchTollGate.post(url, body)
       }
     }
     await expect(
@@ -650,15 +681,12 @@ describe('the reference TollGate', () => {
     const gate = await gateAt(mint, {byKey: true})
     const stranger = await walletAt(other, 20_000)
     const note = await stranger.send(hostOfMint(other), 5000)
-    const answer = await fetchTollGateHttp.post(
-      gate.url,
-      stranger.noteLink(note.q)
-    )
+    const answer = await fetchTollGate.post(gate.url, stranger.noteLink(note.q))
     expect(() => parsePaymentAnswer(answer, gate.pubkey)).toThrow(
       /does not accept/
     )
     const key = encodeCp1(schnorr.getPublicKey(randomBytes(32)))
-    const byKey = await fetchTollGateHttp.post(gate.url, `${key}@${mint.url}/w`)
+    const byKey = await fetchTollGate.post(gate.url, `${key}@${mint.url}/w`)
     expect(() => parsePaymentAnswer(byKey, gate.pubkey)).toThrow(
       /not one of this TollGate/
     )
@@ -670,15 +698,13 @@ describe('the reference TollGate', () => {
     const wallet = await walletAt(mint, 50_000)
     const note = await wallet.send(hostOfMint(mint), 5000)
     const link = wallet.noteLink(note.q)
-    const answer = await fetchTollGateHttp.post(gate.url, link)
+    const answer = await fetchTollGate.post(gate.url, link)
     expect(() => parsePaymentAnswer(answer, gate.pubkey)).toThrow(
       TollGateNotice
     )
-    const info = await fetchNoteInfo(
-      (await import('../../src/platform/web.ts')).fetchNet,
-      parseNoteLink(link)!.endpoint,
-      {k1: parseNoteLink(link)!.k1}
-    )
+    const info = await fetchNoteInfo(fetchNet, parseNoteLink(link)!.endpoint, {
+      k1: parseNoteLink(link)!.k1
+    })
     expect(info.amountMsat).toBe(5000)
   })
 
@@ -696,7 +722,7 @@ describe('the reference TollGate', () => {
       },
       generateSecretKey()
     )
-    const answer = await fetchTollGateHttp.post(gate.url, JSON.stringify(event))
+    const answer = await fetchTollGate.post(gate.url, JSON.stringify(event))
     expect(parsePaymentAnswer(answer, gate.pubkey).allotment).toBe(3 * MINUTE)
   })
 })

@@ -1,6 +1,7 @@
-// Three ways out: a note link anyone can redeem, paying an invoice or a
+// The ways out: a note link anyone can redeem, paying an invoice or a
 // Lightning Address (as an internal transfer when the payee is at one of
-// your mints), and minting straight onto someone's note key.
+// your mints), minting straight onto someone's note key, a timelock, and,
+// in the web app, paying a TollGate for network access.
 import {createMemo, createSignal, Match, Show, Switch} from 'solid-js'
 import {Action, Busy, Copy, Field, MintSelect, Qr, Scanner} from '../kit.tsx'
 import {formatSats, parseSats} from '../format.ts'
@@ -9,8 +10,9 @@ import {classifyInput, invoiceAmountMsat} from '../../lnurl/links.ts'
 import type {PayRequest} from '../../lnurl/pay.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 import type {Platform} from '../../platform/platform.ts'
+import {TollGate} from './TollGate.tsx'
 
-type Tab = 'note' | 'pay' | 'key' | 'lock'
+type Tab = 'note' | 'pay' | 'key' | 'lock' | 'tollgate'
 
 export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
   const w = () => props.wallet()
@@ -147,6 +149,14 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
         >
           Lock
         </button>
+        <Show when={props.platform.tollgate}>
+          <button
+            aria-current={tab() === 'tollgate' ? 'page' : undefined}
+            onClick={() => setTab('tollgate')}
+          >
+            TollGate
+          </button>
+        </Show>
       </nav>
       <section class="panel">
         <Show
@@ -319,6 +329,9 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
                 />
               </Field>
               <Action onClick={lockNow}>Lock</Action>
+            </Match>
+            <Match when={tab() === 'tollgate' && props.platform.tollgate}>
+              {http => <TollGate wallet={props.wallet} http={http()} />}
             </Match>
           </Switch>
         </Show>

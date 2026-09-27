@@ -3,7 +3,7 @@
 // (TIP-01 kind 10021) names the mints it accepts, and HTTP-01's POST / takes
 // either a note link (by note) or `cp1<key>@<withdraw URL>` (by key).
 import {decodeCp1, decodeCx1, type BranchExport} from '../spec/encoding.ts'
-import {ProtocolError, TransportError} from '../lnurl/errors.ts'
+import {ProtocolError} from '../lnurl/errors.ts'
 import {fromLud17} from '../lnurl/links.ts'
 import {isAllowedServiceUrl, plainHttpHost} from '../lnurl/net.ts'
 import {isValidEvent, tagValues, type NostrEvent} from './nostr.ts'
@@ -193,41 +193,8 @@ export const tollGateUrl = (input: string): string | null => {
   }
 }
 
+/** HTTP-01: GET / is the advertisement, POST / the payment. */
 export type TollGateHttp = {
   get(url: string): Promise<unknown>
   post(url: string, body: string): Promise<unknown>
-}
-
-const MAX_ANSWER_BYTES = 64 * 1024
-
-const ask = async (url: string, init: RequestInit): Promise<unknown> => {
-  if (!isTollGateUrl(url))
-    throw new ProtocolError(`Not a TollGate address: ${url}`)
-  let text: string
-  try {
-    const response = await fetch(url, {...init, redirect: 'error'})
-    text = await response.text()
-  } catch (err) {
-    throw new TransportError(
-      `No answer from the TollGate: ${(err as Error).message}`
-    )
-  }
-  if (text.length > MAX_ANSWER_BYTES)
-    throw new TransportError('The TollGate answer is too large.')
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new TransportError('The TollGate did not answer with an event.')
-  }
-}
-
-/** HTTP-01 over fetch: GET / is the advertisement, POST / the payment. */
-export const fetchTollGateHttp: TollGateHttp = {
-  get: url => ask(url, {}),
-  post: (url, body) =>
-    ask(url, {
-      method: 'POST',
-      body,
-      headers: {'content-type': 'text/plain'}
-    })
 }

@@ -64,12 +64,40 @@ export const wholeNoteFor = (
     .filter(note => note.amountMsat >= amountMsat)
     .sort((a, b) => a.amountMsat - b.amountMsat)[0] ?? null
 
+/** What paying will do, to show before it is done. */
+export type Plan = {via: Via; amountMsat: number; steps: number; note?: Note}
+
 /**
- * Makes the payment for `steps` (at least the offer's minimum). Online it
- * pays exactly: by key if the TollGate publishes its branch there, else by
- * a fresh bearer note. Offline it hands over the smallest whole note that
- * covers the price.
+ * Paying for `steps` (at least the offer's minimum). Online it pays the
+ * exact price: by key if the TollGate publishes its branch there, else by a
+ * fresh bearer note. Offline it hands over the smallest whole note that
+ * covers the price, and gets all of it in steps. Null: nothing covers it.
  */
+export const planPayment = (
+  wallet: Wallet,
+  choice: Choice,
+  steps: number,
+  online: boolean
+): Plan | null => {
+  const {offer, domain} = choice
+  const amountMsat = priceMsat(offer, steps)
+  if (online)
+    return {
+      via: offer.cpub ? 'key' : 'note',
+      amountMsat,
+      steps: stepsFor(offer, amountMsat)
+    }
+  const note = wholeNoteFor(wallet, domain, amountMsat)
+  if (!note) return null
+  return {
+    via: 'whole note',
+    amountMsat: note.amountMsat,
+    steps: stepsFor(offer, note.amountMsat),
+    note
+  }
+}
+
+/** Makes the payment planPayment describes: at the mint, or by handing a note over. */
 export const preparePayment = async (
   wallet: Wallet,
   choice: Choice,
@@ -77,37 +105,41 @@ export const preparePayment = async (
   online: boolean
 ): Promise<Payment> => {
   const {offer, domain} = choice
-  const amountMsat = priceMsat(offer, steps)
-  if (!online) {
-    const note = wholeNoteFor(wallet, domain, amountMsat)
-    if (!note)
-      throw new Error(
-        'No single note covers that, and the mint is out of reach to split one.'
-      )
-    await wallet.handOut(note.q, 'TollGate')
+  const plan = planPayment(wallet, choice, steps, online)
+  if (!plan)
+    throw new Error(
+      'No single note covers that, and the mint is out of reach to split one.'
+    )
+  if (plan.note) {
+    await wallet.handOut(plan.note.q, 'TollGate')
     return {
-      via: 'whole note',
-      body: wallet.noteLink(note.q),
-      amountMsat: note.amountMsat,
-      q: note.q
+      via: plan.via,
+      body: wallet.noteLink(plan.note.q),
+      amountMsat: plan.amountMsat,
+      q: plan.note.q
     }
   }
-  if (offer.cpub) {
+  if (plan.via === 'key' && offer.cpub) {
     const q = await wallet.transferToBranch(
       domain,
-      amountMsat,
+      plan.amountMsat,
       offer.cpub,
       'Paid a TollGate'
     )
     return {
       via: 'key',
       body: keyPaymentBody(encodeCp1(hexToBytes(q)), offer),
-      amountMsat,
+      amountMsat: plan.amountMsat,
       q
     }
   }
-  const note = await wallet.send(domain, amountMsat, 'TollGate')
-  return {via: 'note', body: wallet.noteLink(note.q), amountMsat, q: note.q}
+  const note = await wallet.send(domain, plan.amountMsat, 'TollGate')
+  return {
+    via: 'note',
+    body: wallet.noteLink(note.q),
+    amountMsat: plan.amountMsat,
+    q: note.q
+  }
 }
 
 /** A TollGate's answer while the mint has not confirmed its rotation yet. */
