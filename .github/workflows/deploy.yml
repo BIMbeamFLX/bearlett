@@ -1,4 +1,4 @@
-name: Package Bearlett napplets
+name: Package the Bearlett napplet
 
 on:
   workflow_dispatch:
@@ -16,14 +16,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npm run tsc
       - run: npm run build:napplet
-      - run: npm run build:notes
+      - run: npm run check:napplets
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: bearlett-napplets
+          name: bearlett-napplet
           include-hidden-files: true
-          path: |
-            dist-napplet/
-            dist-notes/
+          path: dist-napplet/
