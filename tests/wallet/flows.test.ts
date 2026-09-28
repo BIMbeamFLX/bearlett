@@ -52,7 +52,12 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
  * hash, a timestamp and an expiry. Its signature is zeros: the mint that
  * pays checks it, and the test mint pays anything.
  */
-const bolt11 = (terms: {hash: string; timestamp: number; expiry: number}) => {
+const bolt11 = (terms: {
+  hash: string
+  timestamp: number
+  expiry?: number
+  expiryWords?: number[]
+}) => {
   const number = (value: number, length: number) =>
     Array.from(
       {length},
@@ -67,7 +72,7 @@ const bolt11 = (terms: {hash: string; timestamp: number; expiry: number}) => {
   const words = [
     ...number(terms.timestamp, 7),
     ...field(1, bech32.toWords(hexToBytes(terms.hash))),
-    ...field(6, number(terms.expiry, 6)),
+    ...field(6, terms.expiryWords ?? number(terms.expiry ?? 3600, 6)),
     ...new Array(104).fill(0)
   ]
   return bech32.encode('lnbc100n', words, false)
@@ -284,6 +289,21 @@ describe('paying', () => {
     // once it can no longer be paid, it is forgotten
     now += 31 * 24 * 3600 * 1000
     expect(wallet.invoiceStatus(invoice)).toBeNull()
+  })
+
+  it('keeps a paid invoice for good when its expiry is too long to read', async () => {
+    const mint = await start({baseFeeMsat: 1000})
+    const wallet = await walletAt(mint, 50_000)
+    const hash = 'cd'.repeat(32)
+    const invoice = bolt11({
+      hash,
+      timestamp: Math.floor(Date.now() / 1000),
+      expiryWords: new Array(11).fill(31)
+    })
+    await wallet.pay(hostOfMint(mint), invoice)
+    await sleep(60)
+    await wallet.settle()
+    expect(wallet.snapshot.paid[hash]).toBe(Number.MAX_SAFE_INTEGER)
   })
 
   it('does not pay an invoice again once it is paid', async () => {

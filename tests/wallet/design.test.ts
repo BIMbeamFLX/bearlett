@@ -104,6 +104,43 @@ describe('a note design', () => {
     expect(await store.get(DESIGN_KEY)).toBe(sealed)
   })
 
+  it('opens even when the design cannot move yet, and moves it on a later opening', async () => {
+    const inner = memoryStore()
+    let failing = true
+    const store = {
+      ...inner,
+      async set(key: string, value: string) {
+        if (failing && key === DESIGN_KEY) throw new Error('quota exceeded')
+        await inner.set(key, value)
+      }
+    }
+    const words = newMnemonic()
+    const created = await Wallet.create({net: fetchNet, store}, words, '')
+    await created.setGapLimit(20)
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    state.settings.design = {...design, image}
+    await store.set(STATE_KEY, await sealJson(key, state))
+    // the store refuses the design: the wallet opens, and shows it anyway
+    const first = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(first.design).toEqual({...design, image})
+    expect(await store.get(DESIGN_KEY)).toBeNull()
+    // a design this version cannot read never keeps the wallet shut either
+    const odd = await openJson(key, (await store.get(STATE_KEY))!)
+    odd.settings.design = {...design, ink: 'no colour'}
+    await store.set(STATE_KEY, await sealJson(key, odd))
+    failing = false
+    const unreadable = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(unreadable.design).toBeUndefined()
+    // with a readable one back and the store working, it moves
+    odd.settings.design = {...design, image}
+    await store.set(STATE_KEY, await sealJson(key, odd))
+    const moved = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(moved.design).toEqual({...design, image})
+    expect(moved.snapshot.settings.design).toBeUndefined()
+    expect(await store.get(DESIGN_KEY)).not.toBeNull()
+  })
+
   it('moves a design the state held before to its own key', async () => {
     const store = memoryStore()
     const words = newMnemonic()

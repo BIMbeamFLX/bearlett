@@ -167,16 +167,31 @@ const CARD_RECORD_KEPT_MS = 7 * DAY_MS
 /** how long an invoice that is not BOLT-11 is remembered as paid */
 const PAID_TEXT_KEPT_MS = 30 * DAY_MS
 
+/** A design as this version reads it, or nothing. */
+const readDesign = (value: unknown): NoteDesign | undefined => {
+  try {
+    return parseDesign(value)
+  } catch {
+    return undefined
+  }
+}
+
 /** What a paid invoice is remembered by: its payment hash, or its text. */
 const paidKey = (invoice: string): string =>
   invoiceTerms(invoice)?.paymentHash ?? invoiceText(invoice)
 
-/** When a paid invoice may be forgotten: once it can no longer be paid, a day at the least. */
+/**
+ * When a paid invoice may be forgotten: once it can no longer be paid, a day
+ * at the least. One that never expires is kept for good (a number JSON keeps).
+ */
 const forgetPaidAt = (invoice: string, now: number): number => {
   const terms = invoiceTerms(invoice)
   if (!terms) return now + PAID_TEXT_KEPT_MS
   const expires = (terms.timestamp + terms.expiry) * 1000
-  return Math.max(now + DAY_MS, expires + DAY_MS)
+  return Math.min(
+    Math.max(now + DAY_MS, expires + DAY_MS),
+    Number.MAX_SAFE_INTEGER
+  )
 }
 const cp1Of = (output: Output): string => encodeCp1(hexToBytes(output.q))
 const id = (): string => crypto.randomUUID()
@@ -268,10 +283,14 @@ export class Wallet {
     state.cardMints ??= {}
     state.cardKeys ??= {}
     state.cards ??= {}
-    // paid invoices before they were kept by payment hash: their text, for 30 days
+    // paid invoices from before they were kept by payment hash: by the key
+    // pay() looks them up by, for 30 days at least, or until they expire
     state.paid ??= {}
     for (const [text, at] of Object.entries(state.paidInvoices ?? {}))
-      state.paid[text] ??= at + PAID_TEXT_KEPT_MS
+      state.paid[paidKey(text)] ??= Math.max(
+        at + PAID_TEXT_KEPT_MS,
+        forgetPaidAt(text, at)
+      )
     delete state.paidInvoices
     let design: NoteDesign | undefined
     const sealedDesign = await ports.store.get(DESIGN_KEY)
@@ -282,9 +301,17 @@ export class Wallet {
         design = undefined
       }
     const wallet = new Wallet(ports, new KeyRing(seed), key, state, design)
-    // a design the state held, before it had a key of its own, moves there
+    // a design the state held, before it had a key of its own, moves there.
+    // Best effort: a store that fails, or a design no longer read, never
+    // keeps the wallet from opening; it is shown if it reads, and the next
+    // opening tries again.
     const kept = state.settings.design
-    if (kept) await wallet.setDesign(design ?? kept)
+    if (kept)
+      try {
+        await wallet.setDesign(design ?? kept)
+      } catch {
+        if (!design) wallet.noteDesign = readDesign(kept)
+      }
     return wallet
   }
 

@@ -1,9 +1,34 @@
 // The BOLT-11 fields a wallet remembers a payment by (src/lnurl/bolt11.ts),
 // read from the examples of BOLT #11 (lightning/bolts 11-payment-encoding.md).
+import {bech32} from '@scure/base'
 import {describe, expect, it} from 'vitest'
 import {invoiceTerms} from '../../src/lnurl/bolt11.ts'
+import {hexToBytes} from '../../src/spec/bytes.ts'
 
 const HASH = '0001020304050607080900010203040506070809000102030405060708090102'
+
+/** An invoice with these tagged fields after the payment hash, and a zero signature. */
+const invoice = (fields: [number, number[]][]) => {
+  const all: [number, number[]][] = [
+    [1, bech32.toWords(hexToBytes(HASH))],
+    ...fields
+  ]
+  const tagged = all.flatMap(([type, words]) => [
+    type,
+    Math.floor(words.length / 32),
+    words.length % 32,
+    ...words
+  ])
+  const timestamp = Array.from(
+    {length: 7},
+    (_, i) => Math.floor(1496314658 / 32 ** (6 - i)) % 32
+  )
+  return bech32.encode(
+    'lnbc100n',
+    [...timestamp, ...tagged, ...new Array(104).fill(0)],
+    false
+  )
+}
 
 describe('the terms of a BOLT-11 invoice', () => {
   it('reads the payment hash, the timestamp and the default expiry', () => {
@@ -46,6 +71,21 @@ describe('the terms of a BOLT-11 invoice', () => {
     expect(invoiceTerms(upper)?.paymentHash).toBe(HASH)
     expect(invoiceTerms(`lightning:${upper.toLowerCase()}`)?.paymentHash).toBe(
       HASH
+    )
+  })
+
+  it('takes the first expiry, as LND does, and one too long to read as never', () => {
+    // 60 s, then a day
+    expect(
+      invoiceTerms(
+        invoice([
+          [6, [1, 28]],
+          [6, [2, 20, 16, 0]]
+        ])
+      )?.expiry
+    ).toBe(60)
+    expect(invoiceTerms(invoice([[6, new Array(11).fill(31)]]))?.expiry).toBe(
+      Infinity
     )
   })
 

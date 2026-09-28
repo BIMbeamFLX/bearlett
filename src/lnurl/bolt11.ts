@@ -10,7 +10,7 @@ export type InvoiceTerms = {
   paymentHash: string
   /** unix seconds */
   timestamp: number
-  /** seconds after the timestamp the invoice can be paid */
+  /** seconds after the timestamp the invoice can be paid; Infinity if too long to read */
   expiry: number
 }
 
@@ -40,6 +40,7 @@ export const invoiceTerms = (invoice: string): InvoiceTerms | null => {
   const timestamp = wordsToNumber(data.slice(0, TIMESTAMP_WORDS))
   let paymentHash: string | null = null
   let expiry = DEFAULT_EXPIRY
+  let expirySeen = false
   for (let at = TIMESTAMP_WORDS; at < data.length;) {
     if (at + 3 > data.length) return null
     const type = data[at]
@@ -52,8 +53,12 @@ export const invoiceTerms = (invoice: string): InvoiceTerms | null => {
       if (!hash) return null
       paymentHash = bytesToHex(hash)
     }
-    // longer than 10 words would not fit a number exactly: no invoice is
-    if (type === EXPIRY && length <= 10) expiry = wordsToNumber(field)
+    // the first expiry counts, as LND reads it; one longer than 10 words
+    // fits no number exactly, and is taken as never expiring
+    if (type === EXPIRY && !expirySeen) {
+      expirySeen = true
+      expiry = length <= 10 ? wordsToNumber(field) : Infinity
+    }
     at += 3 + length
   }
   return paymentHash ? {paymentHash, timestamp, expiry} : null
