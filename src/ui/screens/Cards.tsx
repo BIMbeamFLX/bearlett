@@ -7,7 +7,13 @@ import {formatSats} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 
-type Invoice = {pr: string; verify?: string; amountMsat: number}
+type Invoice = {
+  pr: string
+  verify?: string
+  amountMsat: number
+  /** paid from this wallet: it is not offered for paying again */
+  paid?: boolean
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -21,7 +27,7 @@ export const Cards = (props: {wallet: () => Wallet}) => {
   const [address, setAddress] = createSignal('')
   const [invoice, setInvoice] = createSignal<Invoice | null>(null)
   const [payFrom, setPayFrom] = createSignal('')
-  const [mine, setMine] = createSignal<string | null>(null)
+  const [showMine, setShowMine] = createSignal(false)
   const [handing, setHanding] = createSignal<string | null>(null)
   const [to, setTo] = createSignal('')
 
@@ -89,6 +95,7 @@ export const Cards = (props: {wallet: () => Wallet}) => {
       const bill = invoice()
       if (!bill) return
       await w().pay(payFrom(), bill.pr)
+      setInvoice({...bill, paid: true})
       await collect(bill)
     })
 
@@ -98,9 +105,25 @@ export const Cards = (props: {wallet: () => Wallet}) => {
       if (bill) await collect(bill)
     })
 
-  const showAddress = () =>
-    run('Making a card address', async () => {
-      setMine(await w().cardAddress(current()))
+  /** The card address shown, always the current one: it moves on once a card arrives. */
+  const mine = () => {
+    if (!showMine()) return null
+    try {
+      return w().cardAddress(current())
+    } catch {
+      return null
+    }
+  }
+
+  const showAddress = () => setShowMine(true)
+
+  const removeCardMint = () =>
+    run('Removing the card mint', async () => {
+      await w().removeCardMint(current())
+      setPicked('')
+      setInvoice(null)
+      setShowMine(false)
+      notify('Card mint removed.')
     })
 
   const handOn = (id: string) =>
@@ -204,9 +227,14 @@ export const Cards = (props: {wallet: () => Wallet}) => {
             Refresh
           </Action>
         </div>
-        <button class="link" onClick={() => refresh(true)}>
-          Scan for my cards
-        </button>
+        <div class="row">
+          <button class="link" onClick={() => refresh(true)}>
+            Scan for my cards
+          </button>
+          <button class="link" onClick={removeCardMint}>
+            Remove this card mint
+          </button>
+        </div>
         <Show when={invoice()}>
           {bill => (
             <>
@@ -215,17 +243,27 @@ export const Cards = (props: {wallet: () => Wallet}) => {
               <div class="row">
                 <Copy value={bill().pr} label="Copy invoice" />
               </div>
-              <Show when={mints().length}>
-                <MintSelect
-                  mints={mints()}
-                  value={payFrom()}
-                  onChange={setPayFrom}
-                  balanceOf={d => w().balanceMsat(d)}
-                />
-                <Action onClick={payPack}>Pay from this wallet</Action>
+              <Show
+                when={!bill().paid}
+                fallback={
+                  <p class="quiet">
+                    Paid from this wallet. The cards come once the card mint
+                    sees the payment.
+                  </p>
+                }
+              >
+                <Show when={mints().length}>
+                  <MintSelect
+                    mints={mints()}
+                    value={payFrom()}
+                    onChange={setPayFrom}
+                    balanceOf={d => w().balanceMsat(d)}
+                  />
+                  <Action onClick={payPack}>Pay from this wallet</Action>
+                </Show>
               </Show>
               <button class="link" onClick={paidElsewhere}>
-                I paid it elsewhere
+                {bill().paid ? 'Check again' : 'I paid it elsewhere'}
               </button>
             </>
           )}
@@ -235,8 +273,8 @@ export const Cards = (props: {wallet: () => Wallet}) => {
             <>
               <h3>Your card address</h3>
               <p class="quiet">
-                Give it to whoever hands you a card. A fresh one every time
-                keeps your cards apart.
+                Give it to whoever hands you a card. Once a card has arrived
+                there you get a new one, which keeps your cards apart.
               </p>
               <Qr value={cp1()} />
               <p class="mono-break">{cp1()}</p>

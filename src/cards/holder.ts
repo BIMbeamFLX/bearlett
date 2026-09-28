@@ -16,6 +16,13 @@ import {fetchNoteInfo} from '../lnurl/withdraw.ts'
 import {moveDigest, verifyConsignment, type Card} from './proofs.ts'
 import {cardNote, encodeState, nextState, type CardState} from './state.ts'
 
+/**
+ * Owner keys are note keys on the card mint's LUD-25 branch under a purpose
+ * of their own, beside LUD-25's wallet, change and address purposes (0-2):
+ * a money scan never meets a card key, nor a card scan a money key.
+ */
+export const CARD_PURPOSE = 3
+
 /** The time claim dni's seals.ts signs a move with: none. */
 export const MOVE_CLAIM: TimeClaim = {locktime: 0, sequence: 0xfffffffe}
 
@@ -80,19 +87,31 @@ export const discoveryUrl = (input: string): string | null => {
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
-const parsePack = (value: unknown): Pack => {
+/** An endpoint the discovery document names: on the origin it came from. */
+const onOrigin = (url: unknown, origin: string): URL => {
+  if (typeof url !== 'string')
+    throw new ProtocolError('The card mint names no endpoints.')
+  const parsed = requireServiceUrl(url)
+  if (parsed.origin !== origin)
+    throw new ProtocolError(
+      'The card mint names an endpoint on another origin.'
+    )
+  return parsed
+}
+
+const parsePack = (value: unknown, origin: string): Pack => {
   const pack = value as Record<string, unknown>
   if (typeof pack !== 'object' || pack === null)
     throw new ProtocolError('A pack the card mint names is not one.')
   const {lnurlp, edition, collection_id, catalog_uri} = pack
   if (typeof lnurlp !== 'string')
     throw new ProtocolError('A pack has no payRequest.')
-  requireServiceUrl(lnurlp)
+  onOrigin(lnurlp, origin)
   if (typeof edition !== 'string' || !NAME.test(edition))
     throw new ProtocolError('A pack names no edition.')
   if (typeof collection_id !== 'string' || !NAME.test(collection_id))
     throw new ProtocolError('A pack names no collection.')
-  // any address a service may have; only the Hangar's inventory insists on https
+  // never fetched: any address a service may have; the inventory insists on https
   if (
     typeof catalog_uri !== 'string' ||
     (catalog_uri !== '' && !isAllowedServiceUrl(catalog_uri))
@@ -101,8 +120,15 @@ const parsePack = (value: unknown): Pack => {
   return {lnurlp, edition, collection_id, catalog_uri}
 }
 
-/** A card mint's discovery document, read strictly. */
-export const parseCardMint = (body: Record<string, unknown>): CardMintInfo => {
+/**
+ * A card mint's discovery document, read strictly. Every endpoint it names
+ * is on `origin`, the one it was fetched from: a document elsewhere cannot
+ * speak for a card mint, nor send the wallet to this machine's services.
+ */
+export const parseCardMint = (
+  body: Record<string, unknown>,
+  origin: string
+): CardMintInfo => {
   if (body.v !== 0) throw new ProtocolError('Not a card mint, or a newer one.')
   const issuer =
     typeof body.issuer === 'string' && /^[0-9a-f]{64}$/.test(body.issuer)
@@ -110,42 +136,41 @@ export const parseCardMint = (body: Record<string, unknown>): CardMintInfo => {
       : null
   if (!issuer || !isPointX(issuer))
     throw new ProtocolError('The card mint names no issuer key.')
-  if (typeof body.withdraw !== 'string' || typeof body.lookup !== 'string')
-    throw new ProtocolError('The card mint names no endpoints.')
-  const withdraw = requireServiceUrl(body.withdraw)
-  const lookup = requireServiceUrl(body.lookup)
-  if (lookup.origin !== withdraw.origin)
-    throw new ProtocolError('The card mint’s endpoints are on two origins.')
+  const withdraw = onOrigin(body.withdraw, origin)
+  const lookup = onOrigin(body.lookup, origin)
   if (!Array.isArray(body.packs))
     throw new ProtocolError('The card mint lists no packs.')
   return {
     issuer,
     withdraw: withdraw.toString(),
     lookup: lookup.toString(),
-    packs: body.packs.map(parsePack)
+    packs: body.packs.map(pack => parsePack(pack, origin))
   }
 }
 
 export const fetchCardMint = async (
   net: Net,
   url: string
-): Promise<CardMintInfo> => parseCardMint(await net.get(url))
+): Promise<CardMintInfo> =>
+  parseCardMint(await net.get(url), requireServiceUrl(url).origin)
 
 /**
- * The live cards an owner key holds, each checked in full against the
- * issuer; a card mint that sends anything else is not trusted at all.
+ * What the card mint knows of an owner key: its live cards, each checked in
+ * full against the issuer (a card mint that sends anything else is not
+ * trusted at all), and whether the key ever held a card, which is what a
+ * scan counts as used.
  */
 export const fetchCardsOf = async (
   net: Net,
   mint: CardMintInfo,
   owner: Uint8Array
-): Promise<Card[]> => {
+): Promise<{cards: Card[]; used: boolean}> => {
   const url = requireServiceUrl(mint.lookup)
   url.searchParams.set('owner', bytesToHex(owner))
   const body = await net.get(url.toString())
-  if (!Array.isArray(body.cards))
+  if (!Array.isArray(body.cards) || typeof body.used !== 'boolean')
     throw new ProtocolError('The card mint answered without cards.')
-  return body.cards.map(value => {
+  const cards = body.cards.map(value => {
     const card = verifyConsignment(value, mint.issuer)
     if (typeof card === 'string')
       throw new ProtocolError(
@@ -157,6 +182,7 @@ export const fetchCardsOf = async (
       throw new ProtocolError('The card mint sent a card another key holds.')
     return card
   })
+  return {cards, used: body.used || cards.length > 0}
 }
 
 /** Where a card's moves go: the callback its informational GET names. */

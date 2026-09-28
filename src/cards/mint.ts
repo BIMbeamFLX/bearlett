@@ -10,6 +10,7 @@ export {
   SPENT,
   UNKNOWN,
   type BurnRequest,
+  type Holdings,
   type LedgerOptions,
   type Live,
   type Moved,

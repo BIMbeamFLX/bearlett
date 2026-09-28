@@ -178,6 +178,20 @@ describe('paying', () => {
     expect(paid).toHaveLength(1)
   })
 
+  it('does not pay an invoice again while it is being paid', async () => {
+    const mint = await start({meltNeverSettles: true})
+    const wallet = await walletAt(mint, 30_000)
+    const invoice = 'lnbc100n1' + 'q'.repeat(52)
+    await wallet.pay(hostOfMint(mint), invoice)
+    const before = wallet.balanceMsat()
+    await expect(wallet.pay(hostOfMint(mint), invoice)).rejects.toThrow(
+      /being paid already/
+    )
+    // nothing split off for it
+    expect(wallet.balanceMsat()).toBe(before)
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+  })
+
   it('restores the note when the payment fails', async () => {
     const mint = await start({meltAlwaysFails: true})
     const wallet = await walletAt(mint, 20_000)
@@ -256,6 +270,23 @@ describe('lost answers and crashes', () => {
     expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
     expect(wallet.balanceMsat()).toBe(7_000)
     expect(wallet.notes({role: 'outgoing', status: 'live'})).toHaveLength(1)
+  })
+
+  it('settles it once when the timer and "Check now" ask together', async () => {
+    const mint = await start()
+    const wallet = await walletAt(mint, 10_000, {net: losing(isBurn)})
+    await expect(wallet.send(hostOfMint(mint), 3_000)).rejects.toBeInstanceOf(
+      TransportError
+    )
+    const first = wallet.settle()
+    // the second call joins the run under way
+    expect(wallet.settle()).toBe(first)
+    await first
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
+    expect(wallet.balanceMsat()).toBe(7_000)
+    expect(wallet.notes({role: 'outgoing', status: 'live'})).toHaveLength(1)
+    // and a later call is a run of its own
+    expect(wallet.settle()).not.toBe(first)
   })
 
   it('settles it at a mint that drops the answer and refuses replays', async () => {
