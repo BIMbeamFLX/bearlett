@@ -452,4 +452,52 @@ describe('restoring', () => {
       )
     ).toThrow(/Not restorable/)
   })
+
+  it('leaves out one card of another issuer key or withdraw URL, and never issues it again', () => {
+    const {ledger} = twoCards()
+    const [first, second] = ledger.save()
+    const skipped: number[] = []
+    const again = CardLedger.restore(
+      options,
+      [first, {...second, mint: 'https://moved.example/w'}],
+      (_, at) => skipped.push(at)
+    )
+    expect(skipped).toEqual([1])
+    expect(again.save()).toEqual([first])
+    expect(() => again.issue('E1-001', '600B-E1#1', pub(alice))).toThrow(
+      /issued already/
+    )
+  })
+
+  it('restores from a log of everything it wrote, the latest of every card', () => {
+    const log: Consignment[] = []
+    const ledger = new CardLedger({...options, persist: c => log.push(c)})
+    const card = verified(
+      ledger,
+      ledger.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    const move = moveOf(card, alice, pub(bob))
+    moved(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+    ledger.issue('E1-001', '600B-E1#1', pub(alice))
+    expect(log).toHaveLength(3)
+    const again = CardLedger.restore(options, log)
+    expect(again.save()).toEqual(ledger.save())
+    expect(refusal(again.lookup(card.q))).toBe(SPENT)
+  })
+
+  it('takes only a whole number of states, at least 1, as its bound', () => {
+    for (const maxStates of [Number.NaN, 0, 1.5, -3, Infinity])
+      expect(() => new CardLedger({...options, maxStates})).toThrow(
+        /whole number/
+      )
+    const still = new CardLedger({...options, maxStates: 1})
+    const card = verified(
+      still,
+      still.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    const move = moveOf(card, alice, pub(bob))
+    expect(
+      refusal(still.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+    ).toBe('A card moves at most 0 times.')
+  })
 })

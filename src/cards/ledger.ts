@@ -20,6 +20,7 @@ import {
   signGenesis,
   signMove,
   verifyConsignment,
+  type Card,
   type Consignment
 } from './proofs.ts'
 import {
@@ -74,7 +75,7 @@ export type LedgerOptions = {
   mintKey: Uint8Array
   /** unix seconds, for time claims */
   now?: () => number
-  /** the most states a card may reach here: MAX_STATES, or fewer */
+  /** the most states a card may reach here: MAX_STATES, or fewer, at least 1 */
   maxStates?: number
   /**
    * Writes a card's new consignment down, synchronously, before the ledger
@@ -105,6 +106,8 @@ export class CardLedger {
   private readonly owners = new Map<string, Set<string>>()
   /** every owner key that ever held a card here */
   private readonly seen = new Set<string>()
+  /** asset ids of cards left out at restore: issued once, so never again */
+  private readonly quarantined = new Set<string>()
 
   constructor(options: LedgerOptions) {
     // the form a holder compares, so `https://host` names `https://host/`
@@ -116,15 +119,21 @@ export class CardLedger {
     this.mintPubkey = bytesToHex(secp256k1.getPublicKey(options.mintKey, true))
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000))
     this.persist = options.persist ?? (() => {})
-    this.maxStates = Math.min(options.maxStates ?? MAX_STATES, MAX_STATES)
+    const maxStates = options.maxStates ?? MAX_STATES
+    if (!Number.isSafeInteger(maxStates) || maxStates < 1)
+      throw new Error('maxStates is a whole number, at least 1.')
+    this.maxStates = Math.min(maxStates, MAX_STATES)
   }
 
   /**
-   * Rebuilds a ledger from the consignments it wrote, each checked in full.
-   * A card that does not check out is left out and named to `skip` by its
-   * place in `saved`, so one bad record cannot keep the card mint from
-   * starting; a changed issuer key or withdraw URL is a misconfiguration
-   * and refuses the whole start.
+   * Rebuilds a ledger from the consignments it wrote, each checked in full:
+   * the latest of every card, or a log of every write (the longest history
+   * of a card counts). A card that does not check out, names another issuer
+   * key or withdraw URL, or forks another history of itself is left out and
+   * named to `skip` by its place in `saved`, so one bad record cannot keep
+   * the card mint from starting; its id is never issued again. When every
+   * card names another issuer key or withdraw URL, the card mint is
+   * misconfigured, and that refuses the start.
    */
   static restore(
     options: LedgerOptions,
@@ -134,24 +143,53 @@ export class CardLedger {
     // keep() only fills memory: nothing read back is written again
     const ledger = new CardLedger(options)
     const issuer = bytesToHex(ledger.issuer)
+    const latest = new Map<string, Card>()
+    let foreign = 0
     for (const [at, consignment] of saved.entries()) {
       const named = consignment as Partial<Consignment> | null
-      if (
-        (typeof named?.issuer === 'string' && named.issuer !== issuer) ||
-        (typeof named?.mint === 'string' && named.mint !== ledger.withdraw)
-      )
-        throw new Error(
-          'Not restorable: the cards name another issuer key or withdraw URL.'
-        )
+      if (named?.issuer !== issuer || named?.mint !== ledger.withdraw) {
+        foreign++
+        ledger.quarantine(consignment)
+        skip('Left out a card of another issuer key or withdraw URL.', at)
+        continue
+      }
       const card = verifyConsignment(consignment, ledger.issuer)
       if (typeof card === 'string') {
+        ledger.quarantine(consignment)
         skip(`Left out a card that does not check out: ${card}.`, at)
         continue
       }
-      const receipts = consignment.receipts.map(hexToBytes)
-      ledger.keep(card.states, hexToBytes(consignment.genesis), receipts)
+      const id = bytesToHex(card.head.assetId)
+      const known = latest.get(id)
+      if (!known || known.states.length < card.states.length)
+        latest.set(id, card)
+      else if (
+        known.states.length === card.states.length &&
+        known.consignment.states.join() !== card.consignment.states.join()
+      )
+        skip('Left out a history that forks another of the same card.', at)
     }
+    if (saved.length && foreign === saved.length)
+      throw new Error(
+        'Not restorable: every card names another issuer key or withdraw URL.'
+      )
+    for (const {states, consignment} of latest.values())
+      ledger.keep(
+        states,
+        hexToBytes(consignment.genesis),
+        consignment.receipts.map(hexToBytes)
+      )
     return ledger
+  }
+
+  /** Keeps a card left out at restore from ever being issued again. */
+  private quarantine(consignment: unknown) {
+    const first = (consignment as Partial<Consignment> | null)?.states?.[0]
+    const state =
+      typeof first === 'string' && HEX.test(first)
+        ? decodeState(hexToBytes(first))
+        : null
+    if (state) this.quarantined.add(bytesToHex(state.assetId))
   }
 
   /** Everything needed to restore this ledger. */
@@ -188,12 +226,17 @@ export class CardLedger {
     if (!this.owners.get(key)?.size) this.owners.delete(key)
   }
 
-  /** Issues one card to its first holder; a card and serial are issued once. */
+  /**
+   * Issues one card to its first holder. A card and serial are issued once:
+   * the ledger refuses one it holds or left out at restore, and a card mint
+   * keeps its serial counter across restarts for a card it never saw.
+   */
   issue(name: string, description: string, owner: Uint8Array): Consignment {
     if (!isPointX(owner)) throw new Error('A card is issued to a key only.')
     const state = genesisState(this.issuer, name, description, owner)
     const id = bytesToHex(state.assetId)
-    if (this.records.has(id)) throw new Error('That card is issued already.')
+    if (this.records.has(id) || this.quarantined.has(id))
+      throw new Error('That card is issued already.')
     const genesis = signGenesis(this.issuerKey, state, this.domain)
     const consignment = buildConsignment(
       this.withdraw,
