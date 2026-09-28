@@ -2,6 +2,7 @@
 // HTTP: buying a pack, handing a card on, lost answers, recovery from the
 // words, a card mint that lies, and the inventory the Hangar and the TCG read.
 import {afterEach, describe, expect, it} from 'vitest'
+import {parseCardMint} from '../../src/cards/holder.ts'
 import {buildInventory, INVENTORY_KEY} from '../../src/cards/inventory.ts'
 import {ProtocolError, TransportError} from '../../src/lnurl/errors.ts'
 import type {Net} from '../../src/lnurl/net.ts'
@@ -49,6 +50,38 @@ const names = (wallet: Wallet, status: 'held' | 'sent' = 'held') =>
     .cards({status})
     .map(card => wallet.verifiedCard(card.id).head.name)
     .sort()
+
+describe('reading a card mint', () => {
+  const body = (catalog_uri: string) => ({
+    v: 0,
+    issuer: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798',
+    withdraw: 'https://tcg.example/cards/w',
+    lookup: 'https://tcg.example/cards',
+    packs: [
+      {
+        lnurlp: 'https://tcg.example/cards/lnurlp',
+        edition: '600b-e1',
+        collection_id: '600B-E1',
+        catalog_uri
+      }
+    ]
+  })
+
+  it('takes a catalog at any address a service may have', () => {
+    for (const uri of [
+      '',
+      'https://tcg.example/nutft/catalog',
+      'http://127.0.0.1:3340/nutft/catalog'
+    ])
+      expect(parseCardMint(body(uri)).packs[0].catalog_uri).toBe(uri)
+    expect(() =>
+      parseCardMint(body('http://tcg.example/nutft/catalog'))
+    ).toThrow(ProtocolError)
+    expect(() =>
+      parseCardMint({...body(''), lookup: 'https://elsewhere.example/cards'})
+    ).toThrow(/two origins/)
+  })
+})
 
 describe('buying a pack', () => {
   it('adds a card mint and pins its issuer', async () => {

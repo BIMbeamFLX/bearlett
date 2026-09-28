@@ -6,7 +6,12 @@ import {encodeCp1, isPointX} from '../spec/encoding.ts'
 import {leafSpend, signLeaf} from '../spec/notes.ts'
 import {spendDomain, type TimeClaim} from '../spec/spend.ts'
 import {ProtocolError} from '../lnurl/errors.ts'
-import {plainHttpHost, requireServiceUrl, type Net} from '../lnurl/net.ts'
+import {
+  isAllowedServiceUrl,
+  plainHttpHost,
+  requireServiceUrl,
+  type Net
+} from '../lnurl/net.ts'
 import {fetchNoteInfo} from '../lnurl/withdraw.ts'
 import {moveDigest, verifyConsignment, type Card} from './proofs.ts'
 import {cardNote, encodeState, nextState, type CardState} from './state.ts'
@@ -87,11 +92,12 @@ const parsePack = (value: unknown): Pack => {
     throw new ProtocolError('A pack names no edition.')
   if (typeof collection_id !== 'string' || !NAME.test(collection_id))
     throw new ProtocolError('A pack names no collection.')
+  // any address a service may have; only the Hangar's inventory insists on https
   if (
     typeof catalog_uri !== 'string' ||
-    (catalog_uri !== '' && new URL(catalog_uri).protocol !== 'https:')
+    (catalog_uri !== '' && !isAllowedServiceUrl(catalog_uri))
   )
-    throw new ProtocolError('A pack names no https catalog.')
+    throw new ProtocolError('A pack names no catalog it could have.')
   return {lnurlp, edition, collection_id, catalog_uri}
 }
 
