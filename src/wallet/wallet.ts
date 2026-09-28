@@ -453,6 +453,8 @@ export class Wallet {
     if (!info) return false
     await this.pin(op.mint, info.mintPubkey)
     await this.commit(state => {
+      // settled already: the screen's poll and settle() may both get here
+      if (!state.operations[op.id]) return
       this.addNote(state, op.mint, op.output, info)
       delete state.operations[op.id]
       this.log(state, {
@@ -852,6 +854,8 @@ export class Wallet {
       outcome = 'paid'
     }
     await this.commit(state => {
+      // settled already, by another caller
+      if (!state.operations[op.id]) return
       delete state.operations[op.id]
       const note = state.notes[op.input]
       if (note) {

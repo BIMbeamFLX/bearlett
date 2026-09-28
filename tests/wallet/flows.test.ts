@@ -63,6 +63,19 @@ describe('minting', () => {
     )
   })
 
+  it('records a mint once, however many callers settle it at the same time', async () => {
+    const mint = await start()
+    const wallet = await walletAt(mint)
+    const op = await wallet.requestMint(hostOfMint(mint), 20_000)
+    await payInvoice(mint, op.verify!)
+    // the Receive screen polls while settle() runs on its timer
+    await Promise.all([wallet.settleMint(op), wallet.settleMint(op)])
+    await wallet.settleMint(op)
+    const minted = wallet.snapshot.activity.filter(a => a.kind === 'mint')
+    expect(minted).toHaveLength(1)
+    expect(wallet.balanceMsat()).toBe(20_000)
+  })
+
   it('keeps an unpaid invoice underway until it is forgotten', async () => {
     const mint = await start()
     const wallet = await walletAt(mint)
@@ -159,6 +172,10 @@ describe('paying', () => {
     await wallet.settle()
     expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
     expect(wallet.balanceMsat()).toBe(49_000 - 10_000 - 1000)
+    // asked once more after it settled: nothing is recorded twice
+    await wallet.settleMelt(melt)
+    const paid = wallet.snapshot.activity.filter(a => a.kind === 'pay')
+    expect(paid).toHaveLength(1)
   })
 
   it('restores the note when the payment fails', async () => {
