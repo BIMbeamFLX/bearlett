@@ -23,6 +23,7 @@ import {
   resolveMintInput,
   type NoteLink
 } from '../lnurl/links.ts'
+import {invoiceTerms} from '../lnurl/bolt11.ts'
 import type {Net} from '../lnurl/net.ts'
 import {
   canMint,
@@ -109,7 +110,21 @@ type Melt = Extract<Operation, {kind: 'melt'}>
 type MintOp = Extract<Operation, {kind: 'mint'}>
 
 const MAX_INDEX_RETRIES = 10
-const PAID_INVOICES_KEPT_MS = 30 * 24 * 3600 * 1000
+const DAY_MS = 24 * 3600 * 1000
+/** how long an invoice that is not BOLT-11 is remembered as paid */
+const PAID_TEXT_KEPT_MS = 30 * DAY_MS
+
+/** What a paid invoice is remembered by: its payment hash, or its text. */
+const paidKey = (invoice: string): string =>
+  invoiceTerms(invoice)?.paymentHash ?? invoiceText(invoice)
+
+/** When a paid invoice may be forgotten: once it can no longer be paid, a day at the least. */
+const forgetPaidAt = (invoice: string, now: number): number => {
+  const terms = invoiceTerms(invoice)
+  if (!terms) return now + PAID_TEXT_KEPT_MS
+  const expires = (terms.timestamp + terms.expiry) * 1000
+  return Math.max(now + DAY_MS, expires + DAY_MS)
+}
 const cp1Of = (output: Output): string => encodeCp1(hexToBytes(output.q))
 const id = (): string => crypto.randomUUID()
 
@@ -193,7 +208,11 @@ export class Wallet {
     state.cardMints ??= {}
     state.cardKeys ??= {}
     state.cards ??= {}
-    state.paidInvoices ??= {}
+    // paid invoices before they were kept by payment hash: their text, for 30 days
+    state.paid ??= {}
+    for (const [text, at] of Object.entries(state.paidInvoices ?? {}))
+      state.paid[text] ??= at + PAID_TEXT_KEPT_MS
+    delete state.paidInvoices
     return new Wallet(ports, new KeyRing(seed), key, state)
   }
 
@@ -805,10 +824,10 @@ export class Wallet {
    */
   /** Whether this wallet is paying an invoice, has paid it, or neither. */
   invoiceStatus(invoice: string): 'paying' | 'paid' | null {
-    const key = invoiceText(invoice)
-    if (this.state.paidInvoices[key]) return 'paid'
+    const key = paidKey(invoice)
+    if ((this.state.paid[key] ?? 0) > this.now()) return 'paid'
     const open = Object.values(this.state.operations).some(
-      op => op.kind === 'melt' && invoiceText(op.pr) === key
+      op => op.kind === 'melt' && paidKey(op.pr) === key
     )
     return open || this.paying.has(key) ? 'paying' : null
   }
@@ -822,7 +841,7 @@ export class Wallet {
     if (status === 'paid') throw new Error('This invoice is paid already.')
     if (status === 'paying')
       throw new Error('This invoice is being paid already.')
-    const key = invoiceText(invoice)
+    const key = paidKey(invoice)
     this.paying.add(key)
     try {
       return await this.payOnce(domain, invoice, amountMsat)
@@ -921,9 +940,9 @@ export class Wallet {
       }
       if (outcome === 'paid') {
         const now = this.now()
-        for (const [key, at] of Object.entries(state.paidInvoices))
-          if (at < now - PAID_INVOICES_KEPT_MS) delete state.paidInvoices[key]
-        state.paidInvoices[invoiceText(op.pr)] = now
+        for (const [key, until] of Object.entries(state.paid))
+          if (until <= now) delete state.paid[key]
+        state.paid[paidKey(op.pr)] = forgetPaidAt(op.pr, now)
         this.log(state, {
           kind: 'pay',
           mint: op.mint,

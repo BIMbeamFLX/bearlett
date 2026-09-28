@@ -14,7 +14,10 @@ import {
   WrongPassphraseError,
   isMnemonic,
   newMnemonic,
-  seedOf
+  openJson,
+  sealJson,
+  seedOf,
+  stateKey
 } from '../../src/wallet/vault.ts'
 import {Wallet} from '../../src/wallet/wallet.ts'
 import {hostOfMint, startMint, walletAt, type Mint} from './harness.ts'
@@ -48,6 +51,25 @@ describe('secrets at rest', () => {
     await expect(
       Wallet.unlock({net: fetchNet, store}, 'wrong')
     ).rejects.toBeInstanceOf(WrongPassphraseError)
+  })
+
+  it('keeps invoices paid before, by their text, for 30 days from their payment', async () => {
+    const store = memoryStore()
+    const words = newMnemonic()
+    const created = await Wallet.create({net: fetchNet, store}, words, '')
+    await created.setGapLimit(20)
+    // a state written before paid invoices were kept by their hash
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    const paidAt = 1_790_000_000_000
+    delete state.paid
+    state.paidInvoices = {lnbc100n1old: paidAt}
+    await store.set(STATE_KEY, await sealJson(key, state))
+    const wallet = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(wallet.snapshot.paid).toEqual({
+      lnbc100n1old: paidAt + 30 * 24 * 3600 * 1000
+    })
+    expect(wallet.snapshot.paidInvoices).toBeUndefined()
   })
 
   it('reopens with its bookkeeping, sealed under a key from the seed', async () => {

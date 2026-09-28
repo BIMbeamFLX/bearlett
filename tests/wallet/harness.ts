@@ -33,6 +33,8 @@ export type Setup = {
   store?: Store
   words?: string
   passphrase?: string
+  /** the wallet's clock, unix ms */
+  now?: () => number
 }
 
 /** A wallet with `mint` added and, if asked, `fundMsat` minted there. */
@@ -42,7 +44,11 @@ export const walletAt = async (
   setup: Setup = {}
 ): Promise<Wallet> => {
   const wallet = await Wallet.create(
-    {net: setup.net ?? fetchNet, store: setup.store ?? memoryStore()},
+    {
+      net: setup.net ?? fetchNet,
+      store: setup.store ?? memoryStore(),
+      now: setup.now
+    },
     setup.words ?? newMnemonic(),
     setup.passphrase ?? ''
   )
