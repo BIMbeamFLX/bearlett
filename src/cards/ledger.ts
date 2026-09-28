@@ -167,17 +167,20 @@ export class CardLedger {
 
   /**
    * Rebuilds a ledger from the consignments it wrote: the latest of every
-   * card, or a log of every write. Of each card the longest history that
-   * checks out in full is kept (between histories of one length, the first
-   * in hex order, whatever the order of the records); an earlier version of
-   * it is passed over unchecked, and any other history (a fork, as a re-sign
-   * after restoring an old backup makes) is checked and named to `skip`.
+   * card, which a card mint keeps by replacing a card's record on every
+   * write (every move writes the whole history, so a log of every write
+   * grows with the square of the moves). Of each card the longest history
+   * that checks out in full is kept (between histories of one length, the
+   * first in hex order, whatever the order of the records); an earlier
+   * version of it is passed over unchecked, and any other history (a fork,
+   * as a re-sign after restoring an old backup makes) is named to `skip`.
    *
    * A record that does not check out is left out and named to `skip` by its
    * place in `saved`, so one damaged record cannot keep the card mint from
-   * starting, and its id is never issued again. A record of another issuer
-   * key or withdraw URL, which a card mint's own store never holds, refuses
-   * the start, and so does a store whose records all fail.
+   * starting, and its id is never issued again. A record that names another
+   * well-formed issuer key or withdraw URL refuses the start, damaged or
+   * not: a card mint's own store never holds one, so this fails safe. So
+   * does a store whose records all fail.
    */
   static restore(
     options: LedgerOptions,
@@ -213,7 +216,9 @@ export class CardLedger {
         damaged(record, at, typeof card === 'string' ? card : 'not its card')
         continue
       }
-      byCard.set(id, [...(byCard.get(id) ?? []), {record, at}])
+      const found = byCard.get(id)
+      if (found) found.push({record, at})
+      else byCard.set(id, [{record, at}])
     }
     for (const found of byCard.values()) {
       const ordered = [...found].sort((a, b) => {
@@ -305,7 +310,8 @@ export class CardLedger {
    * transaction and rolls it back when this throws part way (the ids are
    * given back then), and it calls keep() only after a successful COMMIT,
    * abandon() after a rollback. Until keep(), no lookup, move or issue sees
-   * the cards.
+   * the cards. keep() after abandon() throws: the ids are free again.
+   * abandon() after keep() does nothing.
    */
   issuePending(cards: CardToIssue[]): PendingIssue {
     const ids = new Set<string>()
@@ -333,6 +339,7 @@ export class CardLedger {
     })
     for (const id of ids) this.reserved.add(id)
     let open = true
+    let abandoned = false
     const release = () => {
       for (const id of ids) this.reserved.delete(id)
       open = false
@@ -346,12 +353,16 @@ export class CardLedger {
     return {
       consignments: issued.map(card => card.consignment),
       keep: () => {
+        // its ids went back, and may be another pack's now
+        if (abandoned) throw new Error('That pack was abandoned.')
         if (!open) return
         release()
         for (const {state, genesis} of issued) this.keep([state], genesis, [])
       },
       abandon: () => {
-        if (open) release()
+        if (!open) return
+        release()
+        abandoned = true
       }
     }
   }
