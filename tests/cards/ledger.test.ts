@@ -267,6 +267,61 @@ describe('what a forger holds', () => {
   })
 })
 
+describe('writing down', () => {
+  it('writes every issue and move down before it holds it', () => {
+    const written: Consignment[] = []
+    const ledger = new CardLedger({...options, persist: c => written.push(c)})
+    const card = verified(
+      ledger,
+      ledger.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    const move = moveOf(card, alice, pub(bob))
+    const answer = moved(
+      ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state})
+    )
+    expect(written).toEqual([card.consignment, answer.consignment])
+    // a replay writes nothing new
+    moved(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+    expect(written).toHaveLength(2)
+  })
+
+  it('changes nothing when writing fails', () => {
+    let failing = false
+    const ledger = new CardLedger({
+      ...options,
+      persist: () => {
+        if (failing) throw new Error('disk full')
+      }
+    })
+    const card = verified(
+      ledger,
+      ledger.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    failing = true
+    expect(() => ledger.issue('E1-001', '600B-E1#1', pub(alice))).toThrow(
+      /disk full/
+    )
+    expect(ledger.byOwner(pub(alice))).toHaveLength(1)
+    const move = moveOf(card, alice, pub(bob))
+    expect(() =>
+      ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state})
+    ).toThrow(/disk full/)
+    // still alice's, still live: the same move goes through once writing works
+    expect(ledger.lookup(card.q)).toHaveProperty('c')
+    expect(ledger.byOwner(pub(bob))).toEqual([])
+    failing = false
+    moved(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+    expect(ledger.byOwner(pub(bob))).toHaveLength(1)
+  })
+
+  it('restores without writing anything back', () => {
+    const {ledger} = issued()
+    let writes = 0
+    CardLedger.restore({...options, persist: () => writes++}, ledger.save())
+    expect(writes).toBe(0)
+  })
+})
+
 describe('restoring', () => {
   it('restores itself from what it saved, and nothing tampered with', () => {
     const {ledger, card} = issued()

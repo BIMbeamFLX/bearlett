@@ -71,6 +71,12 @@ export type LedgerOptions = {
   mintKey: Uint8Array
   /** unix seconds, for time claims */
   now?: () => number
+  /**
+   * Writes a card's new consignment down, synchronously, before the ledger
+   * holds the change in memory. If it throws, nothing changed: a mint must
+   * never vouch for a move it could forget on a restart.
+   */
+  persist?: (consignment: Consignment) => void
 }
 
 export class CardLedger {
@@ -81,6 +87,7 @@ export class CardLedger {
   private readonly issuerKey: Uint8Array
   private readonly mintKey: Uint8Array
   private readonly now: () => number
+  private readonly persist: (consignment: Consignment) => void
   /** by asset id */
   private readonly records = new Map<string, Record>()
   /** note key of a card's current state, to its asset id */
@@ -98,10 +105,12 @@ export class CardLedger {
     this.mintKey = options.mintKey
     this.mintPubkey = bytesToHex(secp256k1.getPublicKey(options.mintKey, true))
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000))
+    this.persist = options.persist ?? (() => {})
   }
 
   /** Rebuilds a ledger from the consignments it wrote, each checked in full. */
   static restore(options: LedgerOptions, saved: Consignment[]): CardLedger {
+    // keep() only fills memory: nothing read back is written again
     const ledger = new CardLedger(options)
     for (const consignment of saved) {
       const card = verifyConsignment(consignment, ledger.issuer)
@@ -149,8 +158,19 @@ export class CardLedger {
   /** Issues one card to its first holder; a card and serial are issued once. */
   issue(name: string, description: string, owner: Uint8Array): Consignment {
     const state = genesisState(this.issuer, name, description, owner)
-    this.keep([state], signGenesis(this.issuerKey, state, this.domain), [])
-    return this.consignment(bytesToHex(state.assetId))!
+    const id = bytesToHex(state.assetId)
+    if (this.records.has(id)) throw new Error('That card is issued already.')
+    const genesis = signGenesis(this.issuerKey, state, this.domain)
+    const consignment = buildConsignment(
+      this.withdraw,
+      this.issuer,
+      [state],
+      genesis,
+      []
+    )
+    this.persist(consignment)
+    this.keep([state], genesis, [])
+    return consignment
   }
 
   consignment(assetId: string): Consignment | null {
@@ -248,6 +268,15 @@ export class CardLedger {
     const toKey = bytesToHex(to)
     if (this.live.has(toKey) || this.spent.has(toKey)) return refuse(IN_USE)
     const receipt = signMove(this.issuerKey, current, next, this.domain)
+    const consignment = buildConsignment(
+      this.withdraw,
+      this.issuer,
+      [...record.states, next],
+      record.genesis,
+      [...record.receipts, receipt]
+    )
+    // written down first: if that fails, the card has not moved
+    this.persist(consignment)
     record.states.push(next)
     record.receipts.push(receipt)
     this.live.delete(q)
@@ -255,10 +284,6 @@ export class CardLedger {
     this.live.set(toKey, id)
     this.release(current.owner, id)
     this.hold(next.owner, id)
-    return {
-      c: this.certified(to).c,
-      receipt,
-      consignment: this.consignment(id)!
-    }
+    return {c: this.certified(to).c, receipt, consignment}
   }
 }
