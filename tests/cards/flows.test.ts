@@ -282,6 +282,25 @@ describe('handing a card on', () => {
     expect(sent).toHaveLength(1)
   })
 
+  it('moves a card once when asked twice at once', async () => {
+    const mint = await start()
+    const alice = await holder(mint)
+    const bob = await holder(mint)
+    const carol = await holder(mint)
+    await buyPack(mint, alice.wallet, alice.domain)
+    const [card] = alice.wallet.cards({status: 'held'})
+    const [first, second] = await Promise.allSettled([
+      alice.wallet.sendCard(card.id, bob.wallet.cardAddress(bob.domain)),
+      alice.wallet.sendCard(card.id, carol.wallet.cardAddress(carol.domain))
+    ])
+    expect(first.status).toBe('fulfilled')
+    expect(second.status === 'rejected' && String(second.reason)).toMatch(
+      /on its way already/
+    )
+    expect(await bob.wallet.refreshCards(bob.domain)).toBe(1)
+    expect(await carol.wallet.refreshCards(carol.domain)).toBe(0)
+  })
+
   it('refuses to move a card it does not hold, or to no key', async () => {
     const mint = await start()
     const alice = await holder(mint)

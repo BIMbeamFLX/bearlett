@@ -183,6 +183,11 @@ export type WalletState = {
    */
   cardKeys: Record<string, number>
   cards: Record<string, HeldCard>
+  /**
+   * invoices this wallet paid (invoiceText), to when: none is paid twice.
+   * Kept 30 days, past the expiry of any invoice a wallet is usually handed.
+   */
+  paidInvoices: Record<string, number>
   settings: {gapLimit: number; offline: boolean}
 }
 
@@ -197,6 +202,7 @@ export const emptyState = (): WalletState => ({
   cardMints: {},
   cardKeys: {},
   cards: {},
+  paidInvoices: {},
   settings: {gapLimit: 20, offline: false}
 })
 

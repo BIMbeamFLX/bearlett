@@ -7,13 +7,7 @@ import {formatSats} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 
-type Invoice = {
-  pr: string
-  verify?: string
-  amountMsat: number
-  /** paid from this wallet: it is not offered for paying again */
-  paid?: boolean
-}
+type Invoice = {pr: string; verify?: string; amountMsat: number}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -95,7 +89,6 @@ export const Cards = (props: {wallet: () => Wallet}) => {
       const bill = invoice()
       if (!bill) return
       await w().pay(payFrom(), bill.pr)
-      setInvoice({...bill, paid: true})
       await collect(bill)
     })
 
@@ -244,11 +237,13 @@ export const Cards = (props: {wallet: () => Wallet}) => {
                 <Copy value={bill().pr} label="Copy invoice" />
               </div>
               <Show
-                when={!bill().paid}
+                when={!w().invoiceStatus(bill().pr)}
                 fallback={
                   <p class="quiet">
-                    Paid from this wallet. The cards come once the card mint
-                    sees the payment.
+                    {w().invoiceStatus(bill().pr) === 'paid'
+                      ? 'Paid from this wallet.'
+                      : 'Being paid from this wallet.'}{' '}
+                    The cards come once the card mint sees the payment.
                   </p>
                 }
               >
@@ -263,7 +258,9 @@ export const Cards = (props: {wallet: () => Wallet}) => {
                 </Show>
               </Show>
               <button class="link" onClick={paidElsewhere}>
-                {bill().paid ? 'Check again' : 'I paid it elsewhere'}
+                {w().invoiceStatus(bill().pr)
+                  ? 'Check again'
+                  : 'I paid it elsewhere'}
               </button>
             </>
           )}

@@ -12,7 +12,7 @@ import {parseNoteLink} from '../../src/lnurl/links.ts'
 import {fetchNoteInfo} from '../../src/lnurl/withdraw.ts'
 import {notePubkey, PURPOSE} from '../../src/spec/derivation.ts'
 import {decodeCp1, encodeCp1} from '../../src/spec/encoding.ts'
-import {memoryStore} from '../../src/wallet/store.ts'
+import {memoryStore, type Store} from '../../src/wallet/store.ts'
 import {newMnemonic} from '../../src/wallet/vault.ts'
 import {
   MintKeyChangedError,
@@ -176,6 +176,69 @@ describe('paying', () => {
     await wallet.settleMelt(melt)
     const paid = wallet.snapshot.activity.filter(a => a.kind === 'pay')
     expect(paid).toHaveLength(1)
+  })
+
+  it('leaves a payment being written down to the pay() that sends it', async () => {
+    const mint = await start()
+    const inner = memoryStore()
+    let slow = false
+    // every write takes a while, as a round trip to the Hangar's storage does
+    const store: Store = {
+      get: key => inner.get(key),
+      remove: key => inner.remove(key),
+      async set(key, value) {
+        if (slow) await sleep(300)
+        await inner.set(key, value)
+      }
+    }
+    const wallet = await walletAt(mint, 30_000, {store})
+    slow = true
+    const paying = wallet.pay(hostOfMint(mint), 'lnbc300n1' + 'q'.repeat(52))
+    await sleep(120)
+    // the melt is in the journal, not yet on disk: settle() must leave it be
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+    await wallet.settle()
+    const melt = await paying
+    expect(melt.state).toBe('in-flight')
+    slow = false
+    await sleep(60)
+    await wallet.settle()
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
+    expect(wallet.balanceMsat()).toBe(0)
+    expect(wallet.snapshot.activity[0].text).toBe('Paid an invoice')
+  })
+
+  it('pays an invoice once when asked twice at once', async () => {
+    const mint = await start({meltNeverSettles: true})
+    const wallet = await walletAt(mint, 50_000)
+    const invoice = 'lnbc100n1' + 'q'.repeat(52)
+    const [first, second] = await Promise.allSettled([
+      wallet.pay(hostOfMint(mint), invoice),
+      wallet.pay(hostOfMint(mint), invoice)
+    ])
+    expect(first.status).toBe('fulfilled')
+    expect(second.status === 'rejected' && String(second.reason)).toMatch(
+      /being paid already/
+    )
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+  })
+
+  it('does not pay an invoice again once it is paid', async () => {
+    const mint = await start({baseFeeMsat: 1000})
+    const wallet = await walletAt(mint, 50_000)
+    const invoice = 'lnbc100n1' + 'q'.repeat(52)
+    expect(wallet.invoiceStatus(invoice)).toBeNull()
+    await wallet.pay(hostOfMint(mint), invoice)
+    expect(wallet.invoiceStatus(invoice)).toBe('paying')
+    await sleep(60)
+    await wallet.settle()
+    expect(wallet.invoiceStatus(invoice)).toBe('paid')
+    const before = wallet.balanceMsat()
+    // however it is written
+    await expect(
+      wallet.pay(hostOfMint(mint), `lightning:${invoice.toUpperCase()}`)
+    ).rejects.toThrow(/paid already/)
+    expect(wallet.balanceMsat()).toBe(before)
   })
 
   it('does not pay an invoice again while it is being paid', async () => {
