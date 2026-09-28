@@ -64,7 +64,9 @@ What a holder keeps and shows, as JSON:
 
 A consignment has at most 10,000 states, so a card moves at most 9,999
 times: a card mint refuses the move past that, and a holder refuses a
-longer history.
+longer history. A card mint may allow fewer moves. It refuses the move past
+its limit with `"This card has moved as often as this card mint allows."`,
+which a wallet shows as is.
 
 Offline, a card is genuine when the issuer is the one the holder trusts,
 `S_0` has index 0, zero `prev` and the `assetId` above, every state follows

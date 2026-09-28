@@ -14,6 +14,7 @@ import {
   type Spend
 } from '../spec/notes.ts'
 import {spendDomain} from '../spec/spend.ts'
+import {isAllowedServiceUrl} from '../lnurl/net.ts'
 import {
   buildConsignment,
   MAX_STATES,
@@ -38,12 +39,21 @@ export const ONLY_MOVES = 'Cards move only by transition.'
 export const UNKNOWN = 'Unknown note.'
 export const SPENT = 'Note already spent.'
 export const IN_USE = 'That note key is already in use.'
+/** A card at the most states this card mint allows: a wallet shows it as is. */
+export const MOVED_OUT =
+  'This card has moved as often as this card mint allows.'
 
 export type Refusal = {refused: string}
 export type Live = {q: Uint8Array; amountMsat: number; c: string}
 /** The lookup's answer: an owner key's live cards, and whether it ever held one. */
 export type Holdings = {cards: Consignment[]; used: boolean}
 export type Moved = {c: string; receipt: Uint8Array; consignment: Consignment}
+
+/** One card to issue: its id in the collection, its serial, its first holder. */
+export type CardToIssue = {name: string; description: string; owner: Uint8Array}
+
+/** Cards written down but not held yet: keep() holds them. */
+export type PendingIssue = {consignments: Consignment[]; keep: () => void}
 
 /** The callback's parameters, as the request carried them. */
 export type BurnRequest = {
@@ -65,6 +75,11 @@ const opens = (spend: Spend, domain: string): Refusal | null => {
     : refuse(`The spend does not open the card: ${check.reason}.`)
 }
 const HEX = /^(?:[0-9a-f]{2})+$/
+const X_ONLY = /^[0-9a-f]{64}$/
+
+/** Whether a history, as hex states, is where another one started. */
+const isPrefix = (shorter: string[], longer: string[]) =>
+  shorter.length <= longer.length && shorter.every((s, i) => s === longer[i])
 
 export type LedgerOptions = {
   /** the card mint's LUD-25 withdraw endpoint, as every card names it */
@@ -127,13 +142,15 @@ export class CardLedger {
 
   /**
    * Rebuilds a ledger from the consignments it wrote, each checked in full:
-   * the latest of every card, or a log of every write (the longest history
-   * of a card counts). A card that does not check out, names another issuer
-   * key or withdraw URL, or forks another history of itself is left out and
-   * named to `skip` by its place in `saved`, so one bad record cannot keep
-   * the card mint from starting; its id is never issued again. When every
-   * card names another issuer key or withdraw URL, the card mint is
-   * misconfigured, and that refuses the start.
+   * the latest of every card, or a log of every write. The longest history
+   * of a card is kept; any other that is not where it started (a fork, as a
+   * re-sign after restoring an old backup makes) is named to `skip`.
+   *
+   * A card that names another issuer key or withdraw URL, or does not check
+   * out, is left out and named to `skip` by its place in `saved`, so one bad
+   * record cannot keep the card mint from starting; its id is never issued
+   * again. When every card names another issuer key or withdraw URL, the
+   * card mint is misconfigured, and that refuses the start.
    */
   static restore(
     options: LedgerOptions,
@@ -143,11 +160,19 @@ export class CardLedger {
     // keep() only fills memory: nothing read back is written again
     const ledger = new CardLedger(options)
     const issuer = bytesToHex(ledger.issuer)
-    const latest = new Map<string, Card>()
+    const histories = new Map<string, {card: Card; at: number}[]>()
     let foreign = 0
     for (const [at, consignment] of saved.entries()) {
       const named = consignment as Partial<Consignment> | null
-      if (named?.issuer !== issuer || named?.mint !== ledger.withdraw) {
+      // well-formed, and another key or URL: not damage, another mint's card
+      if (
+        (typeof named?.issuer === 'string' &&
+          X_ONLY.test(named.issuer) &&
+          named.issuer !== issuer) ||
+        (typeof named?.mint === 'string' &&
+          isAllowedServiceUrl(named.mint) &&
+          named.mint !== ledger.withdraw)
+      ) {
         foreign++
         ledger.quarantine(consignment)
         skip('Left out a card of another issuer key or withdraw URL.', at)
@@ -160,25 +185,31 @@ export class CardLedger {
         continue
       }
       const id = bytesToHex(card.head.assetId)
-      const known = latest.get(id)
-      if (!known || known.states.length < card.states.length)
-        latest.set(id, card)
-      else if (
-        known.states.length === card.states.length &&
-        known.consignment.states.join() !== card.consignment.states.join()
-      )
-        skip('Left out a history that forks another of the same card.', at)
+      histories.set(id, [...(histories.get(id) ?? []), {card, at}])
     }
     if (saved.length && foreign === saved.length)
       throw new Error(
         'Not restorable: every card names another issuer key or withdraw URL.'
       )
-    for (const {states, consignment} of latest.values())
+    for (const found of histories.values()) {
+      const kept = found.reduce((a, b) =>
+        b.card.states.length > a.card.states.length ? b : a
+      )
+      for (const other of found)
+        if (
+          !isPrefix(other.card.consignment.states, kept.card.consignment.states)
+        )
+          skip(
+            'Left out a history that forks the one kept of this card.',
+            other.at
+          )
+      const {states, consignment} = kept.card
       ledger.keep(
         states,
         hexToBytes(consignment.genesis),
         consignment.receipts.map(hexToBytes)
       )
+    }
     return ledger
   }
 
@@ -232,22 +263,49 @@ export class CardLedger {
    * keeps its serial counter across restarts for a card it never saw.
    */
   issue(name: string, description: string, owner: Uint8Array): Consignment {
-    if (!isPointX(owner)) throw new Error('A card is issued to a key only.')
-    const state = genesisState(this.issuer, name, description, owner)
-    const id = bytesToHex(state.assetId)
-    if (this.records.has(id) || this.quarantined.has(id))
-      throw new Error('That card is issued already.')
-    const genesis = signGenesis(this.issuerKey, state, this.domain)
-    const consignment = buildConsignment(
-      this.withdraw,
-      this.issuer,
-      [state],
-      genesis,
-      []
-    )
-    this.persist(consignment)
-    this.keep([state], genesis, [])
-    return consignment
+    const pending = this.issuePending([{name, description, owner}])
+    pending.keep()
+    return pending.consignments[0]
+  }
+
+  /**
+   * Issues cards all or none, held only once the card mint says so: each is
+   * written down with `persist` now, and the ledger holds them when `keep`
+   * is called. A card mint that writes a pack in a transaction calls keep()
+   * after its COMMIT, so a rollback leaves nothing held that is not on disk.
+   * Until then no lookup, move or issue sees them.
+   */
+  issuePending(cards: CardToIssue[]): PendingIssue {
+    const ids = new Set<string>()
+    const issued = cards.map(({name, description, owner}) => {
+      if (!isPointX(owner)) throw new Error('A card is issued to a key only.')
+      const state = genesisState(this.issuer, name, description, owner)
+      const id = bytesToHex(state.assetId)
+      if (this.records.has(id) || this.quarantined.has(id) || ids.has(id))
+        throw new Error('That card is issued already.')
+      ids.add(id)
+      const genesis = signGenesis(this.issuerKey, state, this.domain)
+      const consignment = buildConsignment(
+        this.withdraw,
+        this.issuer,
+        [state],
+        genesis,
+        []
+      )
+      return {state, id, genesis, consignment}
+    })
+    for (const {consignment} of issued) this.persist(consignment)
+    let kept = false
+    return {
+      consignments: issued.map(card => card.consignment),
+      keep: () => {
+        if (kept) return
+        if (issued.some(({id}) => this.records.has(id)))
+          throw new Error('That card is issued already.')
+        for (const {state, genesis} of issued) this.keep([state], genesis, [])
+        kept = true
+      }
+    }
   }
 
   consignment(assetId: string): Consignment | null {
@@ -352,8 +410,7 @@ export class CardLedger {
         consignment: this.consignment(id)!
       }
     }
-    if (record.states.length >= this.maxStates)
-      return refuse(`A card moves at most ${this.maxStates - 1} times.`)
+    if (record.states.length >= this.maxStates) return refuse(MOVED_OUT)
     const problem = moveProblem(current, next)
     if (problem) return refuse(`That is not the card’s next state: ${problem}.`)
     if (!equalBytes(cardNote(next).q, to))

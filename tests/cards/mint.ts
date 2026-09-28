@@ -26,6 +26,8 @@ export type CardMintOptions = {
   port?: number
   /** the origin its documents name, e.g. `https://cards.test` */
   origin?: string
+  /** the most states a card may reach here (CardLedger's maxStates) */
+  maxStates?: number
 }
 
 const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
@@ -174,7 +176,8 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
   ledger = new CardLedger({
     withdraw: `${origin}/w`,
     issuerKey,
-    mintKey: randomBytes(32)
+    mintKey: randomBytes(32),
+    maxStates: options.maxStates
   })
   return {
     url: origin,
