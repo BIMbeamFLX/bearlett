@@ -403,6 +403,68 @@ describe('paying', () => {
   })
 })
 
+describe('the address scan and the mint’s index hint', () => {
+  /**
+   * A wallet whose Lightning Address is the mock mint's own name, the mint
+   * hinting `hint` as the next index it hands out (its text/cpub), and a
+   * way to pay the address at any index.
+   */
+  const addressed = async (hint: number, words = newMnemonic()) => {
+    const mint = await start()
+    const domain = hostOfMint(mint)
+    const box: {wallet?: Wallet} = {}
+    const net: Net = {
+      async get(url, options) {
+        const body = await fetchNet.get(url, options)
+        if (!box.wallet || !url.endsWith('/.well-known/lnurlp/mint'))
+          return body
+        const metadata = JSON.parse(body.metadata as string)
+        const cx1 = (box.wallet as any).keys.cx1(domain)
+        metadata.push(['text/cpub', `${cx1}:${hint}`])
+        return {...body, metadata: JSON.stringify(metadata)}
+      }
+    }
+    const wallet = await walletAt(mint, 0, {net, words})
+    box.wallet = wallet
+    ;(wallet as any).state.addresses[domain] = {
+      username: 'mint',
+      mint: domain,
+      since: 0
+    }
+    const pay = async (index: number) => {
+      const cp1 = (wallet as any).keys.cp1(domain, {
+        purpose: PURPOSE.lightningAddress,
+        index
+      })
+      await fetch(`${mint.url}/_test/credit?p=${cp1}&amount=1000`)
+    }
+    return {mint, domain, wallet, pay}
+  }
+
+  it('finds a note below the hint, which moves on when an invoice is handed out', async () => {
+    const words = newMnemonic()
+    // one payment, at index 0; the mint handed out indexes 1 and 2 unpaid
+    const {mint, domain, wallet, pay} = await addressed(3, words)
+    await pay(0)
+    expect(await wallet.checkAddress(domain)).toBe(1)
+    expect(wallet.balanceMsat()).toBe(1000)
+    // and the words alone find it, the hint never asked
+    const restored = await walletAt(mint, 0, {words})
+    expect(await restored.recover(domain)).toBe(1)
+  })
+
+  it('finds a note that settled below where the last look ended', async () => {
+    const {domain, wallet, pay} = await addressed(3)
+    await pay(0)
+    await pay(2)
+    expect(await wallet.checkAddress(domain)).toBe(2)
+    // index 1 settles late, below the counter the last look left
+    await pay(1)
+    expect(await wallet.checkAddress(domain)).toBe(1)
+    expect(wallet.balanceMsat()).toBe(3000)
+  })
+})
+
 describe('lost answers and crashes', () => {
   it('settles a burn whose answer was lost after it landed', async () => {
     const mint = await start()
