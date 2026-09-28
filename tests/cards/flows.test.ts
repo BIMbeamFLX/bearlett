@@ -256,6 +256,32 @@ describe('handing a card on', () => {
     expect(bob.wallet.verifiedCard(card.id).states).toHaveLength(2)
   })
 
+  it('logs a move once when two settles ask again at once', async () => {
+    const mint = await start()
+    let lose = 1
+    const net: Net = {
+      async get(url, options) {
+        const body = await fetchNet.get(url, options)
+        if (new URL(url).pathname === '/w/cb' && lose-- > 0)
+          throw new TransportError('The answer was lost.')
+        return body
+      }
+    }
+    const alice = await holder(mint, {net})
+    const bob = await holder(mint)
+    await buyPack(mint, alice.wallet, alice.domain)
+    const [card] = alice.wallet.cards({status: 'held'})
+    await expect(
+      alice.wallet.sendCard(card.id, bob.wallet.cardAddress(bob.domain))
+    ).rejects.toBeInstanceOf(TransportError)
+    await Promise.all([alice.wallet.settle(), alice.wallet.settle()])
+    expect(alice.wallet.snapshot.cards[card.id].status).toBe('sent')
+    const sent = alice.wallet.snapshot.activity.filter(a =>
+      a.text.startsWith('Sent ')
+    )
+    expect(sent).toHaveLength(1)
+  })
+
   it('refuses to move a card it does not hold, or to no key', async () => {
     const mint = await start()
     const alice = await holder(mint)

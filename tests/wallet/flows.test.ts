@@ -258,6 +258,23 @@ describe('lost answers and crashes', () => {
     expect(wallet.notes({role: 'outgoing', status: 'live'})).toHaveLength(1)
   })
 
+  it('settles it once when the timer and "Check now" ask together', async () => {
+    const mint = await start()
+    const wallet = await walletAt(mint, 10_000, {net: losing(isBurn)})
+    await expect(wallet.send(hostOfMint(mint), 3_000)).rejects.toBeInstanceOf(
+      TransportError
+    )
+    const first = wallet.settle()
+    // the second call joins the run under way
+    expect(wallet.settle()).toBe(first)
+    await first
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
+    expect(wallet.balanceMsat()).toBe(7_000)
+    expect(wallet.notes({role: 'outgoing', status: 'live'})).toHaveLength(1)
+    // and a later call is a run of its own
+    expect(wallet.settle()).not.toBe(first)
+  })
+
   it('settles it at a mint that drops the answer and refuses replays', async () => {
     const mint = await start({
       dropAfterMutation: true,

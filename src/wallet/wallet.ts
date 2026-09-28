@@ -114,6 +114,8 @@ export class Wallet {
   private readonly listeners = new Set<() => void>()
   /** journal entries this session is sending right now: settle() leaves them be */
   private readonly sending = new Set<string>()
+  /** the settle() run under way, which a second call joins */
+  private settling: Promise<void> | null = null
   private saving: Promise<void> = Promise.resolve()
 
   private readonly ports: Ports
@@ -972,6 +974,8 @@ export class Wallet {
       amounts.push(amount ?? expected[i])
     }
     await this.commit(state => {
+      // applied already: a send and a settle() may both get here
+      if (!state.operations[op.id]) return
       for (const q of op.inputs) {
         state.notes[q].status = 'spent'
         state.notes[q].updatedAt = this.now()
@@ -983,8 +987,18 @@ export class Wallet {
     })
   }
 
-  /** Settles every journal entry that is still open. */
-  async settle(): Promise<void> {
+  /**
+   * Settles every journal entry that is still open, one run at a time: the
+   * timer and "Check now" may both ask, and the second joins the first.
+   */
+  settle(): Promise<void> {
+    this.settling ??= this.settleAll().finally(() => {
+      this.settling = null
+    })
+    return this.settling
+  }
+
+  private async settleAll(): Promise<void> {
     const tasks: (() => Promise<unknown>)[] = [
       ...Object.values(this.state.operations)
         .filter(op => !this.sending.has(op.id))
@@ -1553,6 +1567,8 @@ export class Wallet {
       if (err instanceof ServiceError) {
         const gone = reason.spent(err.reason)
         await this.commit(state => {
+          // answered already: a send and a settle() may both get here
+          if (state.cards[id]?.move?.k1 !== move.k1) return
           Object.assign(state.cards[id], {
             status: gone ? 'gone' : 'held',
             index: gone ? undefined : held.index,
@@ -1569,6 +1585,7 @@ export class Wallet {
       receipts: [...held.consignment.receipts, bytesToHex(receipt)]
     }
     await this.commit(state => {
+      if (state.cards[id]?.move?.k1 !== move.k1) return
       Object.assign(state.cards[id], {
         consignment,
         status: 'sent',
