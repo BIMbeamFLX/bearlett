@@ -3,6 +3,7 @@
 // passphrase only protects it on this device.
 import {createSignal, For, Match, Show, Switch} from 'solid-js'
 import {Action, Busy, Field} from '../kit.tsx'
+import {EXPERIMENT} from '../format.ts'
 import {run} from '../session.ts'
 import {isMnemonic, newMnemonic, normalizeMnemonic} from '../../wallet/vault.ts'
 import {Wallet, type Ports} from '../../wallet/wallet.ts'
@@ -35,6 +36,7 @@ export const Setup = (props: {
               A wallet for LNURLcash notes (LUD-25): bearer notes and notes on
               your own keys, minted and redeemed over plain LNURL.
             </p>
+            <p class="warn">{EXPERIMENT}</p>
             <div class="actions">
               <Action
                 onClick={() => {
