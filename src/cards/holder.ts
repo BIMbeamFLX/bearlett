@@ -17,11 +17,15 @@ import {moveDigest, verifyConsignment, type Card} from './proofs.ts'
 import {cardNote, encodeState, nextState, type CardState} from './state.ts'
 
 /**
- * Owner keys are note keys on the card mint's LUD-25 branch under a purpose
- * of their own, beside LUD-25's wallet, change and address purposes (0-2):
- * a money scan never meets a card key, nor a card scan a money key.
+ * Owner keys live on the card branch: the hardened child CARD_BRANCH' of the
+ * holder's LUD-25 branch at the card mint's host, where they are LUD-25 note
+ * keys of purpose CARD_PURPOSE. Hardened, so the branch's watch-only export
+ * (cx1), which a mint publishes for a Lightning Address, derives none of
+ * them; apart, so a money scan never meets a card key, nor a card scan a
+ * money key.
  */
-export const CARD_PURPOSE = 3
+export const CARD_BRANCH = 3
+export const CARD_PURPOSE = 0
 
 /** The time claim dni's seals.ts signs a move with: none. */
 export const MOVE_CLAIM: TimeClaim = {locktime: 0, sequence: 0xfffffffe}

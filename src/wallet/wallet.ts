@@ -18,6 +18,7 @@ import {ServiceError, TransportError, reason} from '../lnurl/errors.ts'
 import {
   buildNoteLink,
   invoiceAmountMsat,
+  invoiceText,
   resolveLnurlInput,
   resolveMintInput,
   type NoteLink
@@ -108,13 +109,20 @@ type Melt = Extract<Operation, {kind: 'melt'}>
 type MintOp = Extract<Operation, {kind: 'mint'}>
 
 const MAX_INDEX_RETRIES = 10
+const PAID_INVOICES_KEPT_MS = 30 * 24 * 3600 * 1000
 const cp1Of = (output: Output): string => encodeCp1(hexToBytes(output.q))
 const id = (): string => crypto.randomUUID()
 
 export class Wallet {
   private readonly listeners = new Set<() => void>()
-  /** journal entries this session is sending right now: settle() leaves them be */
+  /**
+   * journal entries this session is sending right now: settle() leaves them
+   * be. An entry joins before it is written down, or a settle() between the
+   * two would take it for one whose answer was lost.
+   */
   private readonly sending = new Set<string>()
+  /** invoices a pay() is preparing, before their payment is written down */
+  private readonly paying = new Set<string>()
   /** the settle() run under way, which a second call joins */
   private settling: Promise<void> | null = null
   private saving: Promise<void> = Promise.resolve()
@@ -185,6 +193,7 @@ export class Wallet {
     state.cardMints ??= {}
     state.cardKeys ??= {}
     state.cards ??= {}
+    state.paidInvoices ??= {}
     return new Wallet(ports, new KeyRing(seed), key, state)
   }
 
@@ -794,17 +803,39 @@ export class Wallet {
    * Pays a BOLT-11 invoice from notes at `domain`: a note worth exactly
    * the invoice is split off first when needed, then melted (LUD-03).
    */
+  /** Whether this wallet is paying an invoice, has paid it, or neither. */
+  invoiceStatus(invoice: string): 'paying' | 'paid' | null {
+    const key = invoiceText(invoice)
+    if (this.state.paidInvoices[key]) return 'paid'
+    const open = Object.values(this.state.operations).some(
+      op => op.kind === 'melt' && invoiceText(op.pr) === key
+    )
+    return open || this.paying.has(key) ? 'paying' : null
+  }
+
   async pay(domain: string, invoice: string): Promise<Melt> {
     const amountMsat = invoiceAmountMsat(invoice)
     if (!amountMsat)
       throw new Error('Only invoices with an amount can be paid.')
-    // a second click after a lost answer must not split off and pay again
-    if (
-      Object.values(this.state.operations).some(
-        op => op.kind === 'melt' && op.pr === invoice
-      )
-    )
+    // a second click, or one after a lost answer, must not split off and pay again
+    const status = this.invoiceStatus(invoice)
+    if (status === 'paid') throw new Error('This invoice is paid already.')
+    if (status === 'paying')
       throw new Error('This invoice is being paid already.')
+    const key = invoiceText(invoice)
+    this.paying.add(key)
+    try {
+      return await this.payOnce(domain, invoice, amountMsat)
+    } finally {
+      this.paying.delete(key)
+    }
+  }
+
+  private async payOnce(
+    domain: string,
+    invoice: string,
+    amountMsat: number
+  ): Promise<Melt> {
     let note = this.notes({mint: domain, role: 'own', status: 'live'}).find(
       candidate => candidate.amountMsat === amountMsat
     )
@@ -827,30 +858,35 @@ export class Wallet {
       amountMsat,
       state: 'prepared'
     }
-    await this.commit(state => {
-      state.operations[op.id] = op
-      state.notes[note!.q].status = 'pending'
-    })
     this.sending.add(op.id)
     try {
-      const result = await melt(this.net, op.callback, op.k1, op.pr)
       await this.commit(state => {
-        const stored = state.operations[op.id] as Melt
-        stored.state = 'in-flight'
-        stored.verify = result.verify
+        state.operations[op.id] = op
+        state.notes[note!.q].status = 'pending'
       })
-    } catch (err) {
-      if (err instanceof ServiceError) {
+      try {
+        const result = await melt(this.net, op.callback, op.k1, op.pr)
         await this.commit(state => {
-          delete state.operations[op.id]
-          state.notes[note!.q].status = 'live'
+          const stored = state.operations[op.id] as Melt | undefined
+          if (!stored) return
+          stored.state = 'in-flight'
+          stored.verify = result.verify
         })
-      } else {
-        await this.commit(state => {
-          ;(state.operations[op.id] as Melt).state = 'unknown'
-        })
+      } catch (err) {
+        if (err instanceof ServiceError) {
+          await this.commit(state => {
+            if (!state.operations[op.id]) return
+            delete state.operations[op.id]
+            state.notes[note!.q].status = 'live'
+          })
+        } else {
+          await this.commit(state => {
+            const stored = state.operations[op.id] as Melt | undefined
+            if (stored) stored.state = 'unknown'
+          })
+        }
+        throw err
       }
-      throw err
     } finally {
       this.sending.delete(op.id)
     }
@@ -883,13 +919,18 @@ export class Wallet {
         note.status = outcome === 'paid' ? 'spent' : 'live'
         note.updatedAt = this.now()
       }
-      if (outcome === 'paid')
+      if (outcome === 'paid') {
+        const now = this.now()
+        for (const [key, at] of Object.entries(state.paidInvoices))
+          if (at < now - PAID_INVOICES_KEPT_MS) delete state.paidInvoices[key]
+        state.paidInvoices[invoiceText(op.pr)] = now
         this.log(state, {
           kind: 'pay',
           mint: op.mint,
           amountMsat: op.amountMsat,
           text: 'Paid an invoice'
         })
+      }
     })
     return outcome
   }
@@ -917,12 +958,12 @@ export class Wallet {
       purpose: plan.purpose,
       state: 'prepared'
     }
-    await this.commit(state => {
-      state.operations[op.id] = op
-      for (const q of op.inputs) state.notes[q].status = 'pending'
-    })
     this.sending.add(op.id)
     try {
+      await this.commit(state => {
+        state.operations[op.id] = op
+        for (const q of op.inputs) state.notes[q].status = 'pending'
+      })
       await this.sendBurn(op)
     } finally {
       this.sending.delete(op.id)
@@ -1538,6 +1579,8 @@ export class Wallet {
     const held = this.state.cards[id]
     if (!held || held.status !== 'held' || held.index === undefined)
       throw new Error('Only a card this wallet holds can move.')
+    if (this.sending.has(id))
+      throw new Error('This card is on its way already.')
     const owner = decodeCp1(to.trim())
     if (!owner) throw new Error('A card address is a cp1 key.')
     const info = this.cardMintInfo(this.cardMint(held.mint))
@@ -1548,17 +1591,17 @@ export class Wallet {
       owner,
       spendDomainOfHost(held.mint)
     )
-    const callback = await moveCallback(this.net, info, head)
-    // written down before it is sent: a lost answer is asked again as is
-    await this.commit(state => {
-      Object.assign(state.cards[id], {
-        status: 'moving',
-        move: {callback, k1: move.k1, p1: move.p1, state: move.state},
-        updatedAt: this.now()
-      })
-    })
     this.sending.add(id)
     try {
+      const callback = await moveCallback(this.net, info, head)
+      // written down before it is sent: a lost answer is asked again as is
+      await this.commit(state => {
+        Object.assign(state.cards[id], {
+          status: 'moving',
+          move: {callback, k1: move.k1, p1: move.p1, state: move.state},
+          updatedAt: this.now()
+        })
+      })
       await this.finishMove(id)
     } finally {
       this.sending.delete(id)

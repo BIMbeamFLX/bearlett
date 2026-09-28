@@ -13,6 +13,7 @@ import {
   branchExport,
   branchNode,
   cashRoot,
+  HARDENED,
   notePubkey,
   noteSecretKey,
   signAddressProof,
@@ -20,7 +21,7 @@ import {
   type Purpose
 } from '../spec/derivation.ts'
 import {encodeCp1, encodeCx1, type BranchExport} from '../spec/encoding.ts'
-import {CARD_PURPOSE} from '../cards/holder.ts'
+import {CARD_BRANCH, CARD_PURPOSE} from '../cards/holder.ts'
 import {
   leafNote,
   signKeySpend,
@@ -40,6 +41,7 @@ export const spendDomainOfHost = (host: string): string =>
 export class KeyRing {
   private readonly root: HDKey
   private readonly branches = new Map<string, HDKey>()
+  private readonly cardBranches = new Map<string, HDKey>()
 
   constructor(seed: Uint8Array) {
     this.root = cashRoot(HDKey.fromMasterSeed(seed))
@@ -101,13 +103,23 @@ export class KeyRing {
     return signKeySpend(this.secretKey(host, key), spendDomainOfHost(host))
   }
 
-  /** A card owner key, x-only: CARD_PURPOSE on the card mint's branch. */
+  /** The card branch, CARD_BRANCH' under the host's branch: hardened, so no cx1 reaches it. */
+  private cardBranch(host: string): HDKey {
+    let node = this.cardBranches.get(host)
+    if (!node) {
+      node = this.branch(host).deriveChild(CARD_BRANCH + HARDENED)
+      this.cardBranches.set(host, node)
+    }
+    return node
+  }
+
+  /** A card owner key, x-only (docs/CARDS-LNURLCASH.md, The holder). */
   cardKey(host: string, index: number): Uint8Array {
-    return notePubkey(this.export(host), CARD_PURPOSE, index)
+    return notePubkey(branchExport(this.cardBranch(host)), CARD_PURPOSE, index)
   }
 
   cardSecretKey(host: string, index: number): Uint8Array {
-    return noteSecretKey(this.branch(host), CARD_PURPOSE, index)
+    return noteSecretKey(this.cardBranch(host), CARD_PURPOSE, index)
   }
 
   /** The registration proof names the mint's hostname, as the mint checks it. */

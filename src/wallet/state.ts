@@ -159,7 +159,7 @@ export type HeldCard = {
   /** the card mint's domain */
   mint: string
   consignment: Consignment
-  /** the card key (CARD_PURPOSE) holding the current state, while it is this wallet's */
+  /** the index of the card key holding the current state, while it is this wallet's */
   index?: number
   status: CardStatus
   /** the move in flight, kept to ask again with the same bytes */
@@ -184,6 +184,11 @@ export type WalletState = {
    */
   cardKeys: Record<string, number>
   cards: Record<string, HeldCard>
+  /**
+   * invoices this wallet paid (invoiceText), to when: none is paid twice.
+   * Kept 30 days, past the expiry of any invoice a wallet is usually handed.
+   */
+  paidInvoices: Record<string, number>
   settings: {
     gapLimit: number
     offline: boolean
@@ -203,6 +208,7 @@ export const emptyState = (): WalletState => ({
   cardMints: {},
   cardKeys: {},
   cards: {},
+  paidInvoices: {},
   settings: {gapLimit: 20, offline: false}
 })
 

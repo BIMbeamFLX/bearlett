@@ -16,7 +16,7 @@ import {
 import {CURVE_ORDER, liftX} from './taproot.ts'
 import type {BranchExport} from './encoding.ts'
 
-const HARDENED = 0x80000000
+export const HARDENED = 0x80000000
 
 /** Which of a branch's three independent counters a key belongs to. */
 export const PURPOSE = {

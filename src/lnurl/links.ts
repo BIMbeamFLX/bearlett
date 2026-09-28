@@ -151,7 +151,8 @@ export const buildNoteLink = (link: NoteLink): string => {
 // the amount is all a wallet reads here: the mint that pays checks the rest
 const INVOICE = /^ln(bcrt|bc|tbs|tb|sb)(\d*[munp]?)1[0-9a-z]+$/
 
-const invoiceText = (text: string): string =>
+/** An invoice as the wallet compares it: trimmed, without lightning:, lowercase. */
+export const invoiceText = (text: string): string =>
   text
     .trim()
     .replace(/^lightning:/i, '')

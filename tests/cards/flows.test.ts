@@ -13,6 +13,7 @@ import {
   branchExport,
   branchNode,
   cashRoot,
+  HARDENED,
   notePubkey
 } from '../../src/spec/derivation.ts'
 import {decodeCp1} from '../../src/spec/encoding.ts'
@@ -282,6 +283,25 @@ describe('handing a card on', () => {
     expect(sent).toHaveLength(1)
   })
 
+  it('moves a card once when asked twice at once', async () => {
+    const mint = await start()
+    const alice = await holder(mint)
+    const bob = await holder(mint)
+    const carol = await holder(mint)
+    await buyPack(mint, alice.wallet, alice.domain)
+    const [card] = alice.wallet.cards({status: 'held'})
+    const [first, second] = await Promise.allSettled([
+      alice.wallet.sendCard(card.id, bob.wallet.cardAddress(bob.domain)),
+      alice.wallet.sendCard(card.id, carol.wallet.cardAddress(carol.domain))
+    ])
+    expect(first.status).toBe('fulfilled')
+    expect(second.status === 'rejected' && String(second.reason)).toMatch(
+      /on its way already/
+    )
+    expect(await bob.wallet.refreshCards(bob.domain)).toBe(1)
+    expect(await carol.wallet.refreshCards(carol.domain)).toBe(0)
+  })
+
   it('refuses to move a card it does not hold, or to no key', async () => {
     const mint = await start()
     const alice = await holder(mint)
@@ -296,19 +316,24 @@ describe('handing a card on', () => {
 })
 
 describe('card keys', () => {
-  it('are purpose 3 on the card mint’s branch, apart from every money key', async () => {
+  it('live on the hardened card branch, apart from every money key', async () => {
     const mint = await start()
     const words = newMnemonic()
     const {wallet, domain} = await holder(mint, {words})
     const root = cashRoot(HDKey.fromMasterSeed(seedOf(words)))
-    const branch = branchExport(branchNode(root, domain))
+    const branch = branchNode(root, domain)
+    const cards = branchExport(branch.deriveChild(3 + HARDENED))
     expect(decodeCp1(wallet.cardAddress(domain))).toEqual(
-      notePubkey(branch, 3, 0)
+      notePubkey(cards, 0, 0)
     )
     await buyPack(mint, wallet, domain)
-    expect(decodeCp1(wallet.cardAddress(domain))).toEqual(
-      notePubkey(branch, 3, 1)
-    )
+    const second = decodeCp1(wallet.cardAddress(domain))!
+    expect(second).toEqual(notePubkey(cards, 0, 1))
+    // the branch's watch-only export, which a mint may publish, yields none
+    const exported = branchExport(branch)
+    for (let purpose = 0; purpose < 8; purpose++)
+      for (let index = 0; index < 4; index++)
+        expect(notePubkey(exported, purpose, index)).not.toEqual(second)
     // no money counter at the card mint's host moved
     expect(wallet.snapshot.counters[domain]).toBeUndefined()
   })
