@@ -159,9 +159,9 @@ describe('issuing', () => {
     expect(() => ledger.issuePending([{...card, owner: pub(bob)}])).toThrow(
       /issued already/
     )
-    // a rollback gives it back
+    // a rollback gives it back, and a pack given back is never held
     first.abandon()
-    first.keep()
+    expect(() => first.keep()).toThrow(/abandoned/)
     expect(ledger.byOwner(pub(alice))).toEqual([])
     const second = ledger.issuePending([{...card, owner: pub(bob)}])
     second.keep()

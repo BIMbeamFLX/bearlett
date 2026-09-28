@@ -7,8 +7,14 @@ import {
   parseDesign,
   parseDesignMessage
 } from '../../src/wallet/design.ts'
-import {memoryStore} from '../../src/wallet/store.ts'
-import {newMnemonic} from '../../src/wallet/vault.ts'
+import {DESIGN_KEY, STATE_KEY, memoryStore} from '../../src/wallet/store.ts'
+import {
+  newMnemonic,
+  openJson,
+  sealJson,
+  seedOf,
+  stateKey
+} from '../../src/wallet/vault.ts'
 import {Wallet} from '../../src/wallet/wallet.ts'
 import {fetchNet} from '../../src/platform/web.ts'
 
@@ -71,11 +77,83 @@ describe('a note design', () => {
     const wallet = await Wallet.create({net: fetchNet, store}, words, 'pw')
     await wallet.setDesign(parseDesign({...design, image}))
     const again = await Wallet.unlock({net: fetchNet, store}, 'pw')
-    expect(again.snapshot.settings.design).toEqual({...design, image})
+    expect(again.design).toEqual({...design, image})
     await again.setDesign(null)
-    expect(again.snapshot.settings.design).toBeUndefined()
+    expect(again.design).toBeUndefined()
+    expect(await store.get(DESIGN_KEY)).toBeNull()
     await expect(
       again.setDesign({...design, ink: 'not a colour'})
     ).rejects.toThrow()
+  })
+
+  it('lives apart from the state, which every save rewrites', async () => {
+    const store = memoryStore()
+    const words = newMnemonic()
+    const wallet = await Wallet.create({net: fetchNet, store}, words, '')
+    await wallet.setDesign(parseDesign({...design, image}))
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    expect(state.settings.design).toBeUndefined()
+    expect(await openJson(key, (await store.get(DESIGN_KEY))!)).toEqual({
+      ...design,
+      image
+    })
+    // a save of the state leaves the design where it is
+    const sealed = await store.get(DESIGN_KEY)
+    await wallet.setGapLimit(30)
+    expect(await store.get(DESIGN_KEY)).toBe(sealed)
+  })
+
+  it('opens even when the design cannot move yet, and moves it on a later opening', async () => {
+    const inner = memoryStore()
+    let failing = true
+    const store = {
+      ...inner,
+      async set(key: string, value: string) {
+        if (failing && key === DESIGN_KEY) throw new Error('quota exceeded')
+        await inner.set(key, value)
+      }
+    }
+    const words = newMnemonic()
+    const created = await Wallet.create({net: fetchNet, store}, words, '')
+    await created.setGapLimit(20)
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    state.settings.design = {...design, image}
+    await store.set(STATE_KEY, await sealJson(key, state))
+    // the store refuses the design: the wallet opens, and shows it anyway
+    const first = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(first.design).toEqual({...design, image})
+    expect(await store.get(DESIGN_KEY)).toBeNull()
+    // a design this version cannot read never keeps the wallet shut either
+    const odd = await openJson(key, (await store.get(STATE_KEY))!)
+    odd.settings.design = {...design, ink: 'no colour'}
+    await store.set(STATE_KEY, await sealJson(key, odd))
+    failing = false
+    const unreadable = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(unreadable.design).toBeUndefined()
+    // with a readable one back and the store working, it moves
+    odd.settings.design = {...design, image}
+    await store.set(STATE_KEY, await sealJson(key, odd))
+    const moved = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(moved.design).toEqual({...design, image})
+    expect(moved.snapshot.settings.design).toBeUndefined()
+    expect(await store.get(DESIGN_KEY)).not.toBeNull()
+  })
+
+  it('moves a design the state held before to its own key', async () => {
+    const store = memoryStore()
+    const words = newMnemonic()
+    const created = await Wallet.create({net: fetchNet, store}, words, '')
+    await created.setGapLimit(20)
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    state.settings.design = {...design, image}
+    await store.set(STATE_KEY, await sealJson(key, state))
+    const wallet = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(wallet.design).toEqual({...design, image})
+    expect(wallet.snapshot.settings.design).toBeUndefined()
+    const reopened = await Wallet.unlock({net: fetchNet, store}, '')
+    expect(reopened.design).toEqual({...design, image})
   })
 })

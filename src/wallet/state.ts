@@ -185,14 +185,17 @@ export type WalletState = {
   cardKeys: Record<string, number>
   cards: Record<string, HeldCard>
   /**
-   * invoices this wallet paid (invoiceText), to when: none is paid twice.
-   * Kept 30 days, past the expiry of any invoice a wallet is usually handed.
+   * invoices this wallet paid, to when it may forget them (unix ms): none is
+   * paid twice. Keyed by payment hash, kept until the invoice can no longer
+   * be paid; an invoice that is not BOLT-11 by its text, kept 30 days.
    */
-  paidInvoices: Record<string, number>
+  paid: Record<string, number>
+  /** before `paid`: invoice text to when it was paid; read once, then gone */
+  paidInvoices?: Record<string, number>
   settings: {
     gapLimit: number
     offline: boolean
-    /** how handed-out notes look, from the Hangar's Note Designer */
+    /** before it had a key of its own (DESIGN_KEY): read once, then gone */
     design?: NoteDesign
   }
 }
@@ -208,7 +211,7 @@ export const emptyState = (): WalletState => ({
   cardMints: {},
   cardKeys: {},
   cards: {},
-  paidInvoices: {},
+  paid: {},
   settings: {gapLimit: 20, offline: false}
 })
 

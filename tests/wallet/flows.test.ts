@@ -2,6 +2,8 @@
 // HTTP: minting, handing out and receiving, paying, lost answers and
 // crashes, trust, recovery and timelocks.
 import {afterEach, describe, expect, it} from 'vitest'
+import {bech32} from '@scure/base'
+import {hexToBytes} from '../../src/spec/bytes.ts'
 import {fetchNet} from '../../src/platform/web.ts'
 import {
   ProtocolError,
@@ -44,6 +46,37 @@ afterEach(async () => {
 })
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * A BOLT-11 invoice for 10 sat with the fields a wallet reads: a payment
+ * hash, a timestamp and an expiry. Its signature is zeros: the mint that
+ * pays checks it, and the test mint pays anything.
+ */
+const bolt11 = (terms: {
+  hash: string
+  timestamp: number
+  expiry?: number
+  expiryWords?: number[]
+}) => {
+  const number = (value: number, length: number) =>
+    Array.from(
+      {length},
+      (_, i) => Math.floor(value / 32 ** (length - 1 - i)) % 32
+    )
+  const field = (type: number, data: number[]) => [
+    type,
+    Math.floor(data.length / 32),
+    data.length % 32,
+    ...data
+  ]
+  const words = [
+    ...number(terms.timestamp, 7),
+    ...field(1, bech32.toWords(hexToBytes(terms.hash))),
+    ...field(6, terms.expiryWords ?? number(terms.expiry ?? 3600, 6)),
+    ...new Array(104).fill(0)
+  ]
+  return bech32.encode('lnbc100n', words, false)
+}
 
 describe('minting', () => {
   it('credits a fresh key of its own once the invoice is paid, less the fee', async () => {
@@ -223,6 +256,56 @@ describe('paying', () => {
     expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
   })
 
+  it('remembers a paid invoice by its payment hash until it can no longer be paid', async () => {
+    const mint = await start({baseFeeMsat: 1000})
+    let now = Date.now()
+    const wallet = await walletAt(mint, 50_000, {now: () => now})
+    const hash = 'ab'.repeat(32)
+    const twoMonths = 60 * 24 * 3600
+    const invoice = bolt11({
+      hash,
+      timestamp: Math.floor(now / 1000),
+      expiry: twoMonths
+    })
+    await wallet.pay(hostOfMint(mint), invoice)
+    await sleep(60)
+    await wallet.settle()
+    // kept by its hash, not its text
+    expect(Object.keys(wallet.snapshot.paid)).toEqual([hash])
+    // another invoice for the same payment is the same payment
+    const again = bolt11({
+      hash,
+      timestamp: Math.floor(now / 1000) + 1,
+      expiry: twoMonths
+    })
+    await expect(wallet.pay(hostOfMint(mint), again)).rejects.toThrow(
+      /paid already/
+    )
+    // 31 days on it can still be paid, so it is still refused
+    now += 31 * 24 * 3600 * 1000
+    await expect(wallet.pay(hostOfMint(mint), invoice)).rejects.toThrow(
+      /paid already/
+    )
+    // once it can no longer be paid, it is forgotten
+    now += 31 * 24 * 3600 * 1000
+    expect(wallet.invoiceStatus(invoice)).toBeNull()
+  })
+
+  it('keeps a paid invoice for good when its expiry is too long to read', async () => {
+    const mint = await start({baseFeeMsat: 1000})
+    const wallet = await walletAt(mint, 50_000)
+    const hash = 'cd'.repeat(32)
+    const invoice = bolt11({
+      hash,
+      timestamp: Math.floor(Date.now() / 1000),
+      expiryWords: new Array(11).fill(31)
+    })
+    await wallet.pay(hostOfMint(mint), invoice)
+    await sleep(60)
+    await wallet.settle()
+    expect(wallet.snapshot.paid[hash]).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
   it('does not pay an invoice again once it is paid', async () => {
     const mint = await start({baseFeeMsat: 1000})
     const wallet = await walletAt(mint, 50_000)
@@ -350,6 +433,32 @@ describe('lost answers and crashes', () => {
     expect(wallet.notes({role: 'outgoing', status: 'live'})).toHaveLength(1)
     // and a later call is a run of its own
     expect(wallet.settle()).not.toBe(first)
+  })
+
+  it('gives up on an answer that never comes, and settles the rest', async () => {
+    const mint = await start()
+    let stall = false
+    let stalled = 0
+    const net: Net = {
+      async get(url, options) {
+        // one lookup that never answers, as a hung connection
+        if (stall && new URL(url).searchParams.has('p') && stalled++ === 0)
+          return new Promise(() => {})
+        return fetchNet.get(url, options)
+      }
+    }
+    const wallet = await walletAt(mint, 0, {net, timeoutMs: 300})
+    const op = await wallet.requestMint(hostOfMint(mint), 5_000)
+    await payInvoice(mint, op.verify!)
+    stall = true
+    const started = Date.now()
+    await wallet.settle()
+    expect(Date.now() - started).toBeLessThan(5_000)
+    // the stuck entry is still open, and the next settle() is not held by it
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+    await wallet.settle()
+    expect(wallet.balanceMsat()).toBe(5_000)
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
   })
 
   it('settles it at a mint that drops the answer and refuses replays', async () => {

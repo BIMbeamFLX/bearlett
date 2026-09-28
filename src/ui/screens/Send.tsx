@@ -192,10 +192,7 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
               >
                 {value => (
                   <>
-                    <NoteCard
-                      value={value()}
-                      design={w().snapshot.settings.design}
-                    />
+                    <NoteCard value={value()} design={w().design} />
                     <p class="mono-break">{value()}</p>
                     <div class="row">
                       <Copy value={value()} label="Copy link" />

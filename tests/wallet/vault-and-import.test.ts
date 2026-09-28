@@ -14,7 +14,10 @@ import {
   WrongPassphraseError,
   isMnemonic,
   newMnemonic,
-  seedOf
+  openJson,
+  sealJson,
+  seedOf,
+  stateKey
 } from '../../src/wallet/vault.ts'
 import {Wallet} from '../../src/wallet/wallet.ts'
 import {hostOfMint, startMint, walletAt, type Mint} from './harness.ts'
@@ -31,11 +34,49 @@ describe('secrets at rest', () => {
     expect(isMnemonic(words)).toBe(true)
     await Wallet.create({net: fetchNet, store}, words, 'correct horse')
     const vault = (await store.get(VAULT_KEY))!
-    for (const word of words.split(' ')) expect(vault).not.toContain(word)
+    // nothing but what sealing needs, and the words in none of it; a word
+    // may be a field's name ("salt" is one of them), never what it holds
+    const sealed = JSON.parse(vault) as Record<string, unknown>
+    expect(Object.keys(sealed).sort()).toEqual([
+      'data',
+      'iterations',
+      'iv',
+      'salt',
+      'v'
+    ])
+    expect(vault).not.toContain(words)
+    for (const value of Object.values(sealed))
+      expect(words.split(' ')).not.toContain(String(value))
     expect(await Wallet.revealWords(store, 'correct horse')).toBe(words)
     await expect(
       Wallet.unlock({net: fetchNet, store}, 'wrong')
     ).rejects.toBeInstanceOf(WrongPassphraseError)
+  })
+
+  it('keeps invoices paid before, by the key pay() looks them up by', async () => {
+    const store = memoryStore()
+    const words = newMnemonic()
+    const created = await Wallet.create({net: fetchNet, store}, words, '')
+    await created.setGapLimit(20)
+    // a state written before paid invoices were kept by their hash
+    const key = await stateKey(seedOf(words))
+    const state = await openJson(key, (await store.get(STATE_KEY))!)
+    const paidAt = Date.now() - 60_000
+    const coffee =
+      'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh'
+    delete state.paid
+    state.paidInvoices = {lnbc100n1old: paidAt, [coffee]: paidAt}
+    await store.set(STATE_KEY, await sealJson(key, state))
+    const wallet = await Wallet.unlock({net: fetchNet, store}, '')
+    const month = paidAt + 30 * 24 * 3600 * 1000
+    // a BOLT-11 invoice by its payment hash, anything else by its text
+    expect(wallet.snapshot.paid).toEqual({
+      lnbc100n1old: month,
+      '0001020304050607080900010203040506070809000102030405060708090102': month
+    })
+    expect(wallet.invoiceStatus(coffee)).toBe('paid')
+    expect(wallet.invoiceStatus('lnbc100n1old')).toBe('paid')
+    expect(wallet.snapshot.paidInvoices).toBeUndefined()
   })
 
   it('reopens with its bookkeeping, sealed under a key from the seed', async () => {
