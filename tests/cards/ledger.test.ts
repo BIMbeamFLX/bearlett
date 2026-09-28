@@ -151,6 +151,25 @@ describe('issuing', () => {
     expect(written).toHaveLength(before)
   })
 
+  it('reserves a pending card until it is kept or abandoned', () => {
+    const ledger = new CardLedger(options)
+    const card = {name: 'E1-001', description: '600B-E1#1', owner: pub(alice)}
+    const first = ledger.issuePending([card])
+    // not held yet, but nobody else is issued it meanwhile
+    expect(() => ledger.issuePending([{...card, owner: pub(bob)}])).toThrow(
+      /issued already/
+    )
+    // a rollback gives it back
+    first.abandon()
+    first.keep()
+    expect(ledger.byOwner(pub(alice))).toEqual([])
+    const second = ledger.issuePending([{...card, owner: pub(bob)}])
+    second.keep()
+    second.abandon()
+    expect(ledger.byOwner(pub(bob))).toHaveLength(1)
+    expect(() => ledger.issuePending([card])).toThrow(/issued already/)
+  })
+
   it('issues a card and serial once', () => {
     const {ledger} = issued()
     expect(() => ledger.issue('E1-042', '600B-E1#17', pub(bob))).toThrow(
@@ -494,14 +513,26 @@ describe('restoring', () => {
     ).toThrow(/Not restorable/)
   })
 
-  it('leaves out one card of another issuer key or withdraw URL, and never issues it again', () => {
+  it('refuses a store holding one card of another issuer key or withdraw URL', () => {
     const {ledger} = twoCards()
     const [first, second] = ledger.save()
+    // however many of its own cards, and damaged ones, come with it
+    for (const other of [
+      {...second, mint: 'https://moved.example/w'},
+      {...second, issuer: bytesToHex(pub(key(9)))}
+    ])
+      expect(() =>
+        CardLedger.restore(options, [first, {} as Consignment, other])
+      ).toThrow(/another issuer key or withdraw URL/)
+  })
+
+  it('leaves out a damaged card among good ones, and never issues it again', () => {
+    const {ledger} = twoCards()
+    const [first, second] = ledger.save()
+    const upper = {...second, states: second.states.map(s => s.toUpperCase())}
     const skipped: number[] = []
-    const again = CardLedger.restore(
-      options,
-      [first, {...second, mint: 'https://moved.example/w'}],
-      (_, at) => skipped.push(at)
+    const again = CardLedger.restore(options, [first, upper], (_, at) =>
+      skipped.push(at)
     )
     expect(skipped).toEqual([1])
     expect(again.save()).toEqual([first])
@@ -556,7 +587,7 @@ describe('restoring', () => {
     expect(again.save()).toEqual([log[2]])
   })
 
-  it('starts from a store whose records are all damaged, naming each', () => {
+  it('refuses a store none of whose records checks out, naming each', () => {
     const {ledger} = twoCards()
     const [first] = ledger.save()
     const skipped: [string, number][] = []
@@ -564,15 +595,36 @@ describe('restoring', () => {
       null,
       {},
       {...first, issuer: 'zz'},
-      {...first, genesis: '00'.repeat(64)}
+      {...first, genesis: '00'.repeat(64)},
+      {...first, states: first.states.map(s => s.toUpperCase())}
     ] as unknown as Consignment[]
-    const again = CardLedger.restore(options, damaged, (p, at) =>
-      skipped.push([p, at])
-    )
-    expect(skipped.map(([, at]) => at)).toEqual([0, 1, 2, 3])
+    expect(() =>
+      CardLedger.restore(options, damaged, (p, at) => skipped.push([p, at]))
+    ).toThrow(/none of the cards checks out/)
+    expect(skipped.map(([, at]) => at).sort()).toEqual([0, 1, 2, 3, 4])
     for (const [problem] of skipped)
       expect(problem).toMatch(/does not check out/)
-    expect(again.save()).toEqual([])
+    // an empty store is a new card mint
+    expect(CardLedger.restore(options, []).save()).toEqual([])
+  })
+
+  it('keeps the same history of a card whatever the order of its records', () => {
+    // one card and serial issued twice, to two holders: a double issue
+    const [a, b] = [alice, bob].map(owner =>
+      new CardLedger(options).issue('E1-001', '600B-E1#1', pub(owner))
+    )
+    const kept = (records: Consignment[]) => {
+      const skipped: number[] = []
+      const again = CardLedger.restore(options, records, (_, at) =>
+        skipped.push(at)
+      )
+      return {saved: again.save(), skipped}
+    }
+    const forward = kept([a, b])
+    const backward = kept([b, a])
+    expect(forward.saved).toEqual(backward.saved)
+    expect(forward.skipped).toHaveLength(1)
+    expect(backward.skipped).toHaveLength(1)
   })
 
   it('takes only a whole number of states, at least 1, as its bound', () => {
