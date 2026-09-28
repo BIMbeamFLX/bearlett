@@ -5,6 +5,7 @@ import type {KeyRef} from './keys.ts'
 import type {MintFee} from '../lnurl/pay.ts'
 import type {Pack} from '../cards/holder.ts'
 import type {Consignment} from '../cards/proofs.ts'
+import type {NoteDesign} from './design.ts'
 
 export type Hex = string
 
@@ -188,7 +189,12 @@ export type WalletState = {
    * Kept 30 days, past the expiry of any invoice a wallet is usually handed.
    */
   paidInvoices: Record<string, number>
-  settings: {gapLimit: number; offline: boolean}
+  settings: {
+    gapLimit: number
+    offline: boolean
+    /** how handed-out notes look, from the Hangar's Note Designer */
+    design?: NoteDesign
+  }
 }
 
 export const emptyState = (): WalletState => ({

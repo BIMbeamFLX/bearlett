@@ -8,7 +8,9 @@ import {Send} from './screens/Send.tsx'
 import {Cards} from './screens/Cards.tsx'
 import {Settings} from './screens/Settings.tsx'
 import {formatSats} from './format.ts'
-import {toast, watchWallet} from './session.ts'
+import {notify, run, toast, watchWallet} from './session.ts'
+import {NoteCard} from './kit.tsx'
+import {offeredDesign, type NoteDesign} from '../wallet/design.ts'
 import {holdWalletLock, type Platform} from '../platform/platform.ts'
 import {Wallet} from '../wallet/wallet.ts'
 
@@ -23,9 +25,15 @@ export const App = (props: {platform: Platform}) => {
   const [phase, setPhase] = createSignal<Phase>('boot')
   const [wallet, setWallet] = createSignal<(() => Wallet) | null>(null)
   const [tab, setTab] = createSignal<Tab>('wallet')
+  /** a note design the shell handed over, until applied or dismissed */
+  const [offered, setOffered] = createSignal<NoteDesign | null>(null)
   const [problem, setProblem] = createSignal('')
   const timers: ReturnType<typeof setInterval>[] = []
-  onCleanup(() => timers.forEach(clearInterval))
+  let stopDesigns: (() => void) | undefined
+  onCleanup(() => {
+    timers.forEach(clearInterval)
+    stopDesigns?.()
+  })
 
   onMount(async () => {
     if (props.platform.kind === 'web' && !(await holdWalletLock())) {
@@ -52,6 +60,15 @@ export const App = (props: {platform: Platform}) => {
       if (document.visibilityState === 'visible') task().catch(() => {})
     }
     quiet(() => opened.settle())()
+    // the Hangar's Note Designer: a design waits for an explicit Apply
+    stopDesigns = props.platform.designs?.((payload, sender) => {
+      try {
+        const design = offeredDesign(payload, sender)
+        if (design) setOffered(design)
+      } catch {
+        notify('A note design arrived that Bearlett cannot read.', true)
+      }
+    })
     timers.push(
       setInterval(
         quiet(() => opened.settle()),
@@ -131,6 +148,38 @@ export const App = (props: {platform: Platform}) => {
                 {nav('settings', 'Settings')}
               </nav>
               <main>
+                <Show when={offered()}>
+                  {design => (
+                    <section class="panel design-offer">
+                      <h2>A note design arrived</h2>
+                      <p class="quiet">
+                        From Note Designer: how your handed-out notes look. It
+                        changes nothing about what they are worth.
+                      </p>
+                      <NoteCard value="lnurlw://preview" design={design()} />
+                      <div class="row">
+                        <button
+                          class="primary"
+                          onClick={() =>
+                            run('Applying the design', async () => {
+                              await w()().setDesign(design())
+                              setOffered(null)
+                              notify('Your notes now wear this design.')
+                            })
+                          }
+                        >
+                          Apply
+                        </button>
+                        <button
+                          class="secondary"
+                          onClick={() => setOffered(null)}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                </Show>
                 <Switch>
                   <Match when={tab() === 'wallet'}>
                     <Home wallet={w()} />

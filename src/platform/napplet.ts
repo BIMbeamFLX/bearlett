@@ -6,6 +6,7 @@ import {TransportError} from '../lnurl/errors.ts'
 import {parseLnurlJson, requireServiceUrl, type Net} from '../lnurl/net.ts'
 import type {Store} from '../wallet/store.ts'
 import type {Platform} from './platform.ts'
+import {DESIGN_TOPIC} from '../wallet/design.ts'
 
 type Resource = {
   bytes(url: string, options?: {signal?: AbortSignal}): Promise<Blob>
@@ -92,6 +93,37 @@ export const shellStore = (parent: Window = window.parent): Store => {
   }
 }
 
+/**
+ * Messages the shell's INC delivers on `topic` (the Hangar hands over a
+ * note design this way). Nothing arrives where the shell grants no INC:
+ * the subscription simply stays unanswered.
+ */
+export const shellTopic =
+  (topic: string, parent: Window = window.parent) =>
+  (listener: (payload: unknown, sender: string) => void): (() => void) => {
+    const listen = (event: MessageEvent) => {
+      const message = event.data
+      if (
+        event.source === parent &&
+        message?.type === 'inc.event' &&
+        message.topic === topic
+      )
+        listener(message.payload, String(message.sender ?? ''))
+    }
+    window.addEventListener('message', listen)
+    parent.postMessage(
+      {type: 'inc.subscribe', id: crypto.randomUUID(), topic},
+      '*'
+    )
+    return () => {
+      window.removeEventListener('message', listen)
+      parent.postMessage(
+        {type: 'inc.unsubscribe', id: crypto.randomUUID(), topic},
+        '*'
+      )
+    }
+  }
+
 /** The napplet's ports, or an error naming what the shell did not grant. */
 export const nappletPlatform = (): Platform => {
   const resource = shell()?.resource as Resource | undefined
@@ -103,6 +135,7 @@ export const nappletPlatform = (): Platform => {
     kind: 'napplet',
     net: resourceNet(resource),
     store: shellStore(),
-    canScan: false
+    canScan: false,
+    designs: shellTopic(DESIGN_TOPIC)
   }
 }

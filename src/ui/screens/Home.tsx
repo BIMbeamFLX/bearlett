@@ -1,6 +1,6 @@
 // The balance, what is still underway, the notes handed out, and activity.
 import {createSignal, For, Show} from 'solid-js'
-import {Action, Copy, Qr} from '../kit.tsx'
+import {Action, Copy, NoteCard, Qr} from '../kit.tsx'
 import {formatSats, formatTime, shorten} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
@@ -178,7 +178,10 @@ export const Home = (props: {wallet: () => Wallet}) => {
                       </button>
                     </div>
                     <Show when={shown() === note.q}>
-                      <Qr value={w().noteLink(note.q)} />
+                      <NoteCard
+                        value={w().noteLink(note.q)}
+                        design={w().snapshot.settings.design}
+                      />
                       <Copy value={w().noteLink(note.q)} label="Copy link" />
                     </Show>
                   </div>

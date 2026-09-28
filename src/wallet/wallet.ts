@@ -75,6 +75,7 @@ import {
 } from '../cards/inventory.ts'
 import {verifyConsignment, type Card} from '../cards/proofs.ts'
 import {decodeState} from '../cards/state.ts'
+import {parseDesign, type NoteDesign} from './design.ts'
 import {
   isSealedVault,
   openJson,
@@ -245,6 +246,15 @@ export class Wallet {
   async setOffline(offline: boolean): Promise<void> {
     await this.commit(state => {
       state.settings.offline = offline
+    })
+  }
+
+  /** How handed-out notes look; null goes back to plain. */
+  async setDesign(design: NoteDesign | null): Promise<void> {
+    const checked = design && parseDesign(design)
+    await this.commit(state => {
+      if (checked) state.settings.design = checked
+      else delete state.settings.design
     })
   }
 
