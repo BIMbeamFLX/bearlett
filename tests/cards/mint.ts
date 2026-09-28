@@ -2,6 +2,9 @@
 // behind LUD-25 HTTP (docs/CARDS-LNURLCASH.md, The card mint), with packs
 // sold through a LUD-06 payRequest whose invoice the test hook
 // /_test/settle?payment_hash= pays. Fresh issuer and mint keys every start.
+// It listens on this machine; with `origin` it names another origin in its
+// documents, for a test that reaches it through a Net mapping that origin
+// here (an https card mint, as the Hangar's inventory needs).
 import {createServer, type ServerResponse} from 'node:http'
 import type {AddressInfo} from 'node:net'
 import {
@@ -21,6 +24,8 @@ export type CardMintOptions = {
   collection?: string
   /** a fixed port, for trying the web app against it by hand */
   port?: number
+  /** the origin its documents name, e.g. `https://cards.test` */
+  origin?: string
 }
 
 const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
@@ -35,6 +40,7 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
   const issuerKey = randomBytes(32)
   let ledger: CardLedger
   let origin = ''
+  let local = ''
   const serials = new Map<string, number>()
   const invoices = new Map<
     string,
@@ -116,7 +122,7 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
     if (path === '/cards') {
       const owner = query.get('owner') ?? ''
       if (!/^[0-9a-f]{64}$/.test(owner)) return error(res, 'Name an owner key.')
-      return send(res, {cards: ledger.byOwner(hexToBytes(owner))})
+      return send(res, ledger.lookupOwner(hexToBytes(owner)))
     }
     if (path === '/.well-known/lnurlp/pack')
       return send(res, {
@@ -163,7 +169,8 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
   await new Promise<void>(resolve =>
     server.listen(options.port ?? 0, '127.0.0.1', resolve)
   )
-  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  local = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  origin = options.origin ?? local
   ledger = new CardLedger({
     withdraw: `${origin}/w`,
     issuerKey,
@@ -171,13 +178,15 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
   })
   return {
     url: origin,
+    /** where it listens: `url` itself unless it names another origin */
+    local,
     get ledger() {
       return ledger
     },
     /** Pays a pack's invoice, by the hash in its verify URL. */
     async settle(verify: string): Promise<void> {
       const hash = new URL(verify).pathname.split('/').pop()
-      const answer = await fetch(`${origin}/_test/settle?payment_hash=${hash}`)
+      const answer = await fetch(`${local}/_test/settle?payment_hash=${hash}`)
       if (!(await answer.json()).settled) throw new Error('not settled')
     },
     close: () => new Promise<void>(resolve => server.close(() => resolve()))

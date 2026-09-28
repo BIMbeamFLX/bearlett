@@ -6,7 +6,7 @@
 import {secp256k1, schnorr} from '@noble/curves/secp256k1.js'
 import {bytesToHex, equalBytes, hexToBytes} from '../spec/bytes.ts'
 import {signCertificate} from '../spec/certificate.ts'
-import {decodeCp1} from '../spec/encoding.ts'
+import {decodeCp1, isPointX} from '../spec/encoding.ts'
 import {
   checkSpend,
   decodeSpend,
@@ -39,6 +39,8 @@ export const IN_USE = 'That note key is already in use.'
 
 export type Refusal = {refused: string}
 export type Live = {q: Uint8Array; amountMsat: number; c: string}
+/** The lookup's answer: an owner key's live cards, and whether it ever held one. */
+export type Holdings = {cards: Consignment[]; used: boolean}
 export type Moved = {c: string; receipt: Uint8Array; consignment: Consignment}
 
 /** The callback's parameters, as the request carried them. */
@@ -63,7 +65,7 @@ const opens = (spend: Spend, domain: string): Refusal | null => {
 const HEX = /^(?:[0-9a-f]{2})+$/
 
 export type LedgerOptions = {
-  /** the card mint's LUD-25 withdraw endpoint */
+  /** the card mint's LUD-25 withdraw endpoint, as every card names it */
   withdraw: string
   /** the collection's issuer (catalog) key: signs geneses and receipts */
   issuerKey: Uint8Array
@@ -96,10 +98,13 @@ export class CardLedger {
   private readonly spent = new Map<string, string>()
   /** owner key, to the asset ids it holds */
   private readonly owners = new Map<string, Set<string>>()
+  /** every owner key that ever held a card here */
+  private readonly seen = new Set<string>()
 
   constructor(options: LedgerOptions) {
-    this.withdraw = options.withdraw
-    this.domain = spendDomain(options.withdraw)
+    // the form a holder compares, so `https://host` names `https://host/`
+    this.withdraw = new URL(options.withdraw).toString()
+    this.domain = spendDomain(this.withdraw)
     this.issuerKey = options.issuerKey
     this.issuer = schnorr.getPublicKey(options.issuerKey)
     this.mintKey = options.mintKey
@@ -108,13 +113,35 @@ export class CardLedger {
     this.persist = options.persist ?? (() => {})
   }
 
-  /** Rebuilds a ledger from the consignments it wrote, each checked in full. */
-  static restore(options: LedgerOptions, saved: Consignment[]): CardLedger {
+  /**
+   * Rebuilds a ledger from the consignments it wrote, each checked in full.
+   * A card that does not check out is left out and named to `skip` by its
+   * place in `saved`, so one bad record cannot keep the card mint from
+   * starting; a changed issuer key or withdraw URL is a misconfiguration
+   * and refuses the whole start.
+   */
+  static restore(
+    options: LedgerOptions,
+    saved: Consignment[],
+    skip: (problem: string, at: number) => void = () => {}
+  ): CardLedger {
     // keep() only fills memory: nothing read back is written again
     const ledger = new CardLedger(options)
-    for (const consignment of saved) {
+    const issuer = bytesToHex(ledger.issuer)
+    for (const [at, consignment] of saved.entries()) {
+      const named = consignment as Partial<Consignment> | null
+      if (
+        (typeof named?.issuer === 'string' && named.issuer !== issuer) ||
+        (typeof named?.mint === 'string' && named.mint !== ledger.withdraw)
+      )
+        throw new Error(
+          'Not restorable: the cards name another issuer key or withdraw URL.'
+        )
       const card = verifyConsignment(consignment, ledger.issuer)
-      if (typeof card === 'string') throw new Error(`Not restorable: ${card}.`)
+      if (typeof card === 'string') {
+        skip(`Left out a card that does not check out: ${card}.`, at)
+        continue
+      }
       const receipts = consignment.receipts.map(hexToBytes)
       ledger.keep(card.states, hexToBytes(consignment.genesis), receipts)
     }
@@ -135,6 +162,7 @@ export class CardLedger {
     if (this.records.has(id)) throw new Error('That card is issued already.')
     this.records.set(id, {states, genesis, receipts})
     states.forEach((state, i) => {
+      this.seen.add(bytesToHex(state.owner))
       const q = bytesToHex(cardNote(state).q)
       if (i < states.length - 1) this.spent.set(q, id)
       else this.live.set(q, id)
@@ -144,6 +172,7 @@ export class CardLedger {
 
   private hold(owner: Uint8Array, id: string) {
     const key = bytesToHex(owner)
+    this.seen.add(key)
     const held = this.owners.get(key) ?? new Set()
     held.add(id)
     this.owners.set(key, held)
@@ -157,6 +186,7 @@ export class CardLedger {
 
   /** Issues one card to its first holder; a card and serial are issued once. */
   issue(name: string, description: string, owner: Uint8Array): Consignment {
+    if (!isPointX(owner)) throw new Error('A card is issued to a key only.')
     const state = genesisState(this.issuer, name, description, owner)
     const id = bytesToHex(state.assetId)
     if (this.records.has(id)) throw new Error('That card is issued already.')
@@ -190,6 +220,14 @@ export class CardLedger {
     return [...(this.owners.get(bytesToHex(owner)) ?? [])].map(id =>
       this.consignment(id)!
     )
+  }
+
+  /** The lookup by `?owner=`: a holder's scan counts a key that ever held a card. */
+  lookupOwner(owner: Uint8Array): Holdings {
+    return {
+      cards: this.byOwner(owner),
+      used: this.seen.has(bytesToHex(owner))
+    }
   }
 
   private certified(q: Uint8Array): Live {
