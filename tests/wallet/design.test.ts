@@ -2,7 +2,11 @@
 // checks (nappelin apps/hangar/src/vendor/bearlett/design.ts), and keeping
 // one in the wallet.
 import {describe, expect, it} from 'vitest'
-import {parseDesign, parseDesignMessage} from '../../src/wallet/design.ts'
+import {
+  offeredDesign,
+  parseDesign,
+  parseDesignMessage
+} from '../../src/wallet/design.ts'
 import {memoryStore} from '../../src/wallet/store.ts'
 import {newMnemonic} from '../../src/wallet/vault.ts'
 import {Wallet} from '../../src/wallet/wallet.ts'
@@ -23,6 +27,16 @@ describe('a note design', () => {
     expect(
       parseDesignMessage({kind: 'lnurlcash/note-design', version: 1, design})
     ).toEqual(design)
+  })
+
+  it('is taken from Note Designer only', () => {
+    const message = {kind: 'lnurlcash/note-design', version: 1, design}
+    expect(offeredDesign(message, 'note-designer')).toEqual(design)
+    expect(offeredDesign(message, 'collection-600b-e1')).toBeNull()
+    expect(offeredDesign(message, '')).toBeNull()
+    expect(() =>
+      offeredDesign({...message, version: 2}, 'note-designer')
+    ).toThrow()
   })
 
   it('keeps nothing but appearance', () => {

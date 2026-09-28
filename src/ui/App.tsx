@@ -10,7 +10,7 @@ import {Settings} from './screens/Settings.tsx'
 import {formatSats} from './format.ts'
 import {notify, run, toast, watchWallet} from './session.ts'
 import {NoteCard} from './kit.tsx'
-import {parseDesignMessage, type NoteDesign} from '../wallet/design.ts'
+import {offeredDesign, type NoteDesign} from '../wallet/design.ts'
 import {holdWalletLock, type Platform} from '../platform/platform.ts'
 import {Wallet} from '../wallet/wallet.ts'
 
@@ -61,9 +61,10 @@ export const App = (props: {platform: Platform}) => {
     }
     quiet(() => opened.settle())()
     // the Hangar's Note Designer: a design waits for an explicit Apply
-    stopDesigns = props.platform.designs?.(payload => {
+    stopDesigns = props.platform.designs?.((payload, sender) => {
       try {
-        setOffered(parseDesignMessage(payload))
+        const design = offeredDesign(payload, sender)
+        if (design) setOffered(design)
       } catch {
         notify('A note design arrived that Bearlett cannot read.', true)
       }

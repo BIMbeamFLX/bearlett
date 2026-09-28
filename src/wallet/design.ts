@@ -15,6 +15,9 @@ export type NoteDesign = {
 /** The topic a design arrives on, over the shell's INC. */
 export const DESIGN_TOPIC = 'napplet:wallet/design'
 
+/** The Hangar app whose designs the shell relays: no other sender counts. */
+export const DESIGN_SENDER = 'note-designer'
+
 const COLOR = /^#[0-9a-f]{6}$/i
 const IMAGE = /^data:image\/(png|jpeg|webp);base64,[a-zA-Z0-9+/=]+$/
 
@@ -62,3 +65,14 @@ export const parseDesignMessage = (payload: unknown): NoteDesign => {
     throw new Error('Not a note design this wallet reads.')
   return parseDesign(value.design)
 }
+
+/**
+ * What a message on DESIGN_TOPIC offers: the design Note Designer sent,
+ * null from any other sender, or an error for a design this wallet cannot
+ * read. The Hangar relays only Note Designer's; this holds without it.
+ */
+export const offeredDesign = (
+  payload: unknown,
+  sender: string
+): NoteDesign | null =>
+  sender === DESIGN_SENDER ? parseDesignMessage(payload) : null
