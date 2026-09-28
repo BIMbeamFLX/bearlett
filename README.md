@@ -36,6 +36,10 @@ draft's test vectors 1-5 byte for byte.
 - **Register a Lightning Address** at an lnurl-mint (web app only: the
   Hangar lets napplets read from mints, not post to them).
 - **Import** notes made by the Bearlett before the rebuild (September 2026).
+- **Hold 600B cards**: buy packs at a card mint, hand cards on to someone's
+  card address, and check every card's history offline, per
+  [docs/CARDS-LNURLCASH.md](docs/CARDS-LNURLCASH.md). The words restore the
+  cards too, and the Hangar shows the 600B Timelock TCG what you hold.
 
 ## How it is built
 
@@ -44,6 +48,7 @@ draft's test vectors 1-5 byte for byte.
 | Spec core | `src/spec` | LUD-25 itself: encodings (`cp1 ck1 cw1 cs1 cx1`), taproot leaves and output keys, the canonical spend transaction and its sighash, notes and spends, certificates, the purpose-split derivation, and a small BIP-342 evaluator for offline checks. No I/O. |
 | LNURL | `src/lnurl` | payRequests (LUD-06/12/16/21), the withdraw endpoint and its callback (LUD-03 as LUD-25 extends it), links and inputs. The network is a port. |
 | Wallet | `src/wallet` | The flows, a journal of every mint call that changes state, the sealed seed and bookkeeping, the key ring. |
+| Cards | `src/cards` | LNURLcash cards: dni's seal state, the issuer's genesis signature and the card mint's receipts, a card's offline check, the holder's moves, and a card mint's rules (`ledger.ts`) for the TCG server to run. |
 | Platform | `src/platform` | Ports: `fetch` and `localStorage` for the web app; the shell's NAP-RESOURCE and storage for the napplet. |
 | UI | `src/ui` | One Solid app for both homes, in the Nappelin Hypershell chrome, repainted by NAP-THEME. |
 
