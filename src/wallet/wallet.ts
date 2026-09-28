@@ -6,7 +6,7 @@
 import {bytesToHex, hexToBytes, sha256} from '../spec/bytes.ts'
 import {verifyCertificate} from '../spec/certificate.ts'
 import {PURPOSE, notePubkey, type Purpose} from '../spec/derivation.ts'
-import {encodeCp1} from '../spec/encoding.ts'
+import {decodeCp1, encodeCp1} from '../spec/encoding.ts'
 import {
   bearerNote,
   checkSpend,
@@ -46,6 +46,8 @@ import {
   emptyState,
   isWalletState,
   type Activity,
+  type CardMintRecord,
+  type HeldCard,
   type Hex,
   type Mint,
   type Note,
@@ -55,6 +57,22 @@ import {
   type WalletState
 } from './state.ts'
 import {STATE_KEY, VAULT_KEY, type Store} from './store.ts'
+import {
+  discoveryUrl,
+  fetchCardMint,
+  fetchCardsOf,
+  makeMove,
+  moveCallback,
+  sendMove,
+  type CardMintInfo
+} from '../cards/holder.ts'
+import {
+  buildInventory,
+  INVENTORY_KEY,
+  type Inventory
+} from '../cards/inventory.ts'
+import {verifyConsignment, type Card} from '../cards/proofs.ts'
+import {decodeState} from '../cards/state.ts'
 import {
   isSealedVault,
   openJson,
@@ -159,6 +177,9 @@ export class Wallet {
       const opened = await openJson(key, sealed)
       if (isWalletState(opened)) state = opened
     }
+    // states written before cards existed
+    state.cardMints ??= {}
+    state.cards ??= {}
     return new Wallet(ports, new KeyRing(seed), key, state)
   }
 
@@ -970,6 +991,10 @@ export class Wallet {
       ...this.notes({role: 'incoming', status: 'live'}).map(
         note => () => this.claim(note.q)
       ),
+      // a card move without an answer is asked again: a replay
+      ...Object.values(this.state.cards)
+        .filter(card => card.status === 'moving' && !this.sending.has(card.id))
+        .map(card => () => this.finishMove(card.id)),
       () => this.checkOutgoing()
     ]
     // one entry going wrong must not keep the others from settling
@@ -1277,5 +1302,260 @@ export class Wallet {
           })
       }
     }
+  }
+
+  // ---- cards (docs/CARDS-LNURLCASH.md) ----
+
+  cardMint(domain: string): CardMintRecord {
+    const record = this.state.cardMints[domain]
+    if (!record) throw new UnknownMintError(domain)
+    return record
+  }
+
+  private cardMintInfo(record: CardMintRecord): CardMintInfo {
+    return {
+      issuer: hexToBytes(record.issuer),
+      withdraw: record.withdraw,
+      lookup: record.lookup,
+      packs: record.packs
+    }
+  }
+
+  /** Adds a card mint by its address; its issuer key is pinned on first sight. */
+  async addCardMint(input: string): Promise<CardMintRecord> {
+    const url = discoveryUrl(input)
+    if (!url) throw new Error('That is not a card mint address.')
+    const info = await fetchCardMint(this.net, url)
+    const domain = hostOf(info.withdraw)
+    const known = this.state.cardMints[domain]
+    if (known && known.issuer !== bytesToHex(info.issuer))
+      throw new MintKeyChangedError(domain)
+    await this.commit(state => {
+      state.cardMints[domain] = {
+        domain,
+        withdraw: info.withdraw,
+        lookup: info.lookup,
+        issuer: bytesToHex(info.issuer),
+        packs: info.packs,
+        addedAt: known?.addedAt ?? this.now()
+      }
+    })
+    return this.state.cardMints[domain]
+  }
+
+  /** A fresh key of this wallet's to be given a card at, as cp1. */
+  async cardAddress(domain: string): Promise<string> {
+    this.cardMint(domain)
+    return this.keys.cp1(domain, await this.nextKey(domain, PURPOSE.wallet))
+  }
+
+  /**
+   * An invoice for a pack at its fixed price; once it is paid, the card
+   * mint issues the pack's cards to a fresh key of this wallet's.
+   */
+  async requestPack(
+    domain: string,
+    pack = 0
+  ): Promise<{pr: string; verify?: string; amountMsat: number}> {
+    const offer = this.cardMint(domain).packs[pack]
+    if (!offer) throw new Error('This card mint sells no such pack.')
+    const pay = await fetchPayRequest(this.net, offer.lnurlp)
+    const owner = await this.cardAddress(domain)
+    if (pay.commentAllowed < owner.length)
+      throw new Error('This card mint cannot be told whose pack it is.')
+    const invoice = await requestInvoice(this.net, pay, pay.minSendable, owner)
+    return {...invoice, amountMsat: pay.minSendable}
+  }
+
+  /** The cards this wallet knows of, at one card mint or all. */
+  cards(filter: {mint?: string; status?: HeldCard['status']} = {}): HeldCard[] {
+    return Object.values(this.state.cards).filter(
+      card =>
+        (filter.mint === undefined || card.mint === filter.mint) &&
+        (filter.status === undefined || card.status === filter.status)
+    )
+  }
+
+  /** A card's history, checked in full against its mint's pinned issuer. */
+  verifiedCard(id: string): Card {
+    const held = this.state.cards[id]
+    if (!held) throw new Error('This wallet does not know that card.')
+    const card = verifyConsignment(
+      held.consignment,
+      hexToBytes(this.cardMint(held.mint).issuer)
+    )
+    if (typeof card === 'string')
+      throw new Error(`This card is not genuine: ${card}.`)
+    return card
+  }
+
+  /**
+   * Asks the card mint for the cards at this wallet's keys there: every key
+   * used so far, or, with `scan`, on until `gapLimit` keys in a row hold
+   * nothing, which is how the 12 words alone bring the cards back.
+   */
+  async refreshCards(domain: string, scan = false): Promise<number> {
+    const info = this.cardMintInfo(this.cardMint(domain))
+    const used = this.state.counters[domain]?.[PURPOSE.wallet] ?? 0
+    const gapLimit = this.state.settings.gapLimit
+    const found = new Map<string, {card: Card; key: KeyRef}>()
+    let next = used
+    for (
+      let index = 0, gap = 0;
+      index < used || (scan && gap < gapLimit);
+      index++
+    ) {
+      const key = {purpose: PURPOSE.wallet, index}
+      const owner = hexToBytes(this.keys.q(domain, key))
+      const cards = await fetchCardsOf(this.net, info, owner)
+      for (const card of cards)
+        found.set(bytesToHex(card.head.assetId), {card, key})
+      gap = cards.length ? 0 : gap + 1
+      if (cards.length) next = Math.max(next, index + 1)
+    }
+    const fresh = [...found.keys()].filter(
+      id => this.state.cards[id]?.status !== 'held'
+    )
+    await this.commit(state => {
+      const counters = (state.counters[domain] ??= [0, 0, 0])
+      counters[PURPOSE.wallet] = Math.max(counters[PURPOSE.wallet], next)
+      for (const [id, {card, key}] of found)
+        state.cards[id] = {
+          id,
+          mint: domain,
+          consignment: card.consignment,
+          key,
+          status: 'held',
+          updatedAt: this.now()
+        }
+      for (const held of Object.values(state.cards))
+        if (
+          held.mint === domain &&
+          held.status === 'held' &&
+          !found.has(held.id)
+        )
+          Object.assign(held, {
+            status: 'gone',
+            key: undefined,
+            updatedAt: this.now()
+          })
+      if (fresh.length)
+        this.log(state, {
+          kind: 'card',
+          mint: domain,
+          text:
+            fresh.length === 1
+              ? 'Received a card'
+              : `Received ${fresh.length} cards`
+        })
+    })
+    await this.writeInventory()
+    return found.size
+  }
+
+  /** Moves a card to someone's card address: a cp1 of their key there. */
+  async sendCard(id: string, to: string): Promise<void> {
+    const held = this.state.cards[id]
+    if (!held || held.status !== 'held' || !held.key)
+      throw new Error('Only a card this wallet holds can move.')
+    const owner = decodeCp1(to.trim())
+    if (!owner) throw new Error('A card address is a cp1 key.')
+    const info = this.cardMintInfo(this.cardMint(held.mint))
+    const {head} = this.verifiedCard(id)
+    const move = makeMove(
+      head,
+      this.keys.secretKey(held.mint, held.key),
+      owner,
+      spendDomainOfHost(held.mint)
+    )
+    const callback = await moveCallback(this.net, info, head)
+    // written down before it is sent: a lost answer is asked again as is
+    await this.commit(state => {
+      Object.assign(state.cards[id], {
+        status: 'moving',
+        move: {callback, k1: move.k1, p1: move.p1, state: move.state},
+        updatedAt: this.now()
+      })
+    })
+    this.sending.add(id)
+    try {
+      await this.finishMove(id)
+    } finally {
+      this.sending.delete(id)
+    }
+  }
+
+  private async finishMove(id: string): Promise<void> {
+    const held = this.state.cards[id]
+    if (!held?.move) return
+    const move = held.move
+    const info = this.cardMintInfo(this.cardMint(held.mint))
+    const {head} = this.verifiedCard(id)
+    const next = decodeState(hexToBytes(move.state))
+    if (!next) throw new Error('The move this wallet wrote down is damaged.')
+    let receipt: Uint8Array
+    try {
+      receipt = await sendMove(this.net, info, move.callback, head, {
+        ...move,
+        next
+      })
+    } catch (err) {
+      // refused: nothing moved, unless the card had moved elsewhere already
+      if (err instanceof ServiceError)
+        await this.commit(state => {
+          Object.assign(state.cards[id], {
+            status: reason.spent(err.reason) ? 'gone' : 'held',
+            move: undefined,
+            updatedAt: this.now()
+          })
+        })
+      throw err
+    }
+    const consignment = {
+      ...held.consignment,
+      states: [...held.consignment.states, move.state],
+      receipts: [...held.consignment.receipts, bytesToHex(receipt)]
+    }
+    await this.commit(state => {
+      Object.assign(state.cards[id], {
+        consignment,
+        status: 'sent',
+        key: undefined,
+        move: undefined,
+        updatedAt: this.now()
+      })
+      this.log(state, {
+        kind: 'card',
+        mint: held.mint,
+        text: `Sent ${head.name}`
+      })
+    })
+    await this.writeInventory()
+  }
+
+  /**
+   * The counts the Hangar answers the 600B TCG with, for the first card
+   * mint that sells a pack; null when there is none or it is not https.
+   */
+  inventory(): Inventory | null {
+    const record = Object.values(this.state.cardMints)
+      .filter(mint => mint.packs.length)
+      .sort((a, b) => a.addedAt - b.addedAt)[0]
+    if (!record) return null
+    const names = this.cards({mint: record.domain, status: 'held'}).map(
+      card => this.verifiedCard(card.id).head.name
+    )
+    return buildInventory(
+      record.packs[0],
+      new URL(record.withdraw).origin,
+      names,
+      this.now()
+    )
+  }
+
+  private async writeInventory(): Promise<void> {
+    const inventory = this.inventory()
+    if (inventory)
+      await this.ports.store.set(INVENTORY_KEY, JSON.stringify(inventory))
   }
 }

@@ -3,6 +3,8 @@
 // wallet knows so far, and which mint calls are still in flight.
 import type {KeyRef} from './keys.ts'
 import type {MintFee} from '../lnurl/pay.ts'
+import type {Pack} from '../cards/holder.ts'
+import type {Consignment} from '../cards/proofs.ts'
 
 export type Hex = string
 
@@ -121,12 +123,48 @@ export type Activity = {
     | 'recover'
     | 'address'
     | 'lock'
+    | 'card'
   mint?: string
   amountMsat?: number
   text: string
 }
 
 export type LightningAddress = {username: string; mint: string; since: number}
+
+/** A card mint (docs/CARDS-LNURLCASH.md), keyed like a mint by its host. */
+export type CardMintRecord = {
+  domain: string
+  withdraw: string
+  lookup: string
+  /** the issuer key, hex: pinned on first sight, like a mint key */
+  issuer: string
+  packs: Pack[]
+  addedAt: number
+}
+
+export type CardStatus =
+  /** a key of this wallet holds it */
+  | 'held'
+  /** a move is sent and not answered yet: asking again is a replay */
+  | 'moving'
+  /** moved to someone else from here */
+  | 'sent'
+  /** at no key of this wallet any more, and not moved from here */
+  | 'gone'
+
+export type HeldCard = {
+  /** the asset id, hex */
+  id: string
+  /** the card mint's domain */
+  mint: string
+  consignment: Consignment
+  /** the key that holds the current state, while it is this wallet's */
+  key?: KeyRef
+  status: CardStatus
+  /** the move in flight, kept to ask again with the same bytes */
+  move?: {callback: string; k1: string; p1: string; state: string}
+  updatedAt: number
+}
 
 export type WalletState = {
   v: 1
@@ -137,6 +175,8 @@ export type WalletState = {
   operations: Record<string, Operation>
   activity: Activity[]
   addresses: Record<string, LightningAddress>
+  cardMints: Record<string, CardMintRecord>
+  cards: Record<string, HeldCard>
   settings: {gapLimit: number; offline: boolean}
 }
 
@@ -148,6 +188,8 @@ export const emptyState = (): WalletState => ({
   operations: {},
   activity: [],
   addresses: {},
+  cardMints: {},
+  cards: {},
   settings: {gapLimit: 20, offline: false}
 })
 
