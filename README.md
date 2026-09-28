@@ -3,6 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Status: development preview](https://img.shields.io/badge/status-development%20preview-orange)
 
+> **An experiment.** Funds in Bearlett are not safe: the wallet and the mints
+> it talks to are new software. Keep only what you can afford to lose.
+
 **An LNURLcash wallet, built from the spec.** Bearlett holds and moves
 [LUD-25](https://github.com/lnurl/luds/blob/lnurlcash/25.md) notes: bearer
 notes anyone can redeem with a plain LNURL wallet, notes on your own keys

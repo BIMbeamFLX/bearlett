@@ -21,3 +21,7 @@ export const shorten = (text: string, keep = 10): string =>
   text.length > keep * 2 + 1
     ? `${text.slice(0, keep)}…${text.slice(-keep)}`
     : text
+
+/** Said on the first screen and under the balance: the wallet and its mints are new. */
+export const EXPERIMENT =
+  'An experiment: funds in this wallet are not safe. Keep only what you can afford to lose.'

@@ -1,7 +1,7 @@
 // The balance, what is still underway, the notes handed out, and activity.
 import {createSignal, For, Show} from 'solid-js'
 import {Action, Copy, NoteCard, Qr} from '../kit.tsx'
-import {formatSats, formatTime, shorten} from '../format.ts'
+import {EXPERIMENT, formatSats, formatTime, shorten} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 import type {Note, Operation} from '../../wallet/state.ts'
@@ -50,6 +50,7 @@ export const Home = (props: {wallet: () => Wallet}) => {
             </For>
           </ul>
         </Show>
+        <p class="quiet">{EXPERIMENT}</p>
       </section>
 
       <Show when={operations().length || incoming().length}>
