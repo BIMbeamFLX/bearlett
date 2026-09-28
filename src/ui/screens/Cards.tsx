@@ -27,7 +27,7 @@ export const Cards = (props: {wallet: () => Wallet}) => {
   const [address, setAddress] = createSignal('')
   const [invoice, setInvoice] = createSignal<Invoice | null>(null)
   const [payFrom, setPayFrom] = createSignal('')
-  const [mine, setMine] = createSignal<string | null>(null)
+  const [showMine, setShowMine] = createSignal(false)
   const [handing, setHanding] = createSignal<string | null>(null)
   const [to, setTo] = createSignal('')
 
@@ -105,17 +105,24 @@ export const Cards = (props: {wallet: () => Wallet}) => {
       if (bill) await collect(bill)
     })
 
-  const showAddress = () =>
-    run('Making a card address', async () => {
-      setMine(w().cardAddress(current()))
-    })
+  /** The card address shown, always the current one: it moves on once a card arrives. */
+  const mine = () => {
+    if (!showMine()) return null
+    try {
+      return w().cardAddress(current())
+    } catch {
+      return null
+    }
+  }
+
+  const showAddress = () => setShowMine(true)
 
   const removeCardMint = () =>
     run('Removing the card mint', async () => {
       await w().removeCardMint(current())
       setPicked('')
       setInvoice(null)
-      setMine(null)
+      setShowMine(false)
       notify('Card mint removed.')
     })
 
