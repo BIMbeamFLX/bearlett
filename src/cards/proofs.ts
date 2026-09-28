@@ -106,8 +106,12 @@ export type Card = {
 
 const HEX = /^(?:[0-9a-f]{2})*$/
 const FIELDS = ['v', 'mint', 'issuer', 'states', 'genesis', 'receipts']
-/** far more moves than a card will see; bounds what a lookup can make us check */
-const MAX_STATES = 10_000
+/**
+ * The most states a consignment may have: far more moves than a card will
+ * see, and a bound on what a lookup can make a holder check. A card mint
+ * refuses the move that would go past it.
+ */
+export const MAX_STATES = 10_000
 
 const hexList = (value: unknown): string[] | null =>
   Array.isArray(value) &&

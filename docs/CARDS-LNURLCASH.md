@@ -62,6 +62,10 @@ What a holder keeps and shows, as JSON:
  "genesis": "<sig hex>", "receipts": ["<sig S_0 to S_1>", "..."]}
 ```
 
+A consignment has at most 10,000 states, so a card moves at most 9,999
+times: a card mint refuses the move past that, and a holder refuses a
+longer history.
+
 Offline, a card is genuine when the issuer is the one the holder trusts,
 `S_0` has index 0, zero `prev` and the `assetId` above, every state follows
 the one before (same id, name and description, index plus one, `prev`

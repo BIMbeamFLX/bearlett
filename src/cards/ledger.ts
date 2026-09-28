@@ -16,6 +16,7 @@ import {
 import {spendDomain} from '../spec/spend.ts'
 import {
   buildConsignment,
+  MAX_STATES,
   signGenesis,
   signMove,
   verifyConsignment,
@@ -73,6 +74,8 @@ export type LedgerOptions = {
   mintKey: Uint8Array
   /** unix seconds, for time claims */
   now?: () => number
+  /** the most states a card may reach here: MAX_STATES, or fewer */
+  maxStates?: number
   /**
    * Writes a card's new consignment down, synchronously, before the ledger
    * holds the change in memory. If it throws, nothing changed: a mint must
@@ -90,12 +93,14 @@ export class CardLedger {
   private readonly mintKey: Uint8Array
   private readonly now: () => number
   private readonly persist: (consignment: Consignment) => void
+  private readonly maxStates: number
   /** by asset id */
   private readonly records = new Map<string, Record>()
-  /** note key of a card's current state, to its asset id */
-  private readonly live = new Map<string, string>()
-  /** note keys of every earlier state, to their asset id */
-  private readonly spent = new Map<string, string>()
+  /**
+   * the note key of every state of every card, to its asset id and its
+   * place in the history: live when it is the last one
+   */
+  private readonly notes = new Map<string, {id: string; at: number}>()
   /** owner key, to the asset ids it holds */
   private readonly owners = new Map<string, Set<string>>()
   /** every owner key that ever held a card here */
@@ -111,6 +116,7 @@ export class CardLedger {
     this.mintPubkey = bytesToHex(secp256k1.getPublicKey(options.mintKey, true))
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000))
     this.persist = options.persist ?? (() => {})
+    this.maxStates = Math.min(options.maxStates ?? MAX_STATES, MAX_STATES)
   }
 
   /**
@@ -161,11 +167,9 @@ export class CardLedger {
     const id = bytesToHex(states[0].assetId)
     if (this.records.has(id)) throw new Error('That card is issued already.')
     this.records.set(id, {states, genesis, receipts})
-    states.forEach((state, i) => {
+    states.forEach((state, at) => {
       this.seen.add(bytesToHex(state.owner))
-      const q = bytesToHex(cardNote(state).q)
-      if (i < states.length - 1) this.spent.set(q, id)
-      else this.live.set(q, id)
+      this.notes.set(bytesToHex(cardNote(state).q), {id, at})
     })
     this.hold(states[states.length - 1].owner, id)
   }
@@ -238,11 +242,15 @@ export class CardLedger {
     }
   }
 
+  private isLive(note: {id: string; at: number}): boolean {
+    return note.at === this.records.get(note.id)!.states.length - 1
+  }
+
   /** LUD-25 informational GET by `?p=`. */
   lookup(q: Uint8Array): Live | Refusal {
-    const key = bytesToHex(q)
-    if (this.live.has(key)) return this.certified(q)
-    return refuse(this.spent.has(key) ? SPENT : UNKNOWN)
+    const note = this.notes.get(bytesToHex(q))
+    if (!note) return refuse(UNKNOWN)
+    return this.isLive(note) ? this.certified(q) : refuse(SPENT)
   }
 
   /** LUD-25 informational GET by `?k1=`: only a spend that opens a live card. */
@@ -269,13 +277,15 @@ export class CardLedger {
     const spend = decodeSpend(k1s[0])
     if (spend?.kind !== 'script') return refuse('That is not a card’s spend.')
     const q = bytesToHex(spend.q)
-    const id = this.live.get(q) ?? this.spent.get(q)
-    if (!id) return refuse(UNKNOWN)
-    const record = this.records.get(id)!
-    const at = record.states.findIndex(s => bytesToHex(cardNote(s).q) === q)
-    const current = record.states[at]
+    const note = this.notes.get(q)
+    if (!note) return refuse(UNKNOWN)
+    // the signature before anything else: a spend that does not open the
+    // card costs one check, however long the card's history
     const closed = opens(spend, this.domain)
     if (closed) return closed
+    const {id, at} = note
+    const record = this.records.get(id)!
+    const current = record.states[at]
     const late = timeClaimProblem(spend.claim, this.now(), 0)
     if (late) return refuse(`The spend is not due: ${late}.`)
     const revealed = spend.witness[spend.witness.length - 1]
@@ -299,12 +309,14 @@ export class CardLedger {
         consignment: this.consignment(id)!
       }
     }
+    if (record.states.length >= this.maxStates)
+      return refuse(`A card moves at most ${this.maxStates - 1} times.`)
     const problem = moveProblem(current, next)
     if (problem) return refuse(`That is not the card’s next state: ${problem}.`)
     if (!equalBytes(cardNote(next).q, to))
       return refuse('The next state does not lock to p1.')
     const toKey = bytesToHex(to)
-    if (this.live.has(toKey) || this.spent.has(toKey)) return refuse(IN_USE)
+    if (this.notes.has(toKey)) return refuse(IN_USE)
     const receipt = signMove(this.issuerKey, current, next, this.domain)
     const consignment = buildConsignment(
       this.withdraw,
@@ -317,9 +329,7 @@ export class CardLedger {
     this.persist(consignment)
     record.states.push(next)
     record.receipts.push(receipt)
-    this.live.delete(q)
-    this.spent.set(q, id)
-    this.live.set(toKey, id)
+    this.notes.set(toKey, {id, at: at + 1})
     this.release(current.owner, id)
     this.hold(next.owner, id)
     return {c: this.certified(to).c, receipt, consignment}

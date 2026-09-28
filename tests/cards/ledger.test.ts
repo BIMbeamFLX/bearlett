@@ -166,6 +166,37 @@ describe('moving', () => {
     )
     expect(atEve.states.map(s => s.index)).toEqual([0, 1, 2])
     expect(ledger.byOwner(pub(eve))).toHaveLength(1)
+    // the first move, asked again later, still gets its own receipt
+    const again = moved(
+      ledger.burn({k1s: [toBob.k1], p1: toBob.p1, state: toBob.state})
+    )
+    expect(again.receipt).toEqual(hexToBytes(atEve.consignment.receipts[0]))
+  })
+
+  it('refuses the move past the most states a card may have', () => {
+    const ledger = new CardLedger({...options, maxStates: 3})
+    let card = verified(
+      ledger,
+      ledger.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    for (const [from, to] of [
+      [alice, bob],
+      [bob, alice]
+    ]) {
+      const move = moveOf(card, from, pub(to))
+      card = verified(
+        ledger,
+        moved(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+          .consignment
+      )
+    }
+    const move = moveOf(card, alice, pub(bob))
+    expect(
+      refusal(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
+    ).toBe('A card moves at most 2 times.')
+    // still alice's, still live
+    expect(ledger.lookup(card.q)).toHaveProperty('c')
+    expect(ledger.byOwner(pub(alice))).toHaveLength(1)
   })
 })
 
@@ -182,6 +213,14 @@ describe('refusing', () => {
     ])
       expect(refusal(ledger.burn(request))).toBe(ONLY_MOVES)
     expect(ledger.lookup(card.q)).toHaveProperty('c')
+  })
+
+  it('checks the signature before anything the request carries', () => {
+    const {ledger, card} = issued()
+    const theft = moveOf(card, eve, pub(eve))
+    expect(
+      refusal(ledger.burn({k1s: [theft.k1], p1: 'cp1', state: 'zz'}))
+    ).toMatch(/does not open the card/)
   })
 
   it('refuses a move its holder did not sign', () => {
