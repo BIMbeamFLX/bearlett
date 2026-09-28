@@ -31,7 +31,19 @@ describe('secrets at rest', () => {
     expect(isMnemonic(words)).toBe(true)
     await Wallet.create({net: fetchNet, store}, words, 'correct horse')
     const vault = (await store.get(VAULT_KEY))!
-    for (const word of words.split(' ')) expect(vault).not.toContain(word)
+    // nothing but what sealing needs, and the words in none of it; a word
+    // may be a field's name ("salt" is one of them), never what it holds
+    const sealed = JSON.parse(vault) as Record<string, unknown>
+    expect(Object.keys(sealed).sort()).toEqual([
+      'data',
+      'iterations',
+      'iv',
+      'salt',
+      'v'
+    ])
+    expect(vault).not.toContain(words)
+    for (const value of Object.values(sealed))
+      expect(words.split(' ')).not.toContain(String(value))
     expect(await Wallet.revealWords(store, 'correct horse')).toBe(words)
     await expect(
       Wallet.unlock({net: fetchNet, store}, 'wrong')
