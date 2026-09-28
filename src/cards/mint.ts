@@ -29,5 +29,7 @@ export {
   genesisState,
   type CardState
 } from './state.ts'
+// the holder's move, for a card mint's own tests
+export {makeMove, MOVE_CLAIM, type Move} from './holder.ts'
 export {decodeCp1, encodeCp1} from '../spec/encoding.ts'
 export {bytesToHex, hexToBytes} from '../spec/bytes.ts'
