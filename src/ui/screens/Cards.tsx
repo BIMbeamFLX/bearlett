@@ -100,7 +100,16 @@ export const Cards = (props: {wallet: () => Wallet}) => {
 
   const showAddress = () =>
     run('Making a card address', async () => {
-      setMine(await w().cardAddress(current()))
+      setMine(w().cardAddress(current()))
+    })
+
+  const removeCardMint = () =>
+    run('Removing the card mint', async () => {
+      await w().removeCardMint(current())
+      setPicked('')
+      setInvoice(null)
+      setMine(null)
+      notify('Card mint removed.')
     })
 
   const handOn = (id: string) =>
@@ -204,9 +213,14 @@ export const Cards = (props: {wallet: () => Wallet}) => {
             Refresh
           </Action>
         </div>
-        <button class="link" onClick={() => refresh(true)}>
-          Scan for my cards
-        </button>
+        <div class="row">
+          <button class="link" onClick={() => refresh(true)}>
+            Scan for my cards
+          </button>
+          <button class="link" onClick={removeCardMint}>
+            Remove this card mint
+          </button>
+        </div>
         <Show when={invoice()}>
           {bill => (
             <>
@@ -235,8 +249,8 @@ export const Cards = (props: {wallet: () => Wallet}) => {
             <>
               <h3>Your card address</h3>
               <p class="quiet">
-                Give it to whoever hands you a card. A fresh one every time
-                keeps your cards apart.
+                Give it to whoever hands you a card. Once a card has arrived
+                there you get a new one, which keeps your cards apart.
               </p>
               <Qr value={cp1()} />
               <p class="mono-break">{cp1()}</p>
