@@ -29,7 +29,11 @@ export const App = (props: {platform: Platform}) => {
   const [offered, setOffered] = createSignal<NoteDesign | null>(null)
   const [problem, setProblem] = createSignal('')
   const timers: ReturnType<typeof setInterval>[] = []
-  onCleanup(() => timers.forEach(clearInterval))
+  let stopDesigns: (() => void) | undefined
+  onCleanup(() => {
+    timers.forEach(clearInterval)
+    stopDesigns?.()
+  })
 
   onMount(async () => {
     if (props.platform.kind === 'web' && !(await holdWalletLock())) {
@@ -57,14 +61,13 @@ export const App = (props: {platform: Platform}) => {
     }
     quiet(() => opened.settle())()
     // the Hangar's Note Designer: a design waits for an explicit Apply
-    const stop = props.platform.designs?.(payload => {
+    stopDesigns = props.platform.designs?.(payload => {
       try {
         setOffered(parseDesignMessage(payload))
       } catch {
         notify('A note design arrived that Bearlett cannot read.', true)
       }
     })
-    if (stop) onCleanup(stop)
     timers.push(
       setInterval(
         quiet(() => opened.settle()),
