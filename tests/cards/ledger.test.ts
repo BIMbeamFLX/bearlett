@@ -6,6 +6,7 @@ import {makeMove} from '../../src/cards/holder.ts'
 import {
   CardLedger,
   CARD_MSAT,
+  MOVED_OUT,
   ONLY_MOVES,
   SPENT,
   UNKNOWN,
@@ -110,6 +111,65 @@ describe('issuing', () => {
     expect(card.consignment.mint).toBe('https://cards.example/')
   })
 
+  it('issues a pack all or none, and holds it only once kept', () => {
+    const written: Consignment[] = []
+    let failAt = -1
+    const ledger = new CardLedger({
+      ...options,
+      persist: c => {
+        if (written.length === failAt) throw new Error('disk full')
+        written.push(c)
+      }
+    })
+    const pack = (serial: number, owner: Uint8Array) =>
+      ['E1-001', 'E1-042'].map(name => ({
+        name,
+        description: `600B-E1#${serial}`,
+        owner
+      }))
+    const pending = ledger.issuePending(pack(1, pub(alice)))
+    expect(written).toEqual(pending.consignments)
+    // written down, not held: nothing sees the cards before keep()
+    const qs = pending.consignments.map(c => verified(ledger, c).q)
+    for (const q of qs) expect(refusal(ledger.lookup(q))).toBe(UNKNOWN)
+    expect(ledger.lookupOwner(pub(alice))).toEqual({cards: [], used: false})
+    pending.keep()
+    pending.keep()
+    expect(ledger.byOwner(pub(alice))).toHaveLength(2)
+    for (const q of qs) expect(ledger.lookup(q)).toHaveProperty('c')
+    // a pack whose writing fails part way is held not at all, and can be issued again
+    failAt = written.length + 1
+    expect(() => ledger.issuePending(pack(2, pub(bob)))).toThrow(/disk full/)
+    expect(ledger.lookupOwner(pub(bob))).toEqual({cards: [], used: false})
+    failAt = -1
+    ledger.issuePending(pack(2, pub(bob))).keep()
+    expect(ledger.byOwner(pub(bob))).toHaveLength(2)
+    // one card twice in a pack is refused before anything is written
+    const before = written.length
+    const [twice] = pack(3, pub(eve))
+    expect(() => ledger.issuePending([twice, twice])).toThrow(/issued already/)
+    expect(written).toHaveLength(before)
+  })
+
+  it('reserves a pending card until it is kept or abandoned', () => {
+    const ledger = new CardLedger(options)
+    const card = {name: 'E1-001', description: '600B-E1#1', owner: pub(alice)}
+    const first = ledger.issuePending([card])
+    // not held yet, but nobody else is issued it meanwhile
+    expect(() => ledger.issuePending([{...card, owner: pub(bob)}])).toThrow(
+      /issued already/
+    )
+    // a rollback gives it back
+    first.abandon()
+    first.keep()
+    expect(ledger.byOwner(pub(alice))).toEqual([])
+    const second = ledger.issuePending([{...card, owner: pub(bob)}])
+    second.keep()
+    second.abandon()
+    expect(ledger.byOwner(pub(bob))).toHaveLength(1)
+    expect(() => ledger.issuePending([card])).toThrow(/issued already/)
+  })
+
   it('issues a card and serial once', () => {
     const {ledger} = issued()
     expect(() => ledger.issue('E1-042', '600B-E1#17', pub(bob))).toThrow(
@@ -193,7 +253,7 @@ describe('moving', () => {
     const move = moveOf(card, alice, pub(bob))
     expect(
       refusal(ledger.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
-    ).toBe('A card moves at most 2 times.')
+    ).toBe(MOVED_OUT)
     // still alice's, still live
     expect(ledger.lookup(card.q)).toHaveProperty('c')
     expect(ledger.byOwner(pub(alice))).toHaveLength(1)
@@ -453,14 +513,26 @@ describe('restoring', () => {
     ).toThrow(/Not restorable/)
   })
 
-  it('leaves out one card of another issuer key or withdraw URL, and never issues it again', () => {
+  it('refuses a store holding one card of another issuer key or withdraw URL', () => {
     const {ledger} = twoCards()
     const [first, second] = ledger.save()
+    // however many of its own cards, and damaged ones, come with it
+    for (const other of [
+      {...second, mint: 'https://moved.example/w'},
+      {...second, issuer: bytesToHex(pub(key(9)))}
+    ])
+      expect(() =>
+        CardLedger.restore(options, [first, {} as Consignment, other])
+      ).toThrow(/another issuer key or withdraw URL/)
+  })
+
+  it('leaves out a damaged card among good ones, and never issues it again', () => {
+    const {ledger} = twoCards()
+    const [first, second] = ledger.save()
+    const upper = {...second, states: second.states.map(s => s.toUpperCase())}
     const skipped: number[] = []
-    const again = CardLedger.restore(
-      options,
-      [first, {...second, mint: 'https://moved.example/w'}],
-      (_, at) => skipped.push(at)
+    const again = CardLedger.restore(options, [first, upper], (_, at) =>
+      skipped.push(at)
     )
     expect(skipped).toEqual([1])
     expect(again.save()).toEqual([first])
@@ -485,6 +557,76 @@ describe('restoring', () => {
     expect(refusal(again.lookup(card.q))).toBe(SPENT)
   })
 
+  it('reports every history that forks the one kept, whatever its length', () => {
+    const log: Consignment[] = []
+    const ledger = new CardLedger({...options, persist: c => log.push(c)})
+    const card = verified(
+      ledger,
+      ledger.issue('E1-042', '600B-E1#17', pub(alice))
+    )
+    const toBob = moveOf(card, alice, pub(bob))
+    const atBob = verified(
+      ledger,
+      moved(ledger.burn({k1s: [toBob.k1], p1: toBob.p1, state: toBob.state}))
+        .consignment
+    )
+    const toEve = moveOf(atBob, bob, pub(eve))
+    moved(ledger.burn({k1s: [toEve.k1], p1: toEve.p1, state: toEve.state}))
+    // an old backup restored, and the old owner's move signed again
+    const old = CardLedger.restore(options, [log[0]])
+    const toCarol = moveOf(card, alice, pub(key(4)))
+    const forked = moved(
+      old.burn({k1s: [toCarol.k1], p1: toCarol.p1, state: toCarol.state})
+    ).consignment
+    const skipped: [string, number][] = []
+    const again = CardLedger.restore(options, [...log, forked], (p, at) =>
+      skipped.push([p, at])
+    )
+    // the shorter fork is named; the kept history's own past is not
+    expect(skipped).toEqual([[expect.stringMatching(/forks the one kept/), 3]])
+    expect(again.save()).toEqual([log[2]])
+  })
+
+  it('refuses a store none of whose records checks out, naming each', () => {
+    const {ledger} = twoCards()
+    const [first] = ledger.save()
+    const skipped: [string, number][] = []
+    const damaged = [
+      null,
+      {},
+      {...first, issuer: 'zz'},
+      {...first, genesis: '00'.repeat(64)},
+      {...first, states: first.states.map(s => s.toUpperCase())}
+    ] as unknown as Consignment[]
+    expect(() =>
+      CardLedger.restore(options, damaged, (p, at) => skipped.push([p, at]))
+    ).toThrow(/none of the cards checks out/)
+    expect(skipped.map(([, at]) => at).sort()).toEqual([0, 1, 2, 3, 4])
+    for (const [problem] of skipped)
+      expect(problem).toMatch(/does not check out/)
+    // an empty store is a new card mint
+    expect(CardLedger.restore(options, []).save()).toEqual([])
+  })
+
+  it('keeps the same history of a card whatever the order of its records', () => {
+    // one card and serial issued twice, to two holders: a double issue
+    const [a, b] = [alice, bob].map(owner =>
+      new CardLedger(options).issue('E1-001', '600B-E1#1', pub(owner))
+    )
+    const kept = (records: Consignment[]) => {
+      const skipped: number[] = []
+      const again = CardLedger.restore(options, records, (_, at) =>
+        skipped.push(at)
+      )
+      return {saved: again.save(), skipped}
+    }
+    const forward = kept([a, b])
+    const backward = kept([b, a])
+    expect(forward.saved).toEqual(backward.saved)
+    expect(forward.skipped).toHaveLength(1)
+    expect(backward.skipped).toHaveLength(1)
+  })
+
   it('takes only a whole number of states, at least 1, as its bound', () => {
     for (const maxStates of [Number.NaN, 0, 1.5, -3, Infinity])
       expect(() => new CardLedger({...options, maxStates})).toThrow(
@@ -498,6 +640,6 @@ describe('restoring', () => {
     const move = moveOf(card, alice, pub(bob))
     expect(
       refusal(still.burn({k1s: [move.k1], p1: move.p1, state: move.state}))
-    ).toBe('A card moves at most 0 times.')
+    ).toBe(MOVED_OUT)
   })
 })

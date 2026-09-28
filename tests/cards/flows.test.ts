@@ -302,6 +302,22 @@ describe('handing a card on', () => {
     expect(await carol.wallet.refreshCards(carol.domain)).toBe(0)
   })
 
+  it('says so when the card mint allows a card no more moves', async () => {
+    const mint = await start({maxStates: 2})
+    const alice = await holder(mint)
+    const bob = await holder(mint)
+    await buyPack(mint, alice.wallet, alice.domain)
+    const [card] = alice.wallet.cards({status: 'held'})
+    await alice.wallet.sendCard(card.id, bob.wallet.cardAddress(bob.domain))
+    await bob.wallet.refreshCards(bob.domain)
+    await expect(
+      bob.wallet.sendCard(card.id, alice.wallet.cardAddress(alice.domain))
+    ).rejects.toThrow('This card has moved as often as this card mint allows.')
+    // nothing moved: the card is still bob's
+    expect(bob.wallet.snapshot.cards[card.id].status).toBe('held')
+    expect(await bob.wallet.refreshCards(bob.domain)).toBe(1)
+  })
+
   it('refuses to move a card it does not hold, or to no key', async () => {
     const mint = await start()
     const alice = await holder(mint)

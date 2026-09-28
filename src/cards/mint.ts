@@ -6,14 +6,17 @@ export {
   CardLedger,
   CARD_MSAT,
   IN_USE,
+  MOVED_OUT,
   ONLY_MOVES,
   SPENT,
   UNKNOWN,
   type BurnRequest,
+  type CardToIssue,
   type Holdings,
   type LedgerOptions,
   type Live,
   type Moved,
+  type PendingIssue,
   type Refusal
 } from './ledger.ts'
 export {
