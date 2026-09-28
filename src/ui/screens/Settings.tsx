@@ -120,6 +120,22 @@ export const Settings = (props: {
 
       <section class="panel">
         <h2>Wallet</h2>
+        <Show when={w().snapshot.settings.design}>
+          {design => (
+            <div class="field">
+              <span class="caption">Note design</span>
+              <p>
+                {design().title}{' '}
+                <button
+                  class="link"
+                  onClick={() => run('Removing', () => w().setDesign(null))}
+                >
+                  Use plain notes
+                </button>
+              </p>
+            </div>
+          )}
+        </Show>
         <Field
           label="Recovery gap limit"
           hint="How many unused keys in a row a scan checks before it stops."

@@ -2,7 +2,15 @@
 // Lightning Address (as an internal transfer when the payee is at one of
 // your mints), and minting straight onto someone's note key.
 import {createMemo, createSignal, Match, Show, Switch} from 'solid-js'
-import {Action, Busy, Copy, Field, MintSelect, Qr, Scanner} from '../kit.tsx'
+import {
+  Action,
+  Busy,
+  Copy,
+  Field,
+  MintSelect,
+  NoteCard,
+  Scanner
+} from '../kit.tsx'
 import {formatSats, parseSats} from '../format.ts'
 import {notify, run} from '../session.ts'
 import {classifyInput, invoiceAmountMsat} from '../../lnurl/links.ts'
@@ -184,7 +192,10 @@ export const Send = (props: {wallet: () => Wallet; platform: Platform}) => {
               >
                 {value => (
                   <>
-                    <Qr value={value()} />
+                    <NoteCard
+                      value={value()}
+                      design={w().snapshot.settings.design}
+                    />
                     <p class="mono-break">{value()}</p>
                     <div class="row">
                       <Copy value={value()} label="Copy link" />

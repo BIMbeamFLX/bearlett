@@ -8,6 +8,8 @@ export type Platform = {
   store: Store
   /** a camera to scan QR codes with */
   canScan: boolean
+  /** note designs handed over by the shell (the Hangar's Note Designer) */
+  designs?: (listener: (payload: unknown, sender: string) => void) => () => void
 }
 
 /**

@@ -5,6 +5,7 @@ import decodeQR from 'qr/decode.js'
 import {busy, notify} from './session.ts'
 import {formatSats} from './format.ts'
 import type {Mint} from '../wallet/state.ts'
+import type {NoteDesign} from '../wallet/design.ts'
 
 /** A QR code of `value`, in the parchment frame. */
 export const Qr = (props: {value: string}) => (
@@ -13,6 +14,32 @@ export const Qr = (props: {value: string}) => (
     class="qr"
     innerHTML={encodeQR(props.value, 'svg', {ecc: 'medium', border: 1})}
   />
+)
+
+/**
+ * A note's QR code, on the paper of the wallet's note design if it has one:
+ * appearance only, the QR is the same note either way.
+ */
+export const NoteCard = (props: {value: string; design?: NoteDesign}) => (
+  <Show when={props.design} fallback={<Qr value={props.value} />}>
+    {design => (
+      <figure
+        class="note-card"
+        style={{background: design().paper, color: design().ink}}
+      >
+        <Show when={design().image}>
+          {image => <img src={image()} alt="" />}
+        </Show>
+        <figcaption>
+          <strong>{design().title}</strong>
+          <Show when={design().subtitle}>
+            <span>{design().subtitle}</span>
+          </Show>
+        </figcaption>
+        <Qr value={props.value} />
+      </figure>
+    )}
+  </Show>
 )
 
 export const Copy = (props: {value: string; label?: string}) => (

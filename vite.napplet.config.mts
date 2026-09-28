@@ -64,7 +64,7 @@ export default defineConfig({
          call goes through the shell (GET only). `storage`: the sealed seed
          and bookkeeping. `theme`: the shell paints its skin onto the
          Hypershell chrome (src/ui/theme.ts); without it the defaults stay. */
-      requires: ['storage', 'resource', 'theme'],
+      requires: ['storage', 'resource', 'theme', 'inc'],
       archetypes: []
     })
   ],
