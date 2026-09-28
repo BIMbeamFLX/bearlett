@@ -20,6 +20,7 @@ import {
   type Purpose
 } from '../spec/derivation.ts'
 import {encodeCp1, encodeCx1, type BranchExport} from '../spec/encoding.ts'
+import {CARD_PURPOSE} from '../cards/holder.ts'
 import {
   leafNote,
   signKeySpend,
@@ -98,6 +99,15 @@ export class KeyRing {
   /** The note's ck1: deterministic, so it never needs storing. */
   spend(host: string, key: KeyRef): string {
     return signKeySpend(this.secretKey(host, key), spendDomainOfHost(host))
+  }
+
+  /** A card owner key, x-only: CARD_PURPOSE on the card mint's branch. */
+  cardKey(host: string, index: number): Uint8Array {
+    return notePubkey(this.export(host), CARD_PURPOSE, index)
+  }
+
+  cardSecretKey(host: string, index: number): Uint8Array {
+    return noteSecretKey(this.branch(host), CARD_PURPOSE, index)
   }
 
   /** The registration proof names the mint's hostname, as the mint checks it. */

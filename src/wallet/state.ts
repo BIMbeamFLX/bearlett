@@ -158,8 +158,8 @@ export type HeldCard = {
   /** the card mint's domain */
   mint: string
   consignment: Consignment
-  /** the key that holds the current state, while it is this wallet's */
-  key?: KeyRef
+  /** the card key (CARD_PURPOSE) holding the current state, while it is this wallet's */
+  index?: number
   status: CardStatus
   /** the move in flight, kept to ask again with the same bytes */
   move?: {callback: string; k1: string; p1: string; state: string}
@@ -176,6 +176,12 @@ export type WalletState = {
   activity: Activity[]
   addresses: Record<string, LightningAddress>
   cardMints: Record<string, CardMintRecord>
+  /**
+   * per card mint host: the first card key no card is known to have
+   * reached. It is handed out again until one does, and outlives the card
+   * mint's record, so a key once used is never handed out again.
+   */
+  cardKeys: Record<string, number>
   cards: Record<string, HeldCard>
   settings: {gapLimit: number; offline: boolean}
 }
@@ -189,6 +195,7 @@ export const emptyState = (): WalletState => ({
   activity: [],
   addresses: {},
   cardMints: {},
+  cardKeys: {},
   cards: {},
   settings: {gapLimit: 20, offline: false}
 })

@@ -180,6 +180,7 @@ export class Wallet {
     }
     // states written before cards existed
     state.cardMints ??= {}
+    state.cardKeys ??= {}
     state.cards ??= {}
     return new Wallet(ports, new KeyRing(seed), key, state)
   }
@@ -1348,15 +1349,43 @@ export class Wallet {
     return this.state.cardMints[domain]
   }
 
-  /** A fresh key of this wallet's to be given a card at, as cp1. */
-  async cardAddress(domain: string): Promise<string> {
+  /**
+   * Forgets a card mint, its pinned issuer key and the cards seen there,
+   * once this wallet holds none there. Its card keys stay counted: adding
+   * it again never hands out a key that was used.
+   */
+  async removeCardMint(domain: string): Promise<void> {
     this.cardMint(domain)
-    return this.keys.cp1(domain, await this.nextKey(domain, PURPOSE.wallet))
+    if (
+      this.cards({mint: domain}).some(
+        card => card.status === 'held' || card.status === 'moving'
+      )
+    )
+      throw new Error('Hand on the cards at this card mint first.')
+    await this.commit(state => {
+      delete state.cardMints[domain]
+      for (const card of Object.values(state.cards))
+        if (card.mint === domain) delete state.cards[card.id]
+    })
+    await this.writeInventory()
+  }
+
+  /**
+   * This wallet's card address at a card mint, as cp1: the first card key
+   * no card is known to have reached. It stays the same until a card
+   * arrives there, so unpaid packs and unused addresses leave no gap that
+   * would stop a restore.
+   */
+  cardAddress(domain: string): string {
+    this.cardMint(domain)
+    return encodeCp1(
+      this.keys.cardKey(domain, this.state.cardKeys[domain] ?? 0)
+    )
   }
 
   /**
    * An invoice for a pack at its fixed price; once it is paid, the card
-   * mint issues the pack's cards to a fresh key of this wallet's.
+   * mint issues the pack's cards to this wallet's card address there.
    */
   async requestPack(
     domain: string,
@@ -1365,7 +1394,9 @@ export class Wallet {
     const offer = this.cardMint(domain).packs[pack]
     if (!offer) throw new Error('This card mint sells no such pack.')
     const pay = await fetchPayRequest(this.net, offer.lnurlp)
-    const owner = await this.cardAddress(domain)
+    if (pay.minSendable !== pay.maxSendable)
+      throw new Error('This card mint names no fixed price for the pack.')
+    const owner = this.cardAddress(domain)
     if (pay.commentAllowed < owner.length)
       throw new Error('This card mint cannot be told whose pack it is.')
     const invoice = await requestInvoice(this.net, pay, pay.minSendable, owner)
@@ -1400,45 +1431,52 @@ export class Wallet {
   }
 
   /**
-   * Asks the card mint for the cards at this wallet's keys there: every key
-   * used so far, or, with `scan`, on until `gapLimit` keys in a row hold
-   * nothing, which is how the 12 words alone bring the cards back.
+   * Asks the card mint for the cards at this wallet's card keys there: every
+   * key used so far and the one handed out, or, with `scan`, on until
+   * `gapLimit` keys in a row never held a card, which is how the 12 words
+   * alone bring the cards back.
    */
   async refreshCards(domain: string, scan = false): Promise<number> {
     const info = this.cardMintInfo(this.cardMint(domain))
-    const used = this.state.counters[domain]?.[PURPOSE.wallet] ?? 0
+    const handedOut = this.state.cardKeys[domain] ?? 0
     const gapLimit = this.state.settings.gapLimit
-    const found = new Map<string, {card: Card; key: KeyRef}>()
-    let next = used
+    const found = new Map<string, {card: Card; index: number}>()
+    let next = handedOut
     for (
       let index = 0, gap = 0;
-      index < used || (scan && gap < gapLimit);
+      index <= handedOut || (scan && gap < gapLimit);
       index++
     ) {
-      const key = {purpose: PURPOSE.wallet, index}
-      const owner = hexToBytes(this.keys.q(domain, key))
-      const cards = await fetchCardsOf(this.net, info, owner)
+      const owner = this.keys.cardKey(domain, index)
+      const {cards, used} = await fetchCardsOf(this.net, info, owner)
       for (const card of cards)
-        found.set(bytesToHex(card.head.assetId), {card, key})
-      gap = cards.length ? 0 : gap + 1
-      if (cards.length) next = Math.max(next, index + 1)
+        found.set(bytesToHex(card.head.assetId), {card, index})
+      gap = used ? 0 : gap + 1
+      if (used) next = Math.max(next, index + 1)
     }
     await this.commit(state => {
+      state.cardKeys[domain] = Math.max(state.cardKeys[domain] ?? 0, next)
       // decided here, on the state it changes: two refreshes log once
-      const fresh = [...found.keys()].filter(
-        id => state.cards[id]?.status !== 'held'
-      )
-      const counters = (state.counters[domain] ??= [0, 0, 0])
-      counters[PURPOSE.wallet] = Math.max(counters[PURPOSE.wallet], next)
-      for (const [id, {card, key}] of found)
+      const fresh: string[] = []
+      for (const [id, {card, index}] of found) {
+        const known = state.cards[id]
+        // a move on its way is settle()'s, and an answer older than the
+        // history this wallet has (a card it sent meanwhile) changes nothing
+        if (
+          known?.status === 'moving' ||
+          (known && known.consignment.states.length > card.states.length)
+        )
+          continue
+        if (known?.status !== 'held') fresh.push(id)
         state.cards[id] = {
           id,
           mint: domain,
           consignment: card.consignment,
-          key,
+          index,
           status: 'held',
           updatedAt: this.now()
         }
+      }
       for (const held of Object.values(state.cards))
         if (
           held.mint === domain &&
@@ -1447,7 +1485,7 @@ export class Wallet {
         )
           Object.assign(held, {
             status: 'gone',
-            key: undefined,
+            index: undefined,
             updatedAt: this.now()
           })
       if (fresh.length)
@@ -1467,7 +1505,7 @@ export class Wallet {
   /** Moves a card to someone's card address: a cp1 of their key there. */
   async sendCard(id: string, to: string): Promise<void> {
     const held = this.state.cards[id]
-    if (!held || held.status !== 'held' || !held.key)
+    if (!held || held.status !== 'held' || held.index === undefined)
       throw new Error('Only a card this wallet holds can move.')
     const owner = decodeCp1(to.trim())
     if (!owner) throw new Error('A card address is a cp1 key.')
@@ -1475,7 +1513,7 @@ export class Wallet {
     const {head} = this.verifiedCard(id)
     const move = makeMove(
       head,
-      this.keys.secretKey(held.mint, held.key),
+      this.keys.cardSecretKey(held.mint, held.index),
       owner,
       spendDomainOfHost(held.mint)
     )
@@ -1512,14 +1550,17 @@ export class Wallet {
       })
     } catch (err) {
       // refused: nothing moved, unless the card had moved elsewhere already
-      if (err instanceof ServiceError)
+      if (err instanceof ServiceError) {
+        const gone = reason.spent(err.reason)
         await this.commit(state => {
           Object.assign(state.cards[id], {
-            status: reason.spent(err.reason) ? 'gone' : 'held',
+            status: gone ? 'gone' : 'held',
+            index: gone ? undefined : held.index,
             move: undefined,
             updatedAt: this.now()
           })
         })
+      }
       throw err
     }
     const consignment = {
@@ -1531,7 +1572,7 @@ export class Wallet {
       Object.assign(state.cards[id], {
         consignment,
         status: 'sent',
-        key: undefined,
+        index: undefined,
         move: undefined,
         updatedAt: this.now()
       })
@@ -1566,7 +1607,8 @@ export class Wallet {
 
   private async writeInventory(): Promise<void> {
     const inventory = this.inventory()
-    if (inventory)
-      await this.ports.store.set(INVENTORY_KEY, JSON.stringify(inventory))
+    // nothing to show any more: the Hangar must not answer with an old count
+    if (!inventory) await this.ports.store.remove(INVENTORY_KEY)
+    else await this.ports.store.set(INVENTORY_KEY, JSON.stringify(inventory))
   }
 }
