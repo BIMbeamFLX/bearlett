@@ -83,21 +83,52 @@ A LUD-25 SERVICE whose notes are all cards.
 - Every other burn of a card note is refused with `"Cards move only by
   transition."`: a split, a merge, a melt, a move without `state`.
 - **Lookup**: `GET <lookup>?owner=<x-only hex>` answers
-  `{"cards": [<consignment>, ...]}` for the live cards that key holds.
+  `{"cards": [<consignment>, ...], "used": <bool>}`: the live cards that key
+  holds, and whether it ever held a card at this mint.
 - **Discovery**: `GET /.well-known/lnurlcash-cards` answers
   `{"v": 0, "issuer", "withdraw", "lookup", "packs": [...]}`, where a pack
   names its `lnurlp` (a LUD-06 payRequest), `edition`, `collection_id` and
-  `catalog_uri`.
+  `catalog_uri`. `withdraw`, `lookup` and every `lnurlp` are on the origin
+  the document is served from, and a wallet refuses a document that names
+  any other: a document elsewhere cannot speak for a card mint. Plain http
+  is allowed only where LUD-01 allows it, for a card mint on this machine
+  or an onion service.
 - **Buying a pack**: pay the pack's payRequest with the comment
   `cp1<owner>`; once paid, the mint issues the pack's cards to that key.
 
 ## The holder
 
-Owner keys are the holder's LUD-25 keys at the card mint's host, purpose 0,
-so the 12 words recover every card: a wallet asks the lookup for each key
-until a gap of unused ones. A move reveals the current state and the owner
-key to the mint; a fresh key per pack and per received card keeps a holder's
-cards apart.
+Owner keys are note keys on the holder's LUD-25 branch at the card mint's
+host, derived as LUD-25 derives note keys but under purpose 3. LUD-25's
+purposes 0 to 2 are money, so a money scan never meets a card key, nor a
+card scan a money key, even where a money mint and a card mint share a host.
+
+The 12 words recover every card:
+
+- A wallet hands out the first card key no card is known to have reached,
+  for every pack it asks for and every card address it shows, until a card
+  arrives there. An unpaid pack or an unused address leaves no gap.
+- A scan asks the lookup for each key in turn and counts a key as used when
+  `used` says it ever held a card, so keys whose cards were handed on count
+  too. It stops after a gap of unused keys (20 by default).
+- After a scan, the next key handed out is the one after the last used key;
+  a key that held a card is never handed out again.
+
+A move reveals the current state and the owner key to the mint. A new key
+once a card has arrived keeps a holder's packs apart, though packs asked for
+before the first one arrives share a key.
+
+## What a holder can check
+
+- Offline, a card's history is sound against anyone without the issuer
+  key: nobody else can make a genesis, a move or a look-alike next state.
+- It cannot catch the card mint itself signing two different moves of one
+  state, or answering with a history that is no longer live. That follows
+  from the card mint vouching for every card: a holder trusts it for that.
+- What an app reads of a holder's cards through the holder's own wallet
+  (the Hangar's inventory, which the 600B TCG reads) is what that wallet
+  says, not proof of ownership. Proof is a consignment that checks out
+  offline and whose last state the card mint's `?p=` answers as live.
 
 ## Open
 
