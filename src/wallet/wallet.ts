@@ -87,7 +87,54 @@ import {
   stateKey
 } from './vault.ts'
 
-export type Ports = {net: Net; store: Store; now?: () => number}
+export type Ports = {
+  net: Net
+  store: Store
+  now?: () => number
+  /** how long the wallet waits for any one answer: 60 s */
+  timeoutMs?: number
+}
+
+const TIMEOUT_MS = 60_000
+
+/**
+ * A Net whose every request gives up after `ms` with a TransportError, and is
+ * aborted where the Net can: one service that never answers must not hold
+ * settle(), which runs once at a time, until a reload. A request that gave up
+ * is as unknown as a lost answer, which every journal entry is safe against.
+ */
+const within = (net: Net, ms: number): Net => {
+  const timed = <T>(
+    request: (signal: AbortSignal) => Promise<T>,
+    outer?: AbortSignal
+  ): Promise<T> => {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    outer?.addEventListener('abort', abort)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new TransportError(`No answer within ${ms / 1000} s.`))
+        controller.abort()
+      }, ms)
+    })
+    return Promise.race([request(controller.signal), late]).finally(() => {
+      clearTimeout(timer)
+      outer?.removeEventListener('abort', abort)
+    })
+  }
+  return {
+    get: (url, options) =>
+      timed(signal => net.get(url, {...options, signal}), options?.signal),
+    ...(net.send && {
+      send: (method, url, options) =>
+        timed(
+          signal => net.send!(method, url, {...options, signal}),
+          options?.signal
+        )
+    })
+  }
+}
 
 export class UnknownMintError extends Error {
   readonly domain: string
@@ -259,7 +306,7 @@ export class Wallet {
           throw new TransportError('Offline mode is on. Nothing was sent.')
         }
       }
-    return this.ports.net
+    return within(this.ports.net, this.ports.timeoutMs ?? TIMEOUT_MS)
   }
 
   async setOffline(offline: boolean): Promise<void> {

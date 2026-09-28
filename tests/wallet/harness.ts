@@ -35,6 +35,8 @@ export type Setup = {
   passphrase?: string
   /** the wallet's clock, unix ms */
   now?: () => number
+  /** how long the wallet waits for any one answer */
+  timeoutMs?: number
 }
 
 /** A wallet with `mint` added and, if asked, `fundMsat` minted there. */
@@ -47,7 +49,8 @@ export const walletAt = async (
     {
       net: setup.net ?? fetchNet,
       store: setup.store ?? memoryStore(),
-      now: setup.now
+      now: setup.now,
+      timeoutMs: setup.timeoutMs
     },
     setup.words ?? newMnemonic(),
     setup.passphrase ?? ''

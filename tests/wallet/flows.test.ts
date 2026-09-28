@@ -415,6 +415,32 @@ describe('lost answers and crashes', () => {
     expect(wallet.settle()).not.toBe(first)
   })
 
+  it('gives up on an answer that never comes, and settles the rest', async () => {
+    const mint = await start()
+    let stall = false
+    let stalled = 0
+    const net: Net = {
+      async get(url, options) {
+        // one lookup that never answers, as a hung connection
+        if (stall && new URL(url).searchParams.has('p') && stalled++ === 0)
+          return new Promise(() => {})
+        return fetchNet.get(url, options)
+      }
+    }
+    const wallet = await walletAt(mint, 0, {net, timeoutMs: 300})
+    const op = await wallet.requestMint(hostOfMint(mint), 5_000)
+    await payInvoice(mint, op.verify!)
+    stall = true
+    const started = Date.now()
+    await wallet.settle()
+    expect(Date.now() - started).toBeLessThan(5_000)
+    // the stuck entry is still open, and the next settle() is not held by it
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+    await wallet.settle()
+    expect(wallet.balanceMsat()).toBe(5_000)
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(0)
+  })
+
   it('settles it at a mint that drops the answer and refuses replays', async () => {
     const mint = await start({
       dropAfterMutation: true,
