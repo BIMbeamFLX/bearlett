@@ -195,7 +195,7 @@ export type WalletState = {
   settings: {
     gapLimit: number
     offline: boolean
-    /** how handed-out notes look, from the Hangar's Note Designer */
+    /** before it had a key of its own (DESIGN_KEY): read once, then gone */
     design?: NoteDesign
   }
 }

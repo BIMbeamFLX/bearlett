@@ -9,6 +9,8 @@ export type Store = {
 
 export const VAULT_KEY = 'bearlett:vault:v1'
 export const STATE_KEY = 'bearlett:state:v1'
+/** the note design, sealed like the state but written only when it changes */
+export const DESIGN_KEY = 'bearlett:design:v1'
 
 /** In memory: previews and tests. */
 export const memoryStore = (): Store => {

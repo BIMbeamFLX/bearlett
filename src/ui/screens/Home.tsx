@@ -180,7 +180,7 @@ export const Home = (props: {wallet: () => Wallet}) => {
                     <Show when={shown() === note.q}>
                       <NoteCard
                         value={w().noteLink(note.q)}
-                        design={w().snapshot.settings.design}
+                        design={w().design}
                       />
                       <Copy value={w().noteLink(note.q)} label="Copy link" />
                     </Show>

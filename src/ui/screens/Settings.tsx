@@ -120,7 +120,7 @@ export const Settings = (props: {
 
       <section class="panel">
         <h2>Wallet</h2>
-        <Show when={w().snapshot.settings.design}>
+        <Show when={w().design}>
           {design => (
             <div class="field">
               <span class="caption">Note design</span>

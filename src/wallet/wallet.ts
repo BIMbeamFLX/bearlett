@@ -59,7 +59,7 @@ import {
   type SpendRef,
   type WalletState
 } from './state.ts'
-import {STATE_KEY, VAULT_KEY, type Store} from './store.ts'
+import {DESIGN_KEY, STATE_KEY, VAULT_KEY, type Store} from './store.ts'
 import {
   discoveryUrl,
   fetchCardMint,
@@ -74,7 +74,11 @@ import {
   INVENTORY_KEY,
   type Inventory
 } from '../cards/inventory.ts'
-import {verifyConsignment, type Card} from '../cards/proofs.ts'
+import {
+  verifyConsignment,
+  type Card,
+  type Consignment
+} from '../cards/proofs.ts'
 import {decodeState} from '../cards/state.ts'
 import {parseDesign, type NoteDesign} from './design.ts'
 import {
@@ -158,6 +162,8 @@ type MintOp = Extract<Operation, {kind: 'mint'}>
 
 const MAX_INDEX_RETRIES = 10
 const DAY_MS = 24 * 3600 * 1000
+/** how long a card handed on or gone keeps its record: past any refresh racing its move */
+const CARD_RECORD_KEPT_MS = 7 * DAY_MS
 /** how long an invoice that is not BOLT-11 is remembered as paid */
 const PAID_TEXT_KEPT_MS = 30 * DAY_MS
 
@@ -193,17 +199,23 @@ export class Wallet {
   private readonly keys: KeyRing
   private readonly sealKey: CryptoKey
   private state: WalletState
+  /** how handed-out notes look: apart from the state, which every save rewrites */
+  private noteDesign: NoteDesign | undefined
+  /** cards whose history checked out, by the consignment checked: checked once */
+  private readonly checked = new WeakMap<Consignment, Card>()
 
   private constructor(
     ports: Ports,
     keys: KeyRing,
     sealKey: CryptoKey,
-    state: WalletState
+    state: WalletState,
+    design: NoteDesign | undefined
   ) {
     this.ports = ports
     this.keys = keys
     this.sealKey = sealKey
     this.state = state
+    this.noteDesign = design
   }
 
   // ---- lifecycle ----
@@ -222,8 +234,9 @@ export class Wallet {
       VAULT_KEY,
       JSON.stringify(await sealMnemonic(words, passphrase))
     )
-    // any state here was sealed for another seed
+    // any state or design here was sealed for another seed
     await ports.store.remove(STATE_KEY)
+    await ports.store.remove(DESIGN_KEY)
     return Wallet.open(ports, words)
   }
 
@@ -260,7 +273,19 @@ export class Wallet {
     for (const [text, at] of Object.entries(state.paidInvoices ?? {}))
       state.paid[text] ??= at + PAID_TEXT_KEPT_MS
     delete state.paidInvoices
-    return new Wallet(ports, new KeyRing(seed), key, state)
+    let design: NoteDesign | undefined
+    const sealedDesign = await ports.store.get(DESIGN_KEY)
+    if (sealedDesign)
+      try {
+        design = parseDesign(await openJson(key, sealedDesign))
+      } catch {
+        design = undefined
+      }
+    const wallet = new Wallet(ports, new KeyRing(seed), key, state, design)
+    // a design the state held, before it had a key of its own, moves there
+    const kept = state.settings.design
+    if (kept) await wallet.setDesign(design ?? kept)
+    return wallet
   }
 
   // ---- state ----
@@ -315,12 +340,24 @@ export class Wallet {
     })
   }
 
+  /** How handed-out notes look, or undefined for plain notes. */
+  get design(): NoteDesign | undefined {
+    return this.noteDesign
+  }
+
   /** How handed-out notes look; null goes back to plain. */
   async setDesign(design: NoteDesign | null): Promise<void> {
-    const checked = design && parseDesign(design)
+    const checked = design ? parseDesign(design) : undefined
+    if (checked)
+      await this.ports.store.set(
+        DESIGN_KEY,
+        await sealJson(this.sealKey, checked)
+      )
+    else await this.ports.store.remove(DESIGN_KEY)
+    this.noteDesign = checked
+    // tells the UI; and a design the state held before goes from it
     await this.commit(state => {
-      if (checked) state.settings.design = checked
-      else delete state.settings.design
+      delete state.settings.design
     })
   }
 
@@ -1559,12 +1596,15 @@ export class Wallet {
   verifiedCard(id: string): Card {
     const held = this.state.cards[id]
     if (!held) throw new Error('This wallet does not know that card.')
+    const known = this.checked.get(held.consignment)
+    if (known) return known
     const card = verifyConsignment(
       held.consignment,
       hexToBytes(this.cardMint(held.mint).issuer)
     )
     if (typeof card === 'string')
       throw new Error(`This card is not genuine: ${card}.`)
+    this.checked.set(held.consignment, card)
     return card
   }
 
@@ -1587,8 +1627,11 @@ export class Wallet {
     ) {
       const owner = this.keys.cardKey(domain, index)
       const {cards, used} = await fetchCardsOf(this.net, info, owner)
-      for (const card of cards)
+      for (const card of cards) {
         found.set(bytesToHex(card.head.assetId), {card, index})
+        // checked in full on the way in: the wallet keeps this very consignment
+        this.checked.set(card.consignment, card)
+      }
       gap = used ? 0 : gap + 1
       if (used) next = Math.max(next, index + 1)
     }
@@ -1626,6 +1669,13 @@ export class Wallet {
             index: undefined,
             updatedAt: this.now()
           })
+      // a card handed on or gone a week ago keeps no record: the state stays small
+      for (const card of Object.values(state.cards))
+        if (
+          (card.status === 'sent' || card.status === 'gone') &&
+          card.updatedAt < this.now() - CARD_RECORD_KEPT_MS
+        )
+          delete state.cards[card.id]
       if (fresh.length)
         this.log(state, {
           kind: 'card',
