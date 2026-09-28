@@ -26,6 +26,7 @@ import type {Net} from '../lnurl/net.ts'
 import {
   canMint,
   fetchPayRequest,
+  fetchSettlement,
   requestInvoice,
   type PayRequest
 } from '../lnurl/pay.ts'
@@ -1371,6 +1372,11 @@ export class Wallet {
     return {...invoice, amountMsat: pay.minSendable}
   }
 
+  /** Whether a pack's invoice is paid (LUD-21); its cards are issued then. */
+  async packPaid(verify: string): Promise<boolean> {
+    return (await fetchSettlement(this.net, verify)).settled
+  }
+
   /** The cards this wallet knows of, at one card mint or all. */
   cards(filter: {mint?: string; status?: HeldCard['status']} = {}): HeldCard[] {
     return Object.values(this.state.cards).filter(
@@ -1417,10 +1423,11 @@ export class Wallet {
       gap = cards.length ? 0 : gap + 1
       if (cards.length) next = Math.max(next, index + 1)
     }
-    const fresh = [...found.keys()].filter(
-      id => this.state.cards[id]?.status !== 'held'
-    )
     await this.commit(state => {
+      // decided here, on the state it changes: two refreshes log once
+      const fresh = [...found.keys()].filter(
+        id => state.cards[id]?.status !== 'held'
+      )
       const counters = (state.counters[domain] ??= [0, 0, 0])
       counters[PURPOSE.wallet] = Math.max(counters[PURPOSE.wallet], next)
       for (const [id, {card, key}] of found)

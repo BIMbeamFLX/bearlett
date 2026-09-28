@@ -5,6 +5,7 @@ import {Setup, Unlock} from './screens/Setup.tsx'
 import {Home} from './screens/Home.tsx'
 import {Receive} from './screens/Receive.tsx'
 import {Send} from './screens/Send.tsx'
+import {Cards} from './screens/Cards.tsx'
 import {Settings} from './screens/Settings.tsx'
 import {formatSats} from './format.ts'
 import {toast, watchWallet} from './session.ts'
@@ -12,7 +13,7 @@ import {holdWalletLock, type Platform} from '../platform/platform.ts'
 import {Wallet} from '../wallet/wallet.ts'
 
 type Phase = 'boot' | 'elsewhere' | 'broken' | 'setup' | 'unlock' | 'ready'
-type Tab = 'wallet' | 'receive' | 'send' | 'settings'
+type Tab = 'wallet' | 'receive' | 'send' | 'cards' | 'settings'
 
 const SETTLE_EVERY_MS = 15_000
 const ADDRESS_EVERY_MS = 60_000
@@ -126,6 +127,7 @@ export const App = (props: {platform: Platform}) => {
                 {nav('wallet', 'Wallet')}
                 {nav('receive', 'Receive')}
                 {nav('send', 'Send')}
+                {nav('cards', 'Cards')}
                 {nav('settings', 'Settings')}
               </nav>
               <main>
@@ -138,6 +140,9 @@ export const App = (props: {platform: Platform}) => {
                   </Match>
                   <Match when={tab() === 'send'}>
                     <Send wallet={w()} platform={props.platform} />
+                  </Match>
+                  <Match when={tab() === 'cards'}>
+                    <Cards wallet={w()} />
                   </Match>
                   <Match when={tab() === 'settings'}>
                     <Settings

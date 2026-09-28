@@ -19,6 +19,8 @@ export type CardMintOptions = {
   priceSat?: number
   edition?: string
   collection?: string
+  /** a fixed port, for trying the web app against it by hand */
+  port?: number
 }
 
 const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
@@ -48,7 +50,11 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
   }
 
   const send = (res: ServerResponse, body: unknown) => {
-    res.writeHead(200, {'content-type': 'application/json'})
+    // LNURL services answer browsers from any origin (LUD-01)
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'access-control-allow-origin': '*'
+    })
     res.end(JSON.stringify(body))
   }
   const error = (res: ServerResponse, reason: string) =>
@@ -154,7 +160,9 @@ export const startCardMint = async (options: CardMintOptions = {}) => {
     }
     res.writeHead(404).end()
   })
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>(resolve =>
+    server.listen(options.port ?? 0, '127.0.0.1', resolve)
+  )
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   ledger = new CardLedger({
     withdraw: `${origin}/w`,
