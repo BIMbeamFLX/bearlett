@@ -6,7 +6,7 @@
 import {bytesToHex, hexToBytes, sha256} from '../spec/bytes.ts'
 import {verifyCertificate} from '../spec/certificate.ts'
 import {PURPOSE, notePubkey, type Purpose} from '../spec/derivation.ts'
-import {encodeCp1} from '../spec/encoding.ts'
+import {decodeCp1, encodeCp1} from '../spec/encoding.ts'
 import {
   bearerNote,
   checkSpend,
@@ -18,6 +18,7 @@ import {ServiceError, TransportError, reason} from '../lnurl/errors.ts'
 import {
   buildNoteLink,
   invoiceAmountMsat,
+  invoiceText,
   resolveLnurlInput,
   resolveMintInput,
   type NoteLink
@@ -26,6 +27,7 @@ import type {Net} from '../lnurl/net.ts'
 import {
   canMint,
   fetchPayRequest,
+  fetchSettlement,
   requestInvoice,
   type PayRequest
 } from '../lnurl/pay.ts'
@@ -46,6 +48,8 @@ import {
   emptyState,
   isWalletState,
   type Activity,
+  type CardMintRecord,
+  type HeldCard,
   type Hex,
   type Mint,
   type Note,
@@ -55,6 +59,22 @@ import {
   type WalletState
 } from './state.ts'
 import {STATE_KEY, VAULT_KEY, type Store} from './store.ts'
+import {
+  discoveryUrl,
+  fetchCardMint,
+  fetchCardsOf,
+  makeMove,
+  moveCallback,
+  sendMove,
+  type CardMintInfo
+} from '../cards/holder.ts'
+import {
+  buildInventory,
+  INVENTORY_KEY,
+  type Inventory
+} from '../cards/inventory.ts'
+import {verifyConsignment, type Card} from '../cards/proofs.ts'
+import {decodeState} from '../cards/state.ts'
 import {
   isSealedVault,
   openJson,
@@ -88,13 +108,22 @@ type Melt = Extract<Operation, {kind: 'melt'}>
 type MintOp = Extract<Operation, {kind: 'mint'}>
 
 const MAX_INDEX_RETRIES = 10
+const PAID_INVOICES_KEPT_MS = 30 * 24 * 3600 * 1000
 const cp1Of = (output: Output): string => encodeCp1(hexToBytes(output.q))
 const id = (): string => crypto.randomUUID()
 
 export class Wallet {
   private readonly listeners = new Set<() => void>()
-  /** journal entries this session is sending right now: settle() leaves them be */
+  /**
+   * journal entries this session is sending right now: settle() leaves them
+   * be. An entry joins before it is written down, or a settle() between the
+   * two would take it for one whose answer was lost.
+   */
   private readonly sending = new Set<string>()
+  /** invoices a pay() is preparing, before their payment is written down */
+  private readonly paying = new Set<string>()
+  /** the settle() run under way, which a second call joins */
+  private settling: Promise<void> | null = null
   private saving: Promise<void> = Promise.resolve()
 
   private readonly ports: Ports
@@ -159,6 +188,11 @@ export class Wallet {
       const opened = await openJson(key, sealed)
       if (isWalletState(opened)) state = opened
     }
+    // states written before cards existed
+    state.cardMints ??= {}
+    state.cardKeys ??= {}
+    state.cards ??= {}
+    state.paidInvoices ??= {}
     return new Wallet(ports, new KeyRing(seed), key, state)
   }
 
@@ -432,6 +466,8 @@ export class Wallet {
     if (!info) return false
     await this.pin(op.mint, info.mintPubkey)
     await this.commit(state => {
+      // settled already: the screen's poll and settle() may both get here
+      if (!state.operations[op.id]) return
       this.addNote(state, op.mint, op.output, info)
       delete state.operations[op.id]
       this.log(state, {
@@ -757,10 +793,39 @@ export class Wallet {
    * Pays a BOLT-11 invoice from notes at `domain`: a note worth exactly
    * the invoice is split off first when needed, then melted (LUD-03).
    */
+  /** Whether this wallet is paying an invoice, has paid it, or neither. */
+  invoiceStatus(invoice: string): 'paying' | 'paid' | null {
+    const key = invoiceText(invoice)
+    if (this.state.paidInvoices[key]) return 'paid'
+    const open = Object.values(this.state.operations).some(
+      op => op.kind === 'melt' && invoiceText(op.pr) === key
+    )
+    return open || this.paying.has(key) ? 'paying' : null
+  }
+
   async pay(domain: string, invoice: string): Promise<Melt> {
     const amountMsat = invoiceAmountMsat(invoice)
     if (!amountMsat)
       throw new Error('Only invoices with an amount can be paid.')
+    // a second click, or one after a lost answer, must not split off and pay again
+    const status = this.invoiceStatus(invoice)
+    if (status === 'paid') throw new Error('This invoice is paid already.')
+    if (status === 'paying')
+      throw new Error('This invoice is being paid already.')
+    const key = invoiceText(invoice)
+    this.paying.add(key)
+    try {
+      return await this.payOnce(domain, invoice, amountMsat)
+    } finally {
+      this.paying.delete(key)
+    }
+  }
+
+  private async payOnce(
+    domain: string,
+    invoice: string,
+    amountMsat: number
+  ): Promise<Melt> {
     let note = this.notes({mint: domain, role: 'own', status: 'live'}).find(
       candidate => candidate.amountMsat === amountMsat
     )
@@ -783,30 +848,35 @@ export class Wallet {
       amountMsat,
       state: 'prepared'
     }
-    await this.commit(state => {
-      state.operations[op.id] = op
-      state.notes[note!.q].status = 'pending'
-    })
     this.sending.add(op.id)
     try {
-      const result = await melt(this.net, op.callback, op.k1, op.pr)
       await this.commit(state => {
-        const stored = state.operations[op.id] as Melt
-        stored.state = 'in-flight'
-        stored.verify = result.verify
+        state.operations[op.id] = op
+        state.notes[note!.q].status = 'pending'
       })
-    } catch (err) {
-      if (err instanceof ServiceError) {
+      try {
+        const result = await melt(this.net, op.callback, op.k1, op.pr)
         await this.commit(state => {
-          delete state.operations[op.id]
-          state.notes[note!.q].status = 'live'
+          const stored = state.operations[op.id] as Melt | undefined
+          if (!stored) return
+          stored.state = 'in-flight'
+          stored.verify = result.verify
         })
-      } else {
-        await this.commit(state => {
-          ;(state.operations[op.id] as Melt).state = 'unknown'
-        })
+      } catch (err) {
+        if (err instanceof ServiceError) {
+          await this.commit(state => {
+            if (!state.operations[op.id]) return
+            delete state.operations[op.id]
+            state.notes[note!.q].status = 'live'
+          })
+        } else {
+          await this.commit(state => {
+            const stored = state.operations[op.id] as Melt | undefined
+            if (stored) stored.state = 'unknown'
+          })
+        }
+        throw err
       }
-      throw err
     } finally {
       this.sending.delete(op.id)
     }
@@ -831,19 +901,26 @@ export class Wallet {
       outcome = 'paid'
     }
     await this.commit(state => {
+      // settled already, by another caller
+      if (!state.operations[op.id]) return
       delete state.operations[op.id]
       const note = state.notes[op.input]
       if (note) {
         note.status = outcome === 'paid' ? 'spent' : 'live'
         note.updatedAt = this.now()
       }
-      if (outcome === 'paid')
+      if (outcome === 'paid') {
+        const now = this.now()
+        for (const [key, at] of Object.entries(state.paidInvoices))
+          if (at < now - PAID_INVOICES_KEPT_MS) delete state.paidInvoices[key]
+        state.paidInvoices[invoiceText(op.pr)] = now
         this.log(state, {
           kind: 'pay',
           mint: op.mint,
           amountMsat: op.amountMsat,
           text: 'Paid an invoice'
         })
+      }
     })
     return outcome
   }
@@ -871,12 +948,12 @@ export class Wallet {
       purpose: plan.purpose,
       state: 'prepared'
     }
-    await this.commit(state => {
-      state.operations[op.id] = op
-      for (const q of op.inputs) state.notes[q].status = 'pending'
-    })
     this.sending.add(op.id)
     try {
+      await this.commit(state => {
+        state.operations[op.id] = op
+        for (const q of op.inputs) state.notes[q].status = 'pending'
+      })
       await this.sendBurn(op)
     } finally {
       this.sending.delete(op.id)
@@ -945,6 +1022,8 @@ export class Wallet {
       amounts.push(amount ?? expected[i])
     }
     await this.commit(state => {
+      // applied already: a send and a settle() may both get here
+      if (!state.operations[op.id]) return
       for (const q of op.inputs) {
         state.notes[q].status = 'spent'
         state.notes[q].updatedAt = this.now()
@@ -956,8 +1035,18 @@ export class Wallet {
     })
   }
 
-  /** Settles every journal entry that is still open. */
-  async settle(): Promise<void> {
+  /**
+   * Settles every journal entry that is still open, one run at a time: the
+   * timer and "Check now" may both ask, and the second joins the first.
+   */
+  settle(): Promise<void> {
+    this.settling ??= this.settleAll().finally(() => {
+      this.settling = null
+    })
+    return this.settling
+  }
+
+  private async settleAll(): Promise<void> {
     const tasks: (() => Promise<unknown>)[] = [
       ...Object.values(this.state.operations)
         .filter(op => !this.sending.has(op.id))
@@ -970,6 +1059,10 @@ export class Wallet {
       ...this.notes({role: 'incoming', status: 'live'}).map(
         note => () => this.claim(note.q)
       ),
+      // a card move without an answer is asked again: a replay
+      ...Object.values(this.state.cards)
+        .filter(card => card.status === 'moving' && !this.sending.has(card.id))
+        .map(card => () => this.finishMove(card.id)),
       () => this.checkOutgoing()
     ]
     // one entry going wrong must not keep the others from settling
@@ -1277,5 +1370,312 @@ export class Wallet {
           })
       }
     }
+  }
+
+  // ---- cards (docs/CARDS-LNURLCASH.md) ----
+
+  cardMint(domain: string): CardMintRecord {
+    const record = this.state.cardMints[domain]
+    if (!record) throw new UnknownMintError(domain)
+    return record
+  }
+
+  private cardMintInfo(record: CardMintRecord): CardMintInfo {
+    return {
+      issuer: hexToBytes(record.issuer),
+      withdraw: record.withdraw,
+      lookup: record.lookup,
+      packs: record.packs
+    }
+  }
+
+  /** Adds a card mint by its address; its issuer key is pinned on first sight. */
+  async addCardMint(input: string): Promise<CardMintRecord> {
+    const url = discoveryUrl(input)
+    if (!url) throw new Error('That is not a card mint address.')
+    const info = await fetchCardMint(this.net, url)
+    const domain = hostOf(info.withdraw)
+    const known = this.state.cardMints[domain]
+    if (known && known.issuer !== bytesToHex(info.issuer))
+      throw new MintKeyChangedError(domain)
+    await this.commit(state => {
+      state.cardMints[domain] = {
+        domain,
+        withdraw: info.withdraw,
+        lookup: info.lookup,
+        issuer: bytesToHex(info.issuer),
+        packs: info.packs,
+        addedAt: known?.addedAt ?? this.now()
+      }
+    })
+    return this.state.cardMints[domain]
+  }
+
+  /**
+   * Forgets a card mint, its pinned issuer key and the cards seen there,
+   * once this wallet holds none there. Its card keys stay counted: adding
+   * it again never hands out a key that was used.
+   */
+  async removeCardMint(domain: string): Promise<void> {
+    this.cardMint(domain)
+    if (
+      this.cards({mint: domain}).some(
+        card => card.status === 'held' || card.status === 'moving'
+      )
+    )
+      throw new Error('Hand on the cards at this card mint first.')
+    await this.commit(state => {
+      delete state.cardMints[domain]
+      for (const card of Object.values(state.cards))
+        if (card.mint === domain) delete state.cards[card.id]
+    })
+    await this.writeInventory()
+  }
+
+  /**
+   * This wallet's card address at a card mint, as cp1: the first card key
+   * no card is known to have reached. It stays the same until a card
+   * arrives there, so unpaid packs and unused addresses leave no gap that
+   * would stop a restore.
+   */
+  cardAddress(domain: string): string {
+    this.cardMint(domain)
+    return encodeCp1(
+      this.keys.cardKey(domain, this.state.cardKeys[domain] ?? 0)
+    )
+  }
+
+  /**
+   * An invoice for a pack at its fixed price; once it is paid, the card
+   * mint issues the pack's cards to this wallet's card address there.
+   */
+  async requestPack(
+    domain: string,
+    pack = 0
+  ): Promise<{pr: string; verify?: string; amountMsat: number}> {
+    const offer = this.cardMint(domain).packs[pack]
+    if (!offer) throw new Error('This card mint sells no such pack.')
+    const pay = await fetchPayRequest(this.net, offer.lnurlp)
+    if (pay.minSendable !== pay.maxSendable)
+      throw new Error('This card mint names no fixed price for the pack.')
+    const owner = this.cardAddress(domain)
+    if (pay.commentAllowed < owner.length)
+      throw new Error('This card mint cannot be told whose pack it is.')
+    const invoice = await requestInvoice(this.net, pay, pay.minSendable, owner)
+    return {...invoice, amountMsat: pay.minSendable}
+  }
+
+  /** Whether a pack's invoice is paid (LUD-21); its cards are issued then. */
+  async packPaid(verify: string): Promise<boolean> {
+    return (await fetchSettlement(this.net, verify)).settled
+  }
+
+  /** The cards this wallet knows of, at one card mint or all. */
+  cards(filter: {mint?: string; status?: HeldCard['status']} = {}): HeldCard[] {
+    return Object.values(this.state.cards).filter(
+      card =>
+        (filter.mint === undefined || card.mint === filter.mint) &&
+        (filter.status === undefined || card.status === filter.status)
+    )
+  }
+
+  /** A card's history, checked in full against its mint's pinned issuer. */
+  verifiedCard(id: string): Card {
+    const held = this.state.cards[id]
+    if (!held) throw new Error('This wallet does not know that card.')
+    const card = verifyConsignment(
+      held.consignment,
+      hexToBytes(this.cardMint(held.mint).issuer)
+    )
+    if (typeof card === 'string')
+      throw new Error(`This card is not genuine: ${card}.`)
+    return card
+  }
+
+  /**
+   * Asks the card mint for the cards at this wallet's card keys there: every
+   * key used so far and the one handed out, or, with `scan`, on until
+   * `gapLimit` keys in a row never held a card, which is how the 12 words
+   * alone bring the cards back.
+   */
+  async refreshCards(domain: string, scan = false): Promise<number> {
+    const info = this.cardMintInfo(this.cardMint(domain))
+    const handedOut = this.state.cardKeys[domain] ?? 0
+    const gapLimit = this.state.settings.gapLimit
+    const found = new Map<string, {card: Card; index: number}>()
+    let next = handedOut
+    for (
+      let index = 0, gap = 0;
+      index <= handedOut || (scan && gap < gapLimit);
+      index++
+    ) {
+      const owner = this.keys.cardKey(domain, index)
+      const {cards, used} = await fetchCardsOf(this.net, info, owner)
+      for (const card of cards)
+        found.set(bytesToHex(card.head.assetId), {card, index})
+      gap = used ? 0 : gap + 1
+      if (used) next = Math.max(next, index + 1)
+    }
+    await this.commit(state => {
+      state.cardKeys[domain] = Math.max(state.cardKeys[domain] ?? 0, next)
+      // decided here, on the state it changes: two refreshes log once
+      const fresh: string[] = []
+      for (const [id, {card, index}] of found) {
+        const known = state.cards[id]
+        // a move on its way is settle()'s, and an answer older than the
+        // history this wallet has (a card it sent meanwhile) changes nothing
+        if (
+          known?.status === 'moving' ||
+          (known && known.consignment.states.length > card.states.length)
+        )
+          continue
+        if (known?.status !== 'held') fresh.push(id)
+        state.cards[id] = {
+          id,
+          mint: domain,
+          consignment: card.consignment,
+          index,
+          status: 'held',
+          updatedAt: this.now()
+        }
+      }
+      for (const held of Object.values(state.cards))
+        if (
+          held.mint === domain &&
+          held.status === 'held' &&
+          !found.has(held.id)
+        )
+          Object.assign(held, {
+            status: 'gone',
+            index: undefined,
+            updatedAt: this.now()
+          })
+      if (fresh.length)
+        this.log(state, {
+          kind: 'card',
+          mint: domain,
+          text:
+            fresh.length === 1
+              ? 'Received a card'
+              : `Received ${fresh.length} cards`
+        })
+    })
+    await this.writeInventory()
+    return found.size
+  }
+
+  /** Moves a card to someone's card address: a cp1 of their key there. */
+  async sendCard(id: string, to: string): Promise<void> {
+    const held = this.state.cards[id]
+    if (!held || held.status !== 'held' || held.index === undefined)
+      throw new Error('Only a card this wallet holds can move.')
+    if (this.sending.has(id))
+      throw new Error('This card is on its way already.')
+    const owner = decodeCp1(to.trim())
+    if (!owner) throw new Error('A card address is a cp1 key.')
+    const info = this.cardMintInfo(this.cardMint(held.mint))
+    const {head} = this.verifiedCard(id)
+    const move = makeMove(
+      head,
+      this.keys.cardSecretKey(held.mint, held.index),
+      owner,
+      spendDomainOfHost(held.mint)
+    )
+    this.sending.add(id)
+    try {
+      const callback = await moveCallback(this.net, info, head)
+      // written down before it is sent: a lost answer is asked again as is
+      await this.commit(state => {
+        Object.assign(state.cards[id], {
+          status: 'moving',
+          move: {callback, k1: move.k1, p1: move.p1, state: move.state},
+          updatedAt: this.now()
+        })
+      })
+      await this.finishMove(id)
+    } finally {
+      this.sending.delete(id)
+    }
+  }
+
+  private async finishMove(id: string): Promise<void> {
+    const held = this.state.cards[id]
+    if (!held?.move) return
+    const move = held.move
+    const info = this.cardMintInfo(this.cardMint(held.mint))
+    const {head} = this.verifiedCard(id)
+    const next = decodeState(hexToBytes(move.state))
+    if (!next) throw new Error('The move this wallet wrote down is damaged.')
+    let receipt: Uint8Array
+    try {
+      receipt = await sendMove(this.net, info, move.callback, head, {
+        ...move,
+        next
+      })
+    } catch (err) {
+      // refused: nothing moved, unless the card had moved elsewhere already
+      if (err instanceof ServiceError) {
+        const gone = reason.spent(err.reason)
+        await this.commit(state => {
+          // answered already: a send and a settle() may both get here
+          if (state.cards[id]?.move?.k1 !== move.k1) return
+          Object.assign(state.cards[id], {
+            status: gone ? 'gone' : 'held',
+            index: gone ? undefined : held.index,
+            move: undefined,
+            updatedAt: this.now()
+          })
+        })
+      }
+      throw err
+    }
+    const consignment = {
+      ...held.consignment,
+      states: [...held.consignment.states, move.state],
+      receipts: [...held.consignment.receipts, bytesToHex(receipt)]
+    }
+    await this.commit(state => {
+      if (state.cards[id]?.move?.k1 !== move.k1) return
+      Object.assign(state.cards[id], {
+        consignment,
+        status: 'sent',
+        index: undefined,
+        move: undefined,
+        updatedAt: this.now()
+      })
+      this.log(state, {
+        kind: 'card',
+        mint: held.mint,
+        text: `Sent ${head.name}`
+      })
+    })
+    await this.writeInventory()
+  }
+
+  /**
+   * The counts the Hangar answers the 600B TCG with, for the first card
+   * mint that sells a pack; null when there is none or it is not https.
+   */
+  inventory(): Inventory | null {
+    const record = Object.values(this.state.cardMints)
+      .filter(mint => mint.packs.length)
+      .sort((a, b) => a.addedAt - b.addedAt)[0]
+    if (!record) return null
+    const names = this.cards({mint: record.domain, status: 'held'}).map(
+      card => this.verifiedCard(card.id).head.name
+    )
+    return buildInventory(
+      record.packs[0],
+      new URL(record.withdraw).origin,
+      names,
+      this.now()
+    )
+  }
+
+  private async writeInventory(): Promise<void> {
+    const inventory = this.inventory()
+    // nothing to show any more: the Hangar must not answer with an old count
+    if (!inventory) await this.ports.store.remove(INVENTORY_KEY)
+    else await this.ports.store.set(INVENTORY_KEY, JSON.stringify(inventory))
   }
 }

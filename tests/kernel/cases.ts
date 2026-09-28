@@ -24,6 +24,7 @@ import {
 } from '../../src/spec/notes.ts'
 import {OP, compileScript, scriptNum} from '../../src/spec/script.ts'
 import {KEY_PATH_CLAIM} from '../../src/spec/spend.ts'
+import {encodeState, genesisState} from '../../src/cards/state.ts'
 import {
   LEAF_VERSION,
   NUMS_H,
@@ -112,6 +113,36 @@ add('timelock at another domain', lockCw1, 'other.example')
     'seal leaf, wrong state',
     leafSpend(note, [sig, utf8ToBytes('another state')], claim)
   )
+}
+
+// a card: the seal leaf over a real state, at and one byte over the
+// 520-byte limit Bitcoin Core puts on every witness item
+{
+  const owner = key(9)
+  const cardLeafOver = (state: Uint8Array) =>
+    compileScript([
+      OP.SHA256,
+      sha256(state),
+      OP.EQUALVERIFY,
+      pub(owner),
+      OP.CHECKSIG
+    ])
+  const claim = {locktime: 0, sequence: 0xfffffffe}
+  const moveOf = (state: Uint8Array) => {
+    const note = leafNote(cardLeafOver(state))
+    return leafSpend(note, [signLeaf(note, owner, DOMAIN, claim), state], claim)
+  }
+  const state = encodeState(
+    genesisState(pub(key(10)), 'E1-042', '600B-E1#17', pub(owner))
+  )
+  add('card move', moveOf(state))
+  const padded = (size: number) => {
+    const bytes = new Uint8Array(size)
+    bytes.set(state)
+    return bytes
+  }
+  add('card state of 520 bytes', moveOf(padded(520)))
+  add('card state of 521 bytes', moveOf(padded(521)))
 }
 
 // 2-of-2: <A> CHECKSIG <B> CHECKSIGADD 2 NUMEQUAL, witness [sigB, sigA]

@@ -50,6 +50,11 @@ export const evaluateLeaf = (
 ): ScriptResult => {
   const items = decompileScript(script)
   if (!items) return {status: 'invalid', reason: 'the leaf does not decode'}
+  // Bitcoin Core checks the initial stack before running a tapscript
+  if (witness.length > 1000)
+    return {status: 'invalid', reason: 'more than 1000 witness items'}
+  if (witness.some(item => item.length > 520))
+    return {status: 'invalid', reason: 'a witness item larger than 520 bytes'}
   const leafHash = tapleafHash(script)
   const stack: Uint8Array[] = witness.map(item => item.slice())
   // one entry per open IF: whether its current branch executes

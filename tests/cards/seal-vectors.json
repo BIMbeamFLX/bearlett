@@ -1,0 +1,93 @@
+{
+  "source": "lnurlcash/lnurl-wallet main b728b1b, src/addons/seals/seals.ts: sealStateHash, planSealLock, nextState, redeemCurrentStateCw1 (mint https://cards.example/w); generated 2026-09-28 by a scratch vitest in a worktree of that commit",
+  "vectors": [
+    [
+      {
+        "state": {
+          "assetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "E1-042",
+          "description": "600B-E1#17",
+          "stateIndex": 0,
+          "ownerPubkeyHex": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+          "prevStateHash": ""
+        },
+        "hash": "d93ceadf8b029c5f5dd1909fb0ac607518f2ccbcfec8b4275a6955627d3cd9b8",
+        "q": "95003494e5cef441b39553a9495cc71a47fa5f10524094262f63f637c495809b",
+        "ownerSecret": "0101010101010101010101010101010101010101010101010101010101010101",
+        "cw1": "cw1qqqqqq8llllluqz94qsdj082m79s98zlthgep8as43s82x8jej70aj95yadxj4tz057dnwygyqdcf32k0vfxgsyet5ldt246q4jaw8scx3sysx0lnstlt6w4m5rcltqqy8q4py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgzw7xqnh06splxs4nvzxwfkqkuym2kxdsgczgds2mylg5ne0cdn3uux22q5xh7w9g8776qxzu3kpy44ft7fmn0tmv2ju3zdtdcpccpr5qz85cnj42fxxxctndqhhxetpdshhxarpw3jj7a3s424242424242424242424242424242424242424242424242424qqpj9xyknqdpjqq9rvvpsggk52vfrxymsqqqqqqdcf32k0vfxgsyet5ldt246q4jaw8scx3sysx0lnstlt6w4m5rc7qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjxzmqe"
+      },
+      {
+        "state": {
+          "assetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "E1-042",
+          "description": "600B-E1#17",
+          "stateIndex": 1,
+          "ownerPubkeyHex": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+          "prevStateHash": "d93ceadf8b029c5f5dd1909fb0ac607518f2ccbcfec8b4275a6955627d3cd9b8"
+        },
+        "hash": "63d546beb04c4e8441a9123c4a52fee10d4304b6f71f69055b0116a0e711c2c7",
+        "q": "f2b897a15517b8bb4c6bc6deac611a93730681562640b034eafffe8a7a36bdc8",
+        "ownerSecret": "0202020202020202020202020202020202020202020202020202020202020202",
+        "cw1": "cw1qqqqqq8llllluqz94qsx842xh6cycn5ygx53y0z22tlwzr2rqjm0w8mfq4dsz94quugu93ugypx5kmx3xcgr9j5m62htnkgq4fx5tk02mq9vjs3nwnz9rfe9f5rkdtqqy8q4py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgz75mx93ygwkvprhy90ewyam9jnan3788gezt8psk5yuh3f9d4p29rkp0q2yrqzq95xvxmdunpkjphpk5ckkkthdynff82eurjz4hwn2qz85cnj42fxxxctndqhhxetpdshhxarpw3jj7a3s424242424242424242424242424242424242424242424242424qqpj9xyknqdpjqq9rvvpsggk52vfrxymsqqqqq9x5kmx3xcgr9j5m62htnkgq4fx5tk02mq9vjs3nwnz9rfe9f5rkdkfuat0ckq5utawaryylkzkxqagc7txtelkgksn45624vf7nekdcfkkded"
+      },
+      {
+        "state": {
+          "assetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "E1-042",
+          "description": "600B-E1#17",
+          "stateIndex": 2,
+          "ownerPubkeyHex": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+          "prevStateHash": "63d546beb04c4e8441a9123c4a52fee10d4304b6f71f69055b0116a0e711c2c7"
+        },
+        "hash": "23f94b7dbd87249b8a0ecdb8dc36c02cdf2691eb81b6a02ac1d13455ec9f69a3",
+        "q": "3f18ebd792b55dd869234d8998dd9b30c3178bd931cb6f587313605ddd1c21af",
+        "ownerSecret": "0303030303030303030303030303030303030303030303030303030303030303",
+        "cw1": "cw1qqqqqq8llllluqz94qsz872t0k7cwfym3g8vmwxuxmqzehexj84crd4q9tqazdz4aj0kngugypf3lesxsy69q0f8yvfnyf7gv7kglfkg83fhaxjyc0zmm0wtrl3n0tqqy8q9py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgqykw7l362ur8vfhh6pnezztfu038tdse99x8k4djyyjja9vvxqpry5tukcjrfenqzv5v302p08u8aug48mgz94leuc5p5hyllfkmhefqz85cnj42fxxxctndqhhxetpdshhxarpw3jj7a3s424242424242424242424242424242424242424242424242424qqpj9xyknqdpjqq9rvvpsggk52vfrxymsqqqqqff3lesxsy69q0f8yvfnyf7gv7kglfkg83fhaxjyc0zmm0wtrl3nwc74g6ltqnzws3q6jy3ufff0acgdgvztdacldyz4kqgk5rn3rsk82h6gwt"
+      }
+    ],
+    [
+      {
+        "state": {
+          "assetId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Äpfel ✓ ",
+          "description": "",
+          "stateIndex": 0,
+          "ownerPubkeyHex": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+          "prevStateHash": ""
+        },
+        "hash": "5f0599b70f71baf83b426a1b5f2464d8e4239eb542944c5c8966f0ebbfe0a8d7",
+        "q": "6096720e27ccef3cb1c281cf8d5a45cda12fa23e74a23c316de2952cbe5d46e8",
+        "ownerSecret": "0202020202020202020202020202020202020202020202020202020202020202",
+        "cw1": "cw1qqqqqq8llllluqz94qs97pveku8hrwhc8dpx5x6ly3jd3eprn66599zvtjykdu8thls234ugypx5kmx3xcgr9j5m62htnkgq4fx5tk02mq9vjs3nwnz9rfe9f5rkdtqqy8q4py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgrpct9gd9sm3h3szv8yqxlqy2z8p4jafjsrq3cz2usuw9a5ac7x89tt99czr5n7e064p2u44zetee9wq5y03vhlz3lc824e4d0m0hvw8qz9ycnj42fxxxctndqhhxetpdshhxarpw3jj7a3sqy352euf40x77qfrg4ncn27dauqjx3t83x4ummcpydzk0zdtehhsqz7rs3cxvetvyr3feyeqqqqqqqqqqpx5kmx3xcgr9j5m62htnkgq4fx5tk02mq9vjs3nwnz9rfe9f5rkvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq78mhe6"
+      },
+      {
+        "state": {
+          "assetId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Äpfel ✓ ",
+          "description": "",
+          "stateIndex": 1,
+          "ownerPubkeyHex": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+          "prevStateHash": "5f0599b70f71baf83b426a1b5f2464d8e4239eb542944c5c8966f0ebbfe0a8d7"
+        },
+        "hash": "d505b2aad95343342fcf5f814f9122e8a4e1395618f68a167277257c8f3cd756",
+        "q": "9571780bb701de5ba53cfe5aaeda33b7d58615957f2e96c8da2378226aaf1bb3",
+        "ownerSecret": "0303030303030303030303030303030303030303030303030303030303030303",
+        "cw1": "cw1qqqqqq8llllluqz94qsd2pdj4tv4xse59l84lq20jy3w3f8p89tp3a52zee8wftu3u7dw45gypf3lesxsy69q0f8yvfnyf7gv7kglfkg83fhaxjyc0zmm0wtrl3n0tqqy8q4py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgptgaer5gf0l6ppp5t4l66cdqgmeh2wnsxe62nfzem86s0t0pa646cgxxv67amzfry7ezqc59sf3658jfh6tf9jhnkvdwj7pk04cvx8gqz9ycnj42fxxxctndqhhxetpdshhxarpw3jj7a3sqy352euf40x77qfrg4ncn27dauqjx3t83x4ummcpydzk0zdtehhsqz7rs3cxvetvyr3feyeqqqqqqqqqq9f3lesxsy69q0f8yvfnyf7gv7kglfkg83fhaxjyc0zmm0wtrl3nwhc9nxms7ud6lqa5y6smtujxfk8yyw0t2s55f3wgjehsawl7p2xhlr552q"
+      },
+      {
+        "state": {
+          "assetId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Äpfel ✓ ",
+          "description": "",
+          "stateIndex": 2,
+          "ownerPubkeyHex": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+          "prevStateHash": "d505b2aad95343342fcf5f814f9122e8a4e1395618f68a167277257c8f3cd756"
+        },
+        "hash": "b15716ce02cd74dad1bcab2e3000430f5fb9689625597efef7fbd4e93090993c",
+        "q": "8bc0a981b673103dbc29191dbfbb699ea43c89a4562722db35fb274551336461",
+        "ownerSecret": "0101010101010101010101010101010101010101010101010101010101010101",
+        "cw1": "cw1qqqqqq8llllluqz94qstz4ckecpv6ax66x72kt3sqpps7haedztz2kt7lmmlh48fxzgfj0ygyqdcf32k0vfxgsyet5ldt246q4jaw8scx3sysx0lnstlt6w4m5rcltqqy8q9py5mwnq6qj25k795kcp4a9a9upu2tg8j3myk64rmlm56e6qr4sqqgpv6raym34f22w2rd683lhy57s0xcgz8xm7hx6nvg53u49dcprdrka9ns5jsm4eus6mczapqr0j8a3e3uuf8u5dr6sj32f7sywl7qxlvqz9ycnj42fxxxctndqhhxetpdshhxarpw3jj7a3sqy352euf40x77qfrg4ncn27dauqjx3t83x4ummcpydzk0zdtehhsqz7rs3cxvetvyr3feyeqqqqqqqqqqgdcf32k0vfxgsyet5ldt246q4jaw8scx3sysx0lnstlt6w4m5rcl4g9k24dj56rxshu7hupf7gj969yuyu4vx8k3gt8yae90j8ne46kz05eps"
+      }
+    ]
+  ]
+}

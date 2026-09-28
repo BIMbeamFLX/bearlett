@@ -10,7 +10,9 @@ import {
   bearerNote,
   checkSpend,
   decodeSpend,
+  leafNote,
   leafProblem,
+  leafSpend,
   noteRefQ,
   signKeySpend,
   timeClaimProblem
@@ -27,6 +29,7 @@ import {
   tweakOutputKey
 } from '../../src/spec/taproot.ts'
 import {schnorr} from '@noble/curves/secp256k1.js'
+import {OP, compileScript} from '../../src/spec/script.ts'
 
 const v = vectors('spends')
 
@@ -183,6 +186,21 @@ describe('leaf policy', () => {
       expect(problem === null ? 'allowed' : 'refused').toBe(verdict)
     }
   )
+
+  // Bitcoin Core checks the initial stack before it runs a tapscript; the
+  // kernel cases (tests/kernel) hold Bearlett to the same verdicts
+  it('refuses a witness item over 520 bytes, as Bitcoin Core does', () => {
+    const opens = (size: number) => {
+      const item = new Uint8Array(size).fill(7)
+      const note = leafNote(compileScript([OP.SHA256, sha256(item), OP.EQUAL]))
+      return checkSpend(decodeSpend(leafSpend(note, [item]))!, 'mint.example')
+    }
+    expect(opens(520)).toEqual({status: 'valid'})
+    expect(opens(521)).toEqual({
+      status: 'invalid',
+      reason: 'a witness item larger than 520 bytes'
+    })
+  })
 })
 
 describe('malformed spends and keys', () => {
