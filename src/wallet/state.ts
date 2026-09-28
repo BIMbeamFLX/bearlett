@@ -158,7 +158,7 @@ export type HeldCard = {
   /** the card mint's domain */
   mint: string
   consignment: Consignment
-  /** the card key (CARD_PURPOSE) holding the current state, while it is this wallet's */
+  /** the index of the card key holding the current state, while it is this wallet's */
   index?: number
   status: CardStatus
   /** the move in flight, kept to ask again with the same bytes */

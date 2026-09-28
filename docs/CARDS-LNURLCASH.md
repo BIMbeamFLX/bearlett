@@ -102,10 +102,17 @@ A LUD-25 SERVICE whose notes are all cards.
 
 ## The holder
 
-Owner keys are note keys on the holder's LUD-25 branch at the card mint's
-host, derived as LUD-25 derives note keys but under purpose 3. LUD-25's
-purposes 0 to 2 are money, so a money scan never meets a card key, nor a
-card scan a money key, even where a money mint and a card mint share a host.
+Owner keys live on the card branch: the hardened child `3'` of the holder's
+LUD-25 branch at the card mint's host (`m/139'/d1/d2/d3/d4/3'`). There the
+owner key of index `i` is the LUD-25 note key of purpose 0 and index `i`.
+
+- Hardened, because a mint may publish the branch's watch-only export
+  (`cx1`) for a Lightning Address: whoever holds it derives every money
+  note key of the branch, but no card key, so nobody can list a holder's
+  collection through the lookup.
+- Apart from LUD-25's own purposes, so a money scan never meets a card key,
+  nor a card scan a money key, even where a money mint and a card mint
+  share a host.
 
 The 12 words recover every card:
 
