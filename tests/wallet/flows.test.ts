@@ -178,6 +178,20 @@ describe('paying', () => {
     expect(paid).toHaveLength(1)
   })
 
+  it('does not pay an invoice again while it is being paid', async () => {
+    const mint = await start({meltNeverSettles: true})
+    const wallet = await walletAt(mint, 30_000)
+    const invoice = 'lnbc100n1' + 'q'.repeat(52)
+    await wallet.pay(hostOfMint(mint), invoice)
+    const before = wallet.balanceMsat()
+    await expect(wallet.pay(hostOfMint(mint), invoice)).rejects.toThrow(
+      /being paid already/
+    )
+    // nothing split off for it
+    expect(wallet.balanceMsat()).toBe(before)
+    expect(Object.keys(wallet.snapshot.operations)).toHaveLength(1)
+  })
+
   it('restores the note when the payment fails', async () => {
     const mint = await start({meltAlwaysFails: true})
     const wallet = await walletAt(mint, 20_000)

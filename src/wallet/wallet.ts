@@ -788,6 +788,13 @@ export class Wallet {
     const amountMsat = invoiceAmountMsat(invoice)
     if (!amountMsat)
       throw new Error('Only invoices with an amount can be paid.')
+    // a second click after a lost answer must not split off and pay again
+    if (
+      Object.values(this.state.operations).some(
+        op => op.kind === 'melt' && op.pr === invoice
+      )
+    )
+      throw new Error('This invoice is being paid already.')
     let note = this.notes({mint: domain, role: 'own', status: 'live'}).find(
       candidate => candidate.amountMsat === amountMsat
     )

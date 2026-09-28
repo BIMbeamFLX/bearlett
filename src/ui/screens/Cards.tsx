@@ -7,7 +7,13 @@ import {formatSats} from '../format.ts'
 import {notify, run} from '../session.ts'
 import type {Wallet} from '../../wallet/wallet.ts'
 
-type Invoice = {pr: string; verify?: string; amountMsat: number}
+type Invoice = {
+  pr: string
+  verify?: string
+  amountMsat: number
+  /** paid from this wallet: it is not offered for paying again */
+  paid?: boolean
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -89,6 +95,7 @@ export const Cards = (props: {wallet: () => Wallet}) => {
       const bill = invoice()
       if (!bill) return
       await w().pay(payFrom(), bill.pr)
+      setInvoice({...bill, paid: true})
       await collect(bill)
     })
 
@@ -229,17 +236,27 @@ export const Cards = (props: {wallet: () => Wallet}) => {
               <div class="row">
                 <Copy value={bill().pr} label="Copy invoice" />
               </div>
-              <Show when={mints().length}>
-                <MintSelect
-                  mints={mints()}
-                  value={payFrom()}
-                  onChange={setPayFrom}
-                  balanceOf={d => w().balanceMsat(d)}
-                />
-                <Action onClick={payPack}>Pay from this wallet</Action>
+              <Show
+                when={!bill().paid}
+                fallback={
+                  <p class="quiet">
+                    Paid from this wallet. The cards come once the card mint
+                    sees the payment.
+                  </p>
+                }
+              >
+                <Show when={mints().length}>
+                  <MintSelect
+                    mints={mints()}
+                    value={payFrom()}
+                    onChange={setPayFrom}
+                    balanceOf={d => w().balanceMsat(d)}
+                  />
+                  <Action onClick={payPack}>Pay from this wallet</Action>
+                </Show>
               </Show>
               <button class="link" onClick={paidElsewhere}>
-                I paid it elsewhere
+                {bill().paid ? 'Check again' : 'I paid it elsewhere'}
               </button>
             </>
           )}
