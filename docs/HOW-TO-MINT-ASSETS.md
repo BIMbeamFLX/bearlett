@@ -29,7 +29,7 @@ if phoenixd is enough, no marketplace.
 | --------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Node.js 24, npm             | Mint server and JS tests                      | `npm run table` starts the server                                                                                                     |
 | Python with `uv`            | Census, blob manifest, blob map, Python tests | `uv run pytest`                                                                                                                       |
-| Server with domain and TLS  | Public mint                                   | Plain HTTP in the process; Caddy on loopback, `TRUST_PROXY=loopback`, systemd `tcg-table.service` (`docs/deploy-runbook-mint.md:95-99`) |
+| Server with domain and TLS  | Public mint                                   | Plain HTTP in the process, behind a TLS reverse proxy; `TRUST_PROXY` names the proxy |
 | Lightning backend           | Payment of boosters via BOLT11                | `phoenixd` or `lnd` with an invoice macaroon (`server/funding.js:88-113`); `none` for a free demo                                     |
 | Nostr key for Blossom       | Upload of card images                         | `PALACE_NSEC` for `scripts/upload-blobs.mjs:15` or `BLOSSOM_SECRET_KEY` for `scripts/upload_faces.ps1:35`                             |
 | Three Blossom mirrors       | Card images                                   | `blossom.primal.net`, `blossom.bimcvp.com`, `nostr.download` (`site/faces.js:25`)                                                     |

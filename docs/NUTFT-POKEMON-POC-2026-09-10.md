@@ -232,8 +232,7 @@ Site and endpoints: `/v1/info`, `/v1/keys`, `/nutft/catalog`, `/nutft/state`,
 <https://github.com/BIMbeamFLX/600BillionTimelockTCG/pull/29>,
 <https://github.com/keeshii/ryuu-play>, <https://tcgdex.dev/faq>,
 <https://dev.pokemontcg.io/terms>. Local: `TCG600nap/server/nutft-mint.js`,
-`site/nutft-wallet.js`, `site/wallet.html`, `docs/adr/0001` to `0004`,
-`docs/deploy-runbook-mint.md`.
+`site/nutft-wallet.js`, `site/wallet.html`, `docs/adr/0001` to `0004`.
 LNURLcash: <https://github.com/lnurlcash/lnurl-wallet>,
 <https://github.com/lnurlcash/lnurl-mint>, <https://github.com/lnurlcash/lnurl-mint/pull/1>,
 <https://github.com/lnurl/luds/blob/lnurlcash/25.md>. Blossom:
