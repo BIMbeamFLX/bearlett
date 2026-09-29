@@ -21,3 +21,11 @@ docs/*-infographic-prompt.txt
 dist-collection-*/
 .kernel/
 kernel-cases.json
+
+# Our own infrastructure stays out of this public repository: where and how we
+# host and deploy, and the operator notes. They are kept outside git.
+docs/INFRASTRUCTURE-TODO-2026-09-10.md
+docs/infra/
+
+# Local Claude Code state (worktrees, launch configs with local paths).
+.claude/

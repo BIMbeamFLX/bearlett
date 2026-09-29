@@ -1,6 +1,6 @@
 # Bearlett marketing review: what a stranger believes
 
-22 September 2026. Read of the public face of `G:\Github\bearlett`: `README.md`,
+22 September 2026. Read of the public face of the repository: `README.md`,
 
 Status: the installed name, the landing heading, and the footer repository
 are Bearlett on `feat/session-bar`. The collection preview host is back in

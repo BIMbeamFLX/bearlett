@@ -135,7 +135,7 @@ process restart, require a new unlock and journal check.
   grants `sign_event`, `nip44_encrypt` and `nip44_decrypt` as separate scoped
   capabilities, so it satisfies the requirement that a signer-only path without
   decryption is not enough. Its caveats and what it does not provide are recorded
-  in the [infrastructure to-do list](INFRASTRUCTURE-TODO-2026-09-10.md).
+  in the operator notes, which are kept outside the repository.
 
 ### Recovery package without circular dependency
 
