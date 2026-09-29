@@ -28,8 +28,12 @@ export type Net = {
 const MAX_RESPONSE_BYTES = 1024 * 1024
 
 /**
- * Hosts reached over plain http: this machine, and onion services, whose
- * transport authenticates the name itself (LUD-01's exception).
+ * Hosts reached over plain http: this machine, onion services (LUD-01's
+ * exception), and FIPS mesh endpoints. Onion and FIPS names are
+ * self-authenticating: a `<npub>.fips` name is the endpoint's Nostr key, and
+ * FIPS encrypts and authenticates it end to end (Noise XK), so TLS adds
+ * nothing a certificate authority could vouch for. A bare fd00::/8 address
+ * does not qualify: that is the general ULA range, not FIPS's own.
  */
 export const plainHttpHost = (hostname: string): boolean => {
   const host = hostname.toLowerCase()
@@ -39,7 +43,8 @@ export const plainHttpHost = (hostname: string): boolean => {
     host === '0.0.0.0' ||
     host === '[::1]' ||
     host.endsWith('.localhost') ||
-    host.endsWith('.onion')
+    host.endsWith('.onion') ||
+    host.endsWith('.fips')
   )
 }
 

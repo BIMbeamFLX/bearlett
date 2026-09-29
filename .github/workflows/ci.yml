@@ -56,3 +56,23 @@ jobs:
       - run: python3 -m venv .kernel && .kernel/bin/pip install lnurlcash-kernel==0.1.0
       - run: node tests/kernel/cases.ts > kernel-cases.json
       - run: .kernel/bin/python tests/kernel/judge.py kernel-cases.json
+
+  mesh:
+    # LNURLcash over FIPS (fips.network) end to end: two FIPS nodes in network
+    # namespaces, a mint that exists only on the mesh, and the wallet core
+    # minting, handing out, receiving, paying and recovering through
+    # http://<npub>.fips
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Fetch FIPS 0.5.1
+        run: |
+          curl -fsSLO https://github.com/jmcorgan/fips/releases/download/v0.5.1/fips-0.5.1-linux-x86_64.tar.gz
+          echo "1743e73a47aa367d5bd0f04eb24c29cdc06f200fd1f0ab1ee4a110872a19eeeb  fips-0.5.1-linux-x86_64.tar.gz" | sha256sum -c -
+          tar -xzf fips-0.5.1-linux-x86_64.tar.gz
+      - run: sudo env "PATH=$PATH" FIPS_BIN="$PWD/fips-0.5.1-linux-x86_64" bash tests/mesh/run.sh
