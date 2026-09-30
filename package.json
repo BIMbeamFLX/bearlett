@@ -33,7 +33,7 @@
     "@napplet/vite-plugin": "0.14.1",
     "kit-0.19.5": "npm:@lnurlcash/kit@0.19.5",
     "lnurlcash-conformance": "0.14.0",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.9",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vite-plugin-solid": "^2.11.14",
